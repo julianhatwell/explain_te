@@ -1,7 +1,3 @@
-#get rid
-import time
-import timeit
-#ok
 import sys
 import math
 import multiprocessing as mp
@@ -21,6 +17,25 @@ from scipy.stats import chi2_contingency
 from forest_surveyor import config as cfg
 from forest_surveyor.async_structures import as_tree_walk
 
+# global function for setting a default seed
+class non_deterministic:
+
+    def __init__(self, random_state=None):
+        if random_state is None:
+            self.random_state = 123
+        else:
+            self.random_state = random_state
+
+    def set_random_state(self, random_state=None):
+        if random_state is not None:
+            self.random_state = random_state
+
+    def default_if_none_random_state(self, random_state=None):
+        if random_state is None:
+            return(self.random_state)
+        else:
+            return(random_state)
+
 class default_encoder:
 
     def transform(x):
@@ -28,7 +43,34 @@ class default_encoder:
     def fit(x):
         return(x)
 
-class data_container:
+class data_split_container:
+
+    def __init__(self, X_train, X_train_enc, X_test,
+                y_train, y_test, encoder,
+                train_priors, test_priors):
+        self.X_train = X_train
+        self.X_train_enc = X_train_enc
+        self.X_test = X_test
+        self.y_train = y_train
+        self.y_test = y_test
+        self.encoder = encoder
+        self.train_priors = train_priors
+        self.test_priors = test_priors
+
+    def to_dict(self):
+        return({'X_train': self.X_train,
+            'X_train_enc' : self.X_train_enc,
+            'X_test' : self.X_test,
+            'y_train' : self.y_train,
+            'y_test' : self.y_test,
+            'encoder' : self.encoder,
+            'train_priors' : self.train_priors,
+            'test_priors' : self.test_priors})
+
+    def test_train_split(self): # behave as scikit-learn
+        return(self.X_train, self.X_test, self.y_train, self.y_test)
+
+class data_container(non_deterministic):
 
     def __init__(self
     , data
@@ -36,19 +78,15 @@ class data_container:
     , var_names = None
     , var_types = None
     , project_dir = None
-    , pickle_dir = ''
+    , save_dir = ''
     , random_state = None
     , spiel = ''):
+        super().__init__(random_state)
         self.spiel = spiel
-        if random_state is None:
-            self.random_state = 123
-        else:
-            self.random_state = random_state
-
         self.data = data
         self.data_pre = DataFrame.copy(self.data)
         self.class_col = class_col
-        self.pickle_dir = pickle_dir
+        self.save_dir = save_dir
 
         if project_dir is None:
             self.project_dir = cfg.project_dir
@@ -119,17 +157,17 @@ class data_container:
         # If no nominal vars, then simply convert to sparse matrix format
         if len(self.categorical_features) > 0:
             encoder = OneHotEncoder(categorical_features=self.categorical_features)
-            encoder.fit(self.data_pre.as_matrix())
+            encoder.fit(self.data_pre.values)
             self.encoder = encoder
         else:
             self.encoder = default_encoder
 
     # helper function for pickling files
-    def pickle_path(self, filename = ''):
+    def get_save_path(self, filename = ''):
         if len(self.project_dir) > 0:
-            return(self.project_dir + cfg.path_sep + self.pickle_dir + cfg.path_sep + filename)
+            return(self.project_dir + cfg.path_sep + self.save_dir + cfg.path_sep + filename)
         else:
-            return(self.pickle_dir + cfg.path_sep + filename)
+            return(self.save_dir + cfg.path_sep + filename)
 
     # helper function for data frame str / summary
     def rstr(self):
@@ -149,10 +187,57 @@ class data_container:
         else:
             return(label)
 
+    # generate indexes for manual tt_split
+    def get_tt_split_idx(self, test_size=0.3, random_state=None, shuffle=True):
+        # common default setting: see class non_deterministic
+        random_state = self.default_if_none_random_state(random_state)
+        nrows = self.data.shape[0]
+        np.random.seed(random_state)
+        test_idx = np.random.choice(nrows - 1, # zero base
+                                    size = round(test_size * nrows),
+                                    replace=False)
+        # this method avoids scanning the array for each test_idx to find all the others
+        train_pos = Series([True] * nrows)
+        train_pos.loc[test_idx] = False
+        train_idx = np.array(train_pos.index[train_pos], dtype=np.int32)
+        # train are currently in given order, the test are not
+        if shuffle:
+            np.random.seed(random_state)
+            np.random.shuffle(train_idx)
+
+        return(train_idx, test_idx)
+
+    def tt_split_by_idx(self, train_index, test_index):
+
+        # data in readiness
+        X, y = self.data_pre[self.features], self.data_pre[self.class_col]
+
+        # perform the split
+        X_test = X.loc[test_index]
+        y_test = y.loc[test_index]
+        X_train = X.loc[train_index]
+        y_train = y.loc[train_index]
+
+        train_priors = y_train.value_counts().sort_index()/len(y_train)
+        test_priors = y_test.value_counts().sort_index()/len(y_test)
+
+        X_train_enc = self.encoder.transform(X_train)
+
+        tt = data_split_container(X_train = X_train,
+        X_train_enc = X_train_enc,
+        X_test = X_test,
+        y_train = y_train,
+        y_test = y_test,
+        encoder = self.encoder,
+        train_priors = train_priors,
+        test_priors = test_priors)
+
+        return(tt)
+
     # train test splitting
-    def tt_split(self, test_size=0.3, random_state=None):
-        if random_state is None:
-            random_state = self.random_state
+    def tt_split_by_sk(self, test_size=0.3, random_state=None):
+        # common default setting: see class non_deterministic
+        random_state = self.default_if_none_random_state(random_state)
         X, y = self.data_pre[self.features], self.data_pre[self.class_col]
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
@@ -162,54 +247,55 @@ class data_container:
 
         X_train_enc = self.encoder.transform(X_train)
 
-        return({
-        'X_train': X_train,
-        'X_train_enc' : X_train_enc,
-        'X_test' : X_test,
-        'y_train' : y_train,
-        'y_test' : y_test,
-        'encoder' : self.encoder,
-        'train_priors' : train_priors,
-        'test_priors' : test_priors})
+        tt = data_split_container(X_train = X_train,
+        X_train_enc = X_train_enc,
+        X_test = X_test,
+        y_train = y_train,
+        y_test = y_test,
+        encoder = self.encoder,
+        train_priors = train_priors,
+        test_priors = test_priors)
 
-    def xval_split(self, iv_low, iv_high, test_index, random_state=None):
-        iv_high = int(iv_high)
-        iv_low = int(iv_low)
-        test_index = int(test_index)
+        return(tt)
 
-        if test_index >= iv_high or test_index < iv_low:
-            print('test_index out of range. Setting to lowest value in range (iv_low)')
-            test_index = iv_low
-
-        if random_state is None:
-            random_state = self.random_state
-
-        # generate an indexing vector
-        iv = np.random.RandomState(random_state).randint(low=iv_low, high=iv_high, size=np.shape(self.data_pre)[0])
-
-        # data in readiness
-        X, y = self.data_pre[self.features], self.data_pre[self.class_col]
-
-        # perform the split
-        X_test = X.iloc[iv == test_index]
-        y_test = y.iloc[iv == test_index]
-        X_train = X.iloc[iv != test_index]
-        y_train = y.iloc[iv != test_index]
-
-        train_priors = y_train.value_counts().sort_index()/len(y_train)
-        test_priors = y_test.value_counts().sort_index()/len(y_test)
-
-        X_train_enc = self.encoder.transform(X_train)
-
-        return({
-        'X_train': X_train,
-        'X_train_enc' : X_train_enc,
-        'X_test' : X_test,
-        'y_train' : y_train,
-        'y_test' : y_test,
-        'encoder' : self.encoder,
-        'train_priors' : train_priors,
-        'test_priors' : test_priors})
+    # def xval_split(self, iv_low, iv_high, test_index, random_state=None):
+    #     iv_high = int(iv_high)
+    #     iv_low = int(iv_low)
+    #     test_index = int(test_index)
+    #
+    #     if test_index >= iv_high or test_index < iv_low:
+    #         print('test_index out of range. Setting to lowest value in range (iv_low)')
+    #         test_index = iv_low
+    #
+    #     # common default setting: see class non_deterministic
+    #     random_state = self.default_if_none_random_state(random_state)
+    #
+    #     # generate an indexing vector
+    #     iv = np.random.RandomState(random_state).randint(low=iv_low, high=iv_high, size=np.shape(self.data_pre)[0])
+    #
+    #     # data in readiness
+    #     X, y = self.data_pre[self.features], self.data_pre[self.class_col]
+    #
+    #     # perform the split
+    #     X_test = X.iloc[iv == test_index]
+    #     y_test = y.iloc[iv == test_index]
+    #     X_train = X.iloc[iv != test_index]
+    #     y_train = y.iloc[iv != test_index]
+    #
+    #     train_priors = y_train.value_counts().sort_index()/len(y_train)
+    #     test_priors = y_test.value_counts().sort_index()/len(y_test)
+    #
+    #     X_train_enc = self.encoder.transform(X_train)
+    #
+    #     return({
+    #     'X_train': X_train,
+    #     'X_train_enc' : X_train_enc,
+    #     'X_test' : X_test,
+    #     'y_train' : y_train,
+    #     'y_test' : y_test,
+    #     'encoder' : self.encoder,
+    #     'train_priors' : train_priors,
+    #     'test_priors' : test_priors})
 
     def pretty_rule(self, rule):
         Tr_Fa = lambda x, y, z : x + ' True' if ~y else x + ' False'
@@ -770,15 +856,15 @@ class loo_encoder:
         enc_instances = self.encoder.transform(instances)
         return(instances, enc_instances, labels)
 
-class rule_evaluator:
+class rule_evaluator(non_deterministic):
 
     def encode_pred(self, prediction_model, instances=None, bootstrap=False, random_state=None):
         if instances is None:
             pred_instances=self.sample_instances
         else:
             pred_instances=instances
-        if random_state is None:
-            random_state = self.random_state
+        # common default setting: see class non_deterministic
+        random_state = self.default_if_none_random_state(random_state)
         if bootstrap:
             pred_instances = pred_instances.sample(frac=1.0, replace=True, random_state=random_state)
         pred_labels = Series(prediction_model.predict((pred_instances)), index=pred_instances.index)
@@ -1074,8 +1160,8 @@ class rule_accumulator(rule_evaluator):
                         , random_state=None):
 
         # basic setup
-        if random_state is None:
-            random_state=self.random_state
+        # common default setting: see class non_deterministic
+        random_state = self.default_if_none_random_state(random_state)
         if stopping_param > 1 or stopping_param < 0:
             stopping_param = 1
             print('warning: stopping_param should be 0 <= p <= 1. Value was reset to 1')

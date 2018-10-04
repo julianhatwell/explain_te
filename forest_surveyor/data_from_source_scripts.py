@@ -46,10 +46,11 @@ if True:
     adult_train_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data'
     adult_test_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.test'
 
-    adult_train_bytes = urllib.request.urlopen(target_url)
-    adult_test_bytes = urllib.request.urlopen(target_url)
-    adult_train = pd.read_csv(adult_bytes, header=None, names=var_names)
+    adult_train_bytes = urllib.request.urlopen(adult_train_url)
+    adult_test_bytes = urllib.request.urlopen(adult_test_url)
+    adult_train = pd.read_csv(adult_train_bytes, header=None, names=var_names)
     adult_test = pd.read_csv(adult_test_bytes, header=None, names=var_names)
+    adult_test.drop(index=0, axis=0, inplace=True) # there's a stupid line at the top. skiprows doesn't deal with it
 
     # combine the two datasets and split them later with standard code
     frames = [adult_train, adult_test]
@@ -62,8 +63,10 @@ if True:
             adult[f] = adult[f].astype('int32')
         else:
             adult[f] = adult[f].str.replace(' ', '')
+
     # change question mark character to 'Unknown'
     qm_to_unk = lambda w: 'Unknown' if w == '?' else w
+
     # duplication / tidy of a country entry
     tt_fix = lambda w: 'Trinidad and Tobago' if w == 'Trinadad&Tobago' else w
 
@@ -119,7 +122,7 @@ if True:
                   'cons.conf.idx' : np.float16, 'euribor3m' : np.float16, 'nr.employed' : np.float16, 'y' : object}
 
     bankmark = pd.DataFrame(all_lines, columns=names)
-    bankmark = bankmark_raw.astype(dtype=vtypes)
+    bankmark = bankmark.astype(dtype=vtypes)
 
     # save
     bankmark.to_csv('forest_surveyor\\datafiles\\bankmark.csv.gz', index=False, compression='gzip')
@@ -148,7 +151,7 @@ if True:
     # recode to a 2 class subproblems
     car.acceptability.loc[car.acceptability != 'unacc'] = 'acc'
 
-    car.to_csv('forest_surveyor\\datafiles\\car.csv.gz'), index=False, compression='gzip')
+    car.to_csv('forest_surveyor\\datafiles\\car.csv.gz', index=False, compression='gzip')
     '''
 
 # cardio
@@ -449,104 +452,81 @@ if True:
 
     # save
     lending.to_csv('forest_surveyor\\datafiles\\lending.csv.gz', index=False, compression='gzip')
-    lend_samp.to_csv('forest_surveyor\\datafiles\\lend_samp.csv.gz', index=False, compression='gzip')
-    lend_small_samp.to_csv('forest_surveyor\\datafiles\\lend_small_samp.csv.gz', index=False, compression='gzip')
-    lend_tiny_samp.to_csv('forest_surveyor\\datafiles\\lend_tiny_samp.csv.gz', index=False, compression='gzip')
+    lend_samp.to_csv('forest_surveyor\\datafiles\\lending_samp.csv.gz', index=False, compression='gzip')
+    lend_small_samp.to_csv('forest_surveyor\\datafiles\\lending_small_samp.csv.gz', index=False, compression='gzip')
+    lend_tiny_samp.to_csv('forest_surveyor\\datafiles\\lending_tiny_samp.csv.gz', index=False, compression='gzip')
     '''
 
 # nursery
 if True:
     '''
+    random_state = 123
     var_names = ['parents'
-               , 'has_nurs'
-               , 'form'
-               , 'children'
-               , 'housing'
-               , 'finance'
-               , 'social'
-               , 'health'
-               , 'decision']
+                   , 'has_nurs'
+                   , 'form'
+                   , 'children'
+                   , 'housing'
+                   , 'finance'
+                   , 'social'
+                   , 'health'
+                   , 'decision']
 
-    vars_types = ['nominal'
-               , 'nominal'
-               , 'nominal'
-               , 'nominal'
-               , 'nominal'
-               , 'nominal'
-               , 'nominal'
-               , 'nominal'
-               , 'nominal']
+    target_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/nursery/nursery.data'
+    nursery_bytes = urllib.request.urlopen(target_url)
+    nursery = pd.read_csv(nursery_bytes, header=None, names=var_names)
 
-    nursery = pd.read_csv(pickle_path('nursery.csv')
-                          , names=var_names)
-
-    # filter one row where class == 2
+    # clean up: filter single row where class == 2
     nursery = nursery[nursery.decision != 'recommend']
-    # reset the pandas index
-    nursery.index = range(len(nursery))
+    nursery.to_csv('forest_surveyor\\datafiles\\nursery.csv.gz', index=False, compression='gzip')
 
-    nursery.to_csv(pickle_path('nursery.csv.gz'), index=False, compression='gzip')
+    samp = nursery.sample(frac=0.2, random_state=random_state).reset_index()
+    samp.drop(labels='index', axis=1, inplace=True)
+    samp.to_csv('forest_surveyor\\datafiles\\nursery_samp.csv.gz', index=False, compression='gzip')
     '''
 
 # rcdv
 if True:
     '''
+    # original datasets here: https://www.icpsr.umich.edu/icpsrweb/NACJD/studies/8987/datadocumentation
+    # files need to be processed before import. fixed width text
+    # needs to be split out into variables according to the code book in the available documentation
+
     # random seed for train test split and sampling
     random_state = 123
-    rcdv = pd.read_excel('data_source_files\\rcdv.xlsx'
-                                        , sheet_name='1978'
-                                        , header=0)
-    # merging two sheets brought in row numbers
-    rcdv = rcdv.append(pd.read_excel('data_source_files\\rcdv.xlsx'
-                                    , sheet_name='1980'
-                                    , header=0))
+
+    myzip = 'forest_surveyor\\source_datafiles\\rcdv_processed.zip'
+    myfile = 'rcdv_processed.xlsx'
+    zf = zipfile.ZipFile(myzip)
+    zb = zf.read(myfile)
+    rcdv = pd.read_excel(io.BytesIO(zb)
+                            , sheet_name='1978'
+                            , header=0)
+    # merging two sheets
+    rcdv = rcdv.append(pd.read_excel(io.BytesIO(zb)
+                            , sheet_name='1980'
+                            , header=0))
+    zf.close()
 
     # tidy index and drop col1
     rcdv.reset_index(drop=True, inplace=True)
-    rcdv.drop(labels='Column1', axis=1, inplace=True)
+    rcdv.drop(labels=rcdv.columns[0], axis=1, inplace=True)
 
-    # rename file to miss as it is needed to indicate where were missing values
-    rcdv.columns = ['miss' if vn == 'file' else vn for vn in rcdv.columns]
+    # give last column a more meaningful name - it indicates rows that had missing data
+    rcdv.columns = ['missingness' if vn == 'file' else vn for vn in rcdv.columns]
 
-    var_names=list(rcdv)[:16] + list(rcdv)[17:] + list(rcdv)[16:17] # put recid to the end
+    # recode priors, all that were set to -9 were missing
+    # and it is logged in the file variable (3 = missing data indicator)
+    # missingness also affect alchy and junky variables
+    rcdv['priors'] = rcdv['priors'].map(lambda x: 0 if x == -9 else x)
+    rcdv['missingness'] = rcdv['missingness'].map(lambda x: 1 if x == 3 else 0)
+
+    # remove Time column. It is for survival analysis. Correlates exactly with recid.
+    del rcdv['time']
+
+    # put recid to the end
+    recid_pos = np.where(rcdv.columns == 'recid')[0][0]
+    var_names = list(rcdv.columns[0:recid_pos]) + list(rcdv.columns[recid_pos + 1: len(rcdv.columns)]) + ['recid']
     rcdv = rcdv[var_names]
-
-    vars_types = ['nominal'
-                    , 'nominal'
-                    , 'nominal'
-                    , 'nominal'
-                    , 'nominal'
-                    , 'nominal'
-                    , 'nominal'
-                    , 'nominal'
-                    , 'nominal'
-                    , 'nominal'
-                    , 'continuous'
-                    , 'continuous'
-                    , 'continuous'
-                    , 'continuous'
-                    , 'continuous'
-                    , 'continuous'
-                    , 'nominal'
-                    , 'continuous'
-                    , 'nominal'
-                    , 'nominal']
-
-    class_col = 'recid'
-    features = [vn for vn in var_names if vn != class_col]
-
-    # recode priors, all that were set to -9 were missing, and it is logged in the file variable (3 = missing data indicator)
-    rcdv['priors'] = rcdv['priors'].apply(lambda x: 0 if x == -9 else x)
-    rcdv['miss'] = rcdv['miss'].apply(lambda x: 1 if x == 3 else 0)
-    rcdv['recid'] = rcdv['recid'].apply(lambda x: 'T' if x == 1 else 'F')
-
-    # remove cols we don't want. Time is only useful in survival analysis. Correlates exactly with recid.
-    to_be_del = ['time']
-    for tbd in to_be_del:
-        del rcdv[tbd]
-        del vars_types[np.where(np.array(var_names) == tbd)[0][0]]
-        del var_names[np.where(np.array(var_names) == tbd)[0][0]]
-        del features[np.where(np.array(features) == tbd)[0][0]]
 
     # save it out
     rcdv.to_csv('forest_surveyor\\datafiles\\rcdv.csv.gz', index=False, compression='gzip')

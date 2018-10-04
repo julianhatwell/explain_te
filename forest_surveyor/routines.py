@@ -1,9 +1,10 @@
 import json
 import time
 import timeit
-import pickle
 import numpy as np
 import multiprocessing as mp
+from pathlib import Path as pth
+from os import makedirs as mkdir
 from pandas import DataFrame, Series
 from forest_surveyor import p_count, p_count_corrected
 import forest_surveyor.datasets as ds
@@ -58,6 +59,8 @@ def do_tuning(X, y, grid = None, random_state=123, save_path = None):
     best_params = {k: int(v) if k not in ('score', 'fitting_time') else v for k, v in best_grid.items()}
 
     if save_path is not None:
+        if not pth(save_path).is_dir():
+            mkdir(save_path)
         with open(save_path + 'best_params_rndst_' + str(random_state) + '.json', 'w') as outfile:
             json.dump(best_params, outfile)
 
@@ -136,13 +139,13 @@ def forest_survey(f_walker, X, y):
     f_walker.full_survey(X, y)
     return(f_walker.forest_stats(np.unique(y)))
 
-def run_batch_explanations(f_walker, getter,
+def CHIRPS_explanation(f_walker, getter,
  data_container, encoder, sample_instances, sample_labels,
  batch_size = 1, n_batches = 1,
  support_paths=0.1, alpha_paths=0.5,
  disc_path_bins=4, disc_path_eqcounts=False,
  alpha_scores=0.5, which_trees='majority',
- precis_threshold=0.95, weighting='chisq', greedy='greedy',
+ precis_threshold=0.95, weighting='chisq', algorithm='greedy_prec',
  forest_walk_async=False, chirps_explanation_async=False):
 
     pred_model = f_walker.prediction_model
@@ -228,11 +231,11 @@ def run_batch_explanations(f_walker, getter,
             ce_end_time = timeit.default_timer()
             ce_elapsed_time = ce_end_time - ce_start_time
 
-        print('CHIRPS batch time elapsed:', "{:0.4f}".format(ce_elapsed_time), 'seconds')
-        print('CHIRPS batch with async = ' + str(chirps_explanation_async))
+        print('CHIRPS time elapsed:', "{:0.4f}".format(ce_elapsed_time), 'seconds')
+        print('CHIRPS with async = ' + str(chirps_explanation_async))
 
 
-    algorithm = ['greedy_prec'] # this method proved to be the best. For alternatives, go to the github and see older versions
+    algorithm = [algorithm] # this method proved to be the best. For alternatives, go to the github and see older versions
     return(completed_rule_accs, algorithm)
 
 def anchors_preproc(dataset, random_state, iv_low, iv_high):

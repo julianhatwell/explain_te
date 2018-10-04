@@ -13,7 +13,7 @@ def accident_data(random_state=123, project_dir=None):
                         compression='gzip'),
     class_col = 'Accident_Severity',
     project_dir = project_dir,
-    pickle_dir = 'accident_pickles',
+    save_dir = 'accident',
     random_state=random_state,
     spiel = '''
     Data Set Information:
@@ -41,7 +41,7 @@ def accident_samp_data(random_state=123, project_dir=None):
                         compression='gzip'),
     class_col = 'Accident_Severity',
     project_dir = project_dir,
-    pickle_dir = 'accident_samp_pickles',
+    save_dir = 'accident_samp',
     random_state=random_state,
     spiel = '''
     Data Set Information:
@@ -69,7 +69,7 @@ def accident_small_samp_data(random_state=123, project_dir=None):
                         compression='gzip'),
     class_col = 'Accident_Severity',
     project_dir = project_dir,
-    pickle_dir = 'accident_small_samp_pickles',
+    save_dir = 'accident_small_samp',
     random_state=random_state,
     spiel = '''
     Data Set Information:
@@ -96,7 +96,7 @@ def adult_data(random_state=123, project_dir=None):
                         compression='gzip'),
     class_col = 'income',
     project_dir = project_dir,
-    pickle_dir = 'adult_pickles',
+    save_dir = 'adult',
     random_state=random_state,
     spiel = '''
     Data Description:
@@ -126,7 +126,7 @@ def adult_samp_data(random_state=123, project_dir=None):
                         compression='gzip'),
     class_col = 'income',
     project_dir = project_dir,
-    pickle_dir = 'adult_samp_pickles',
+    save_dir = 'adult_samp',
     random_state=random_state,
     spiel = '''
     Data Description:
@@ -156,7 +156,7 @@ def adult_small_samp_data(random_state=123, project_dir=None):
                         compression='gzip'),
     class_col = 'income',
     project_dir = project_dir,
-    pickle_dir = 'adult_small_samp_pickles',
+    save_dir = 'adult_small_samp',
     random_state=random_state,
     spiel = '''
     Data Description:
@@ -210,7 +210,7 @@ def bankmark_data(random_state=123, project_dir=None):
                         dtype=vtypes),
     class_col = 'y',
     project_dir = project_dir,
-    pickle_dir = 'bankmark_pickles',
+    save_dir = 'bankmark',
     random_state=random_state,
     spiel = '''
     Data Set Information:
@@ -290,7 +290,7 @@ def bankmark_samp_data(random_state=123, project_dir=None):
                         dtype=vtypes),
     class_col = 'y',
     project_dir = project_dir,
-    pickle_dir = 'bankmark_samp_pickles',
+    save_dir = 'bankmark_samp',
     random_state=random_state,
     spiel = '''
     Data Set Information:
@@ -353,7 +353,7 @@ def car_data(random_state=123, project_dir=None):
                 , 'safety'
                 , 'acceptability'],
     project_dir = project_dir,
-    pickle_dir = 'car_pickles',
+    save_dir = 'car',
     random_state=random_state,
     spiel = '''
     M. Bohanec and V. Rajkovic: Knowledge acquisition and explanation for
@@ -377,7 +377,7 @@ def cardio_data(random_state=123, project_dir=None):
                         compression='gzip'),
     class_col = 'NSP',
     project_dir = project_dir,
-    pickle_dir = 'cardio_pickles',
+    save_dir = 'cardio',
     random_state=random_state,
     spiel = '''
     Data Set Information:
@@ -418,7 +418,7 @@ def credit_data(random_state=123, project_dir=None):
                     compression='gzip'),
     class_col = 'A16',
     project_dir = project_dir,
-    pickle_dir = 'credit_pickles',
+    save_dir = 'credit',
     random_state=random_state,
     spiel = '''
     Data Set Information:
@@ -455,7 +455,7 @@ def german_data(random_state=123, project_dir=None):
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'german.csv.gz',
                     compression='gzip'),
     class_col = 'rating',
-    pickle_dir = 'german_pickles',
+    save_dir = 'german',
     project_dir = project_dir,
     random_state=random_state,
     spiel = '''
@@ -492,7 +492,7 @@ def lending_data(random_state=123, project_dir=None):
                     compression='gzip'),
     class_col = 'loan_status',
     project_dir = project_dir,
-    pickle_dir = 'lending_pickles',
+    save_dir = 'lending',
     random_state=random_state,
     spiel = '''
     Data Set Information:
@@ -513,7 +513,7 @@ def lending_samp_data(random_state=123, project_dir=None):
                     compression='gzip'),
     class_col = 'loan_status',
     project_dir = project_dir,
-    pickle_dir = 'lending_samp_pickles',
+    save_dir = 'lending_samp',
     random_state=random_state,
     spiel = '''
     Data Set Information:
@@ -534,7 +534,7 @@ def lending_small_samp_data(random_state=123, project_dir=None):
                     compression='gzip'),
     class_col = 'loan_status',
     project_dir = project_dir,
-    pickle_dir = 'lending_small_samp_pickles',
+    save_dir = 'lending_small_samp',
     random_state=random_state,
     spiel = '''
     Data Set Information:
@@ -555,7 +555,7 @@ def lending_tiny_samp_data(random_state=123, project_dir=None):
                     compression='gzip'),
     class_col = 'loan_status',
     project_dir = project_dir,
-    pickle_dir = 'lending_tiny_samp_pickles',
+    save_dir = 'lending_tiny_samp',
     random_state=random_state,
     spiel = '''
     Data Set Information:
@@ -576,7 +576,7 @@ def nursery_data(random_state=123, project_dir=None):
                     compression='gzip'),
     class_col = 'decision',
     project_dir = project_dir,
-    pickle_dir = 'nursery_pickles',
+    save_dir = 'nursery',
     random_state=random_state,
     spiel = '''
     Data Description:
@@ -602,7 +602,7 @@ def nursery_samp_data(random_state=123, project_dir=None):
                     compression='gzip'),
     class_col = 'decision',
     project_dir = project_dir,
-    pickle_dir = 'nursery_samp_pickles',
+    save_dir = 'nursery_samp',
     random_state=random_state,
     spiel = '''
     Data Description:
@@ -628,7 +628,7 @@ def rcdv_data(random_state=123, project_dir=None):
                     compression='gzip'),
     class_col = 'recid',
     project_dir = project_dir,
-    pickle_dir = 'rcdv_pickles',
+    save_dir = 'rcdv',
     random_state=random_state,
     spiel = '''
     Data Set Information:
@@ -682,7 +682,7 @@ def rcdv_samp_data(random_state=123, project_dir=None):
                     compression='gzip'),
     class_col = 'recid',
     project_dir = project_dir,
-    pickle_dir = 'rcdv_samp_pickles',
+    save_dir = 'rcdv_samp',
     random_state=random_state,
     spiel = '''
     Data Set Information:

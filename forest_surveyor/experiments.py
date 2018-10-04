@@ -8,7 +8,7 @@ import multiprocessing as mp
 from forest_surveyor import p_count, p_count_corrected
 import forest_surveyor.datasets as ds
 from forest_surveyor.structures import forest_walker, batch_getter, rule_tester, loo_encoder
-from forest_surveyor.routines import tune_rf, train_rf, evaluate_model, run_batch_explanations, anchors_preproc, anchors_explanation
+from forest_surveyor.routines import tune_rf, train_rf, evaluate_model, CHIRPS_explanation, anchors_preproc, anchors_explanation
 from scipy.stats import chi2_contingency
 from math import sqrt
 from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support, accuracy_score
@@ -83,7 +83,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
     wb_start_time = timeit.default_timer()
 
     # collect completed rule_acc_lite objects for the whole batch
-    completed_rule_accs, result_sets = run_batch_explanations(f_walker=f_walker,
+    completed_rule_accs, result_sets = CHIRPS_explanation(f_walker=f_walker,
      getter=getter,
      data_container=mydata,
      encoder=tt['encoder'],
