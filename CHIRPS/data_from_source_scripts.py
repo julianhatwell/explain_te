@@ -88,9 +88,9 @@ if True:
     adult_small_samp.drop(labels='index', axis=1, inplace=True)
 
     # save
-    adult.to_csv('forest_surveyor\\datafiles\\adult.csv.gz', index=False, compression='gzip')
-    adult_samp.to_csv('forest_surveyor\\datafiles\\adult_samp.csv.gz', index=False, compression='gzip')
-    adult_small_samp.to_csv('forest_surveyor\\datafiles\\adult_small_samp.csv.gz', index=False, compression='gzip')
+    adult.to_csv('CHIRPS\\datafiles\\adult.csv.gz', index=False, compression='gzip')
+    adult_samp.to_csv('CHIRPS\\datafiles\\adult_samp.csv.gz', index=False, compression='gzip')
+    adult_small_samp.to_csv('CHIRPS\\datafiles\\adult_small_samp.csv.gz', index=False, compression='gzip')
     '''
 
 # bankmark from source
@@ -100,7 +100,7 @@ if True:
     random_state = 123
 
     def import_bankmark_file(file):
-        archive = zipfile.ZipFile('forest_surveyor/source_datafiles/bank-additional-full.zip', 'r')
+        archive = zipfile.ZipFile('CHIRPS/source_datafiles/bank-additional-full.zip', 'r')
         lines = archive.read(file).decode("utf-8").split('\r\n')
         lines = [lines[i].replace('\"', '').split(';') for i in range(1, len(lines))]
         lines.pop() # last item is empty
@@ -125,12 +125,12 @@ if True:
     bankmark = bankmark.astype(dtype=vtypes)
 
     # save
-    bankmark.to_csv('forest_surveyor\\datafiles\\bankmark.csv.gz', index=False, compression='gzip')
+    bankmark.to_csv('CHIRPS\\datafiles\\bankmark.csv.gz', index=False, compression='gzip')
 
     # create small set that is easier to play with on a laptop
     samp = bankmark.sample(frac=0.05, random_state=random_state).reset_index()
     samp.drop(labels='index', axis=1, inplace=True)
-    samp.to_csv('forest_surveyor\\datafiles\\bankmark_samp.csv.gz', index=False, compression='gzip')
+    samp.to_csv('CHIRPS\\datafiles\\bankmark_samp.csv.gz', index=False, compression='gzip')
     '''
 
 # car form source
@@ -151,7 +151,7 @@ if True:
     # recode to a 2 class subproblems
     car.acceptability.loc[car.acceptability != 'unacc'] = 'acc'
 
-    car.to_csv('forest_surveyor\\datafiles\\car.csv.gz', index=False, compression='gzip')
+    car.to_csv('CHIRPS\\datafiles\\car.csv.gz', index=False, compression='gzip')
     '''
 
 # cardio
@@ -225,7 +225,7 @@ if True:
     cardio.NSP = NSP
 
     # save
-    cardio.to_csv('forest_surveyor\\datafiles\\cardio.csv.gz', index=False, compression='gzip')
+    cardio.to_csv('CHIRPS\\datafiles\\cardio.csv.gz', index=False, compression='gzip')
     '''
 
 # credit from source
@@ -288,7 +288,7 @@ if True:
         else:
             credit[v] = credit[v].fillna(credit[v].mean())
 
-    credit.to_csv('forest_surveyor\\datafiles\\credit.csv.gz', index=False, compression='gzip')
+    credit.to_csv('CHIRPS\\datafiles\\credit.csv.gz', index=False, compression='gzip')
     '''
 
 # german from source
@@ -330,7 +330,7 @@ if True:
     rating.loc[german.rating == 2] = 'bad'
     german.rating = rating
 
-    german.to_csv('forest_surveyor\\datafiles\\german.csv.gz', index=False, compression='gzip')
+    german.to_csv('CHIRPS\\datafiles\\german.csv.gz', index=False, compression='gzip')
     '''
 
 # lending from source
@@ -341,7 +341,7 @@ if True:
     # https://www.kaggle.com/wendykan/lending-club-loan-data
     # there is also a rejected_2007_to_2018Q2.csv.gz file but we are interested in who paid off a loan
     random_state=123
-    lending = pd.read_csv('forest_surveyor\\source_datafiles\\accepted_2007_to_2018Q2.csv.gz',
+    lending = pd.read_csv('CHIRPS\\source_datafiles\\accepted_2007_to_2018Q2.csv.gz',
                           compression='gzip', low_memory=False)     # low_memory=False prevents mixed data types in the DataFrame
 
     # Just looking at loans that met the policy and were either fully paid or charged off (finally defaulted)
@@ -451,10 +451,10 @@ if True:
     lend_tiny_samp.drop(labels='index', axis=1, inplace=True)
 
     # save
-    lending.to_csv('forest_surveyor\\datafiles\\lending.csv.gz', index=False, compression='gzip')
-    lend_samp.to_csv('forest_surveyor\\datafiles\\lending_samp.csv.gz', index=False, compression='gzip')
-    lend_small_samp.to_csv('forest_surveyor\\datafiles\\lending_small_samp.csv.gz', index=False, compression='gzip')
-    lend_tiny_samp.to_csv('forest_surveyor\\datafiles\\lending_tiny_samp.csv.gz', index=False, compression='gzip')
+    lending.to_csv('CHIRPS\\datafiles\\lending.csv.gz', index=False, compression='gzip')
+    lend_samp.to_csv('CHIRPS\\datafiles\\lending_samp.csv.gz', index=False, compression='gzip')
+    lend_small_samp.to_csv('CHIRPS\\datafiles\\lending_small_samp.csv.gz', index=False, compression='gzip')
+    lend_tiny_samp.to_csv('CHIRPS\\datafiles\\lending_tiny_samp.csv.gz', index=False, compression='gzip')
     '''
 
 # nursery
@@ -477,11 +477,11 @@ if True:
 
     # clean up: filter single row where class == 2
     nursery = nursery[nursery.decision != 'recommend']
-    nursery.to_csv('forest_surveyor\\datafiles\\nursery.csv.gz', index=False, compression='gzip')
+    nursery.to_csv('CHIRPS\\datafiles\\nursery.csv.gz', index=False, compression='gzip')
 
     samp = nursery.sample(frac=0.2, random_state=random_state).reset_index()
     samp.drop(labels='index', axis=1, inplace=True)
-    samp.to_csv('forest_surveyor\\datafiles\\nursery_samp.csv.gz', index=False, compression='gzip')
+    samp.to_csv('CHIRPS\\datafiles\\nursery_samp.csv.gz', index=False, compression='gzip')
     '''
 
 # rcdv
@@ -494,7 +494,7 @@ if True:
     # random seed for train test split and sampling
     random_state = 123
 
-    myzip = 'forest_surveyor\\source_datafiles\\rcdv_processed.zip'
+    myzip = 'CHIRPS\\source_datafiles\\rcdv_processed.zip'
     myfile = 'rcdv_processed.xlsx'
     zf = zipfile.ZipFile(myzip)
     zb = zf.read(myfile)
@@ -529,10 +529,10 @@ if True:
     rcdv = rcdv[var_names]
 
     # save it out
-    rcdv.to_csv('forest_surveyor\\datafiles\\rcdv.csv.gz', index=False, compression='gzip')
+    rcdv.to_csv('CHIRPS\\datafiles\\rcdv.csv.gz', index=False, compression='gzip')
 
     # create small set that is easier to play with on a laptop
     samp = rcdv.sample(frac=0.1, random_state=random_state)
     samp.reset_index(drop=True, inplace=True)
-    samp.to_csv('forest_surveyor\\datafiles\\rcdv_samp.csv.gz', index=False, compression='gzip')
+    samp.to_csv('CHIRPS\\datafiles\\rcdv_samp.csv.gz', index=False, compression='gzip')
     '''

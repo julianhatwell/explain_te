@@ -2,9 +2,9 @@ import json
 import time
 import timeit
 import numpy as np
-from forest_surveyor import p_count, p_count_corrected
-import forest_surveyor.datasets as ds
-from forest_surveyor.structures import rule_accumulator, forest_walker, rule_tester
+from CHIRPS import p_count, p_count_corrected
+import CHIRPS.datasets as ds
+from CHIRPS.structures import rule_accumulator, forest_walker, rule_tester
 
 from scipy.stats import chi2_contingency
 from math import sqrt
@@ -52,13 +52,13 @@ def score_sort_path_segments(walked, data_container,
     return(walked)
 
 def get_rule(rule_acc, encoder, sample_instances, sample_labels, pred_model,
-                        greedy='precision', precis_threshold=0.95):
+                        algorithm='greedy_prec', precis_threshold=0.95):
 
         # run the rule accumulator with greedy precis
         rule_acc.build_rule(encoder=encoder,
                     sample_instances=sample_instances,
                     sample_labels=sample_labels,
-                    greedy=greedy,
+                    algorithm=algorithm,
                     prediction_model=pred_model,
                     precis_threshold=precis_threshold)
         rule_acc.prune_rule()
@@ -72,7 +72,7 @@ def as_chirps(walked, data_container,
                         support_paths=0.1, alpha_paths=0.5,
                         disc_path_bins=4, disc_path_eqcounts=False,
                         which_trees='majority', weighting='chisq',
-                        greedy='precis', precis_threshold=0.95,
+                        algorithm='greedy_prec', precis_threshold=0.95,
                         batch_idx=None):
     # these steps make up the CHIRPS process:
     # mine paths for freq patts
@@ -87,6 +87,6 @@ def as_chirps(walked, data_container,
     # greedily add terms to create rule
     ra = rule_accumulator(data_container=data_container, paths_container=walked)
     ra_lite = get_rule(ra, encoder, sample_instances, sample_labels, pred_model,
-    greedy, precis_threshold)
+    algorithm, precis_threshold)
 
     return(batch_idx, ra_lite)

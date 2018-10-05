@@ -3,14 +3,11 @@ import time
 import timeit
 import numpy as np
 import multiprocessing as mp
-from pathlib import Path as pth
-from os import makedirs as mkdir
 from pandas import DataFrame, Series
-from forest_surveyor import p_count, p_count_corrected
-import forest_surveyor.datasets as ds
-from forest_surveyor.plotting import plot_confusion_matrix
-from forest_surveyor.structures import rule_accumulator, forest_walker, batch_getter, rule_tester, loo_encoder
-from forest_surveyor.async_routines import as_chirps
+from CHIRPS import p_count, p_count_corrected, if_nexists_make_dir
+from CHIRPS.plotting import plot_confusion_matrix
+from CHIRPS.structures import rule_accumulator, forest_walker, batch_getter, rule_tester, loo_encoder
+from CHIRPS.async_routines import as_chirps
 
 from scipy.stats import chi2_contingency
 from math import sqrt
@@ -25,7 +22,6 @@ from lime import lime_tabular as limtab
 # bug in sk-learn. Should be fixed in August
 import warnings
 warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
-
 
 def do_tuning(X, y, grid = None, random_state=123, save_path = None):
     if grid is None:
@@ -59,8 +55,7 @@ def do_tuning(X, y, grid = None, random_state=123, save_path = None):
     best_params = {k: int(v) if k not in ('score', 'fitting_time') else v for k, v in best_grid.items()}
 
     if save_path is not None:
-        if not pth(save_path).is_dir():
-            mkdir(save_path)
+        if_nexists_make_dir(save_path)
         with open(save_path + 'best_params_rndst_' + str(random_state) + '.json', 'w') as outfile:
             json.dump(best_params, outfile)
 
@@ -131,13 +126,106 @@ def evaluate_model(prediction_model, X, y, class_names=None, plot_cm=True, plot_
                               title='Normalized confusion matrix')
     return(cm, acc, coka, prfs)
 
-def forest_survey(f_walker, X, y):
+# def forest_survey(f_walker, X, y):
+#
+#     if f_walker.encoder is not None:
+#         X = f_walker.encoder.transform(X)
+#
+#     f_walker.full_survey(X, y)
+#     return(f_walker.forest_stats(np.unique(y)))
 
-    if f_walker.encoder is not None:
-        X = f_walker.encoder.transform(X)
+def CHIRPS_explain(bpc, # batch_paths_container
+                    data_container, encoder, pred_model,
+                    sample_instances, sample_labels,
+                    support_paths=0.1, alpha_paths=0.5,
+                    disc_path_bins=4, disc_path_eqcounts=False,
+                    alpha_scores=0.5, which_trees='majority',
+                    precis_threshold=0.95, weighting='chisq',
+                    algorithm='greedy_prec', chirps_explanation_async=False):
 
-    f_walker.full_survey(X, y)
-    return(f_walker.forest_stats(np.unique(y)))
+    # convenience function to orient the top level
+    # a bit like reshaping an array
+    # reason: rf paths quickly extracted per tree for all instances
+    # so when constructed, this structure is oriented by tree
+    # and we would like to easily iterate by instance
+    if bpc.by_tree:
+        bpc.flip()
+    n_instances = len(bpc.path_detail)
+
+    # initialise a list for the results
+    completed_rule_accs = [[]] * n_instances
+
+    print('Running CHIRPS on batch of ' + str(n_instances) + ' instances... (please wait)')
+    # start a timer
+    ce_start_time = timeit.default_timer()
+
+    # generate the explanations
+    if chirps_explanation_async:
+
+        # start another timer
+        chp_start_time = timeit.default_timer()
+        async_out = []
+        n_cores = mp.cpu_count()-1
+        pool = mp.Pool(processes=n_cores)
+
+        # loop for each instance
+        for i in range(n_instances):
+
+            # extract the current instance paths container for freq patt mining
+            # filtering by the chosen set of trees - default: majority voting
+            ipc = bpc.get_instance_paths(i, which_trees=which_trees)
+
+            # run the chirps process on each instance paths
+            async_out.append(pool.apply_async(as_chirps,
+                (ipc, data_container,
+                sample_instances, sample_labels,
+                encoder, pred_model,
+                support_paths, alpha_paths,
+                disc_path_bins, disc_path_eqcounts,
+                which_trees, weighting,
+                algorithm, precis_threshold,
+                i)
+            ))
+
+        # block and collect the pool
+        pool.close()
+        pool.join()
+
+        # get the async results and sort to ensure original batch index order and remove batch index
+        ce = [async_out[j].get() for j in range(len(async_out))]
+        ce.sort()
+        for i in range(n_instances):
+            completed_rule_accs[i] = [ce[i][1]] # embed object in list
+
+        ce_end_time = timeit.default_timer()
+        ce_elapsed_time = ce_end_time - ce_start_time
+
+    else:
+        for i in range(n_instances):
+            # filtering by the chosen set of trees - default: majority voting
+            ipc = bpc.get_instance_paths(i, which_trees=which_trees)
+
+
+            # run the chirps process on each instance paths
+            _, completed_rule_acc = \
+                as_chirps(ipc, data_container,
+                sample_instances, sample_labels,
+                encoder, pred_model,
+                support_paths, alpha_paths,
+                disc_path_bins, disc_path_eqcounts,
+                which_trees, weighting,
+                algorithm, precis_threshold,
+                i)
+
+            # add the finished rule accumulator to the results
+            completed_rule_accs[i] = [completed_rule_acc]
+
+        ce_end_time = timeit.default_timer()
+        ce_elapsed_time = ce_end_time - ce_start_time
+    print('CHIRPS time elapsed:', "{:0.4f}".format(ce_elapsed_time), 'seconds')
+    print('CHIRPS with async = ' + str(chirps_explanation_async))
+
+    return(completed_rule_accs)
 
 def CHIRPS_explanation(f_walker, getter,
  data_container, encoder, sample_instances, sample_labels,

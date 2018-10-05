@@ -5,4 +5,4 @@ if sys.platform == 'win32':
 else:
     path_sep = '/'
 
-project_dir = 'whiteboxing'
+project_dir = 'CHIRPS'

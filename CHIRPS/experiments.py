@@ -5,10 +5,10 @@ import pickle
 import numpy as np
 from pandas import DataFrame, Series
 import multiprocessing as mp
-from forest_surveyor import p_count, p_count_corrected
-import forest_surveyor.datasets as ds
-from forest_surveyor.structures import forest_walker, batch_getter, rule_tester, loo_encoder
-from forest_surveyor.routines import tune_rf, train_rf, evaluate_model, CHIRPS_explanation, anchors_preproc, anchors_explanation
+from CHIRPS import p_count, p_count_corrected
+import CHIRPS.datasets as ds
+from CHIRPS.structures import forest_walker, batch_getter, rule_tester, loo_encoder
+from CHIRPS.routines import tune_rf, train_rf, evaluate_model, CHIRPS_explanation, anchors_preproc, anchors_explanation
 from scipy.stats import chi2_contingency
 from math import sqrt
 from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support, accuracy_score

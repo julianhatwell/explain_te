@@ -1,5 +1,5 @@
 import numpy as np
-from forest_surveyor import p_count, p_count_corrected
+from CHIRPS import p_count, p_count_corrected
 from collections import deque
 from scipy import sparse
 

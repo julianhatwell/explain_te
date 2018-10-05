@@ -2,7 +2,7 @@ import sys
 import math
 import multiprocessing as mp
 import numpy as np
-from forest_surveyor import p_count, p_count_corrected
+from CHIRPS import p_count, p_count_corrected, if_nexists_make_dir
 from pandas import DataFrame, Series
 from pyfpgrowth import find_frequent_patterns
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
@@ -14,8 +14,8 @@ from operator import itemgetter
 from itertools import chain
 from copy import deepcopy
 from scipy.stats import chi2_contingency
-from forest_surveyor import config as cfg
-from forest_surveyor.async_structures import as_tree_walk
+from CHIRPS import config as cfg
+from CHIRPS.async_structures import as_tree_walk
 
 # global function for setting a default seed
 class non_deterministic:
@@ -47,7 +47,8 @@ class data_split_container:
 
     def __init__(self, X_train, X_train_enc, X_test,
                 y_train, y_test, encoder,
-                train_priors, test_priors):
+                train_priors, test_priors,
+                train_index=None, test_index=None):
         self.X_train = X_train
         self.X_train_enc = X_train_enc
         self.X_test = X_test
@@ -56,6 +57,14 @@ class data_split_container:
         self.encoder = encoder
         self.train_priors = train_priors
         self.test_priors = test_priors
+        if train_index is None:
+            self.train_index = X_train.index
+        else:
+            self.train_index = train_index
+        if test_index is None:
+            self.test_index = X_test.index
+        else:
+            self.test_index = test_index
 
     def to_dict(self):
         return({'X_train': self.X_train,
@@ -65,7 +74,29 @@ class data_split_container:
             'y_test' : self.y_test,
             'encoder' : self.encoder,
             'train_priors' : self.train_priors,
-            'test_priors' : self.test_priors})
+            'test_priors' : self.test_priors,
+            'train_index' : self.train_index,
+            'test_index' : self.test_index})
+
+    def indexes_to_csv(self, save_path = ''):
+        if_nexists_make_dir(save_path)
+        Series(self.train_index).to_csv(path = save_path + 'train_index.csv', index=False)
+        Series(self.test_index).to_csv(path = save_path + 'test_index.csv', index=False)
+
+    def data_to_csv(self, save_path = '', encoded_features = None):
+        if_nexists_make_dir(save_path)
+        self.X_train.to_csv(path_or_buf = save_path + 'X_train.csv')
+        if encoded_features:
+            DataFrame(self.X_train_enc.todense(),
+                    columns=encoded_features).to_csv(
+                                                    path_or_buf = save_path + 'X_train_enc.csv')
+        self.y_train.to_csv(path = save_path + 'y_train.csv')
+        self.X_test.to_csv(path_or_buf = save_path + 'X_test.csv')
+        self.y_test.to_csv(path = save_path + 'y_test.csv')
+
+    def to_csv(self, save_path = '', encoded_features = None):
+        self.data_to_csv(save_path = save_path, encoded_features = encoded_features)
+        self.indexes_to_csv(save_path = save_path)
 
     def test_train_split(self): # behave as scikit-learn
         return(self.X_train, self.X_test, self.y_train, self.y_test)
@@ -390,7 +421,7 @@ class batch_paths_container:
     def __init__(self
     , path_detail
     , by_tree):
-        self.by_tree = by_tree
+        self.by_tree = by_tree # given as initial state, not used to reshape on construction. use flip() if necessary
         self.path_detail = path_detail
 
     def flip(self):
@@ -469,8 +500,7 @@ class forest_walker:
     def __init__(self
     , forest
     , data_container
-    , encoder = None
-    , prediction_model = None):
+    , encoder = None):
         self.forest = forest
         self.features = data_container.onehot_features
         self.n_features = len(self.features)
@@ -482,9 +512,6 @@ class forest_walker:
             self.class_names = data_container.class_names
             self.get_label = None
         self.encoder = encoder
-        if prediction_model is None:
-            self.prediction_model = forest
-        else: self.prediction_model = prediction_model
 
         # base counts for all trees
         self.root_features = np.zeros(len(self.features)) # set up a 1d feature array to count features appearing as root nodes
@@ -516,8 +543,11 @@ class forest_walker:
 
     def full_survey(self
         , instances
-        , labels):
+        , labels
+        , encode_instances = True):
 
+        if encode_instances and self.encoder is not None:
+            instances = self.encoder.transform(instances)
         self.instances = instances
         self.labels = labels
         self.n_instances = instances.shape[0]
@@ -752,7 +782,7 @@ class forest_walker:
                                                 tree_pred_proba, tree_correct,
                                                 feature, threshold, path, features)
 
-        return(batch_paths_container(tree_paths, True))
+        return(batch_paths_container(tree_paths, by_tree=True))
 
 class batch_getter:
 
@@ -1155,7 +1185,7 @@ class rule_accumulator(rule_evaluator):
                         , precis_threshold = 1.0
                         , fixed_length = None
                         , target_class=None
-                        , greedy=None
+                        , algorithm=None
                         , bootstrap=False
                         , random_state=None):
 
@@ -1248,20 +1278,20 @@ class rule_accumulator(rule_evaluator):
             # choosing from a range of possible metrics and learning improvement
             # possible to introduce annealing?
             # e.g if there was no change, or an decrease in precis
-            if greedy is not None:
-                if greedy == 'precision':
+            if algorithm is not None:
+                if algorithm == 'greedy_prec':
                     current = eval_rule['post'][np.where(eval_rule['labels'] == self.target_class)]
                     previous = list(reversed(self.pri_and_post))[0][np.where(eval_rule['labels'] == self.target_class)]
                     should_continue = self.__greedy_commit__(current, previous)
-                elif greedy == 'f1':
+                elif algorithm == 'greedy_f1':
                     current = eval_rule['f1'][np.where(eval_rule['labels'] == self.target_class)]
                     previous = list(reversed(self.pri_and_post_f1))[0][np.where(eval_rule['labels'] == self.target_class)]
                     should_continue = self.__greedy_commit__(current, previous)
-                elif greedy == 'accuracy':
+                elif algorithm == 'greedy_acc':
                     current = eval_rule['accuracy'][np.where(eval_rule['labels'] == self.target_class)]
                     previous = list(reversed(self.pri_and_post_accuracy))[0][np.where(eval_rule['labels'] == self.target_class)]
                     should_continue = self.__greedy_commit__(current, previous)
-                elif greedy == 'chi2':
+                elif algorithm == 'chi2':
                     previous_counts = list(reversed(self.pri_and_post_counts))[0]
                     observed = np.array((eval_rule['counts'], previous_counts))
                     if eval_rule['counts'].sum() == 0: # previous_counts.sum() == 0 is impossible

@@ -1,4 +1,6 @@
 import numpy as np
+from pathlib import Path as pth
+from os import makedirs as mkdir
 
 # helper function determines if we're in a jup notebook
 def in_ipynb():
@@ -35,3 +37,8 @@ def p_count_corrected(arr, classes):
     return({'labels' : classes,
     'counts' : c,
     'p_counts' : pc})
+
+# create a directory if doesn't exist
+def if_nexists_make_dir(save_path):
+    if not pth(save_path).is_dir():
+        mkdir(save_path)

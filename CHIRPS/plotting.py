@@ -1,4 +1,4 @@
-from forest_surveyor import in_ipynb
+from CHIRPS import in_ipynb
 import matplotlib as mpl
 if not in_ipynb():
     mpl.use('TkAgg')

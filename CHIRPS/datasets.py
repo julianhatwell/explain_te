@@ -2,14 +2,14 @@ import urllib
 import numpy as np
 import pandas as pd
 
-from forest_surveyor import config as cfg
-from forest_surveyor.structures import data_container
+from CHIRPS import config as cfg
+from CHIRPS.structures import data_container
 
 # accident
 def accident_data(random_state=123, project_dir=None):
 
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident.csv.gz',
                         compression='gzip'),
     class_col = 'Accident_Severity',
     project_dir = project_dir,
@@ -37,7 +37,7 @@ def accident_data(random_state=123, project_dir=None):
 def accident_samp_data(random_state=123, project_dir=None):
 
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident_samp.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident_samp.csv.gz',
                         compression='gzip'),
     class_col = 'Accident_Severity',
     project_dir = project_dir,
@@ -65,7 +65,7 @@ def accident_samp_data(random_state=123, project_dir=None):
 def accident_small_samp_data(random_state=123, project_dir=None):
 
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident_small_samp.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident_small_samp.csv.gz',
                         compression='gzip'),
     class_col = 'Accident_Severity',
     project_dir = project_dir,
@@ -92,7 +92,7 @@ def accident_small_samp_data(random_state=123, project_dir=None):
 # adult
 def adult_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult.csv.gz',
                         compression='gzip'),
     class_col = 'income',
     project_dir = project_dir,
@@ -122,7 +122,7 @@ def adult_data(random_state=123, project_dir=None):
 # adult sample: 0.25
 def adult_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult_samp.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult_samp.csv.gz',
                         compression='gzip'),
     class_col = 'income',
     project_dir = project_dir,
@@ -152,7 +152,7 @@ def adult_samp_data(random_state=123, project_dir=None):
 # adult sample: 0.025
 def adult_small_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult_small_samp.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult_small_samp.csv.gz',
                         compression='gzip'),
     class_col = 'income',
     project_dir = project_dir,
@@ -205,7 +205,7 @@ def bankmark_data(random_state=123, project_dir=None):
      'y': object}
 
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'bankmark.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'bankmark.csv.gz',
                         compression='gzip',
                         dtype=vtypes),
     class_col = 'y',
@@ -285,7 +285,7 @@ def bankmark_samp_data(random_state=123, project_dir=None):
      'y': object}
 
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'bankmark_samp.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'bankmark_samp.csv.gz',
                         compression='gzip',
                         dtype=vtypes),
     class_col = 'y',
@@ -342,7 +342,7 @@ def bankmark_samp_data(random_state=123, project_dir=None):
 # car
 def car_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'car.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'car.csv.gz',
                         compression='gzip'),
     class_col = 'acceptability',
     var_names = ['buying'
@@ -373,7 +373,7 @@ def car_data(random_state=123, project_dir=None):
 # cardio
 def cardio_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cardio.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cardio.csv.gz',
                         compression='gzip'),
     class_col = 'NSP',
     project_dir = project_dir,
@@ -414,7 +414,7 @@ def cardio_data(random_state=123, project_dir=None):
 # credit
 def credit_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'credit.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'credit.csv.gz',
                     compression='gzip'),
     class_col = 'A16',
     project_dir = project_dir,
@@ -452,7 +452,7 @@ def credit_data(random_state=123, project_dir=None):
 # german
 def german_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'german.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'german.csv.gz',
                     compression='gzip'),
     class_col = 'rating',
     save_dir = 'german',
@@ -488,7 +488,7 @@ def german_data(random_state=123, project_dir=None):
 # lending
 def lending_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending.csv.gz',
                     compression='gzip'),
     class_col = 'loan_status',
     project_dir = project_dir,
@@ -509,7 +509,7 @@ def lending_data(random_state=123, project_dir=None):
 # lending sample: 0.1
 def lending_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_samp.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_samp.csv.gz',
                     compression='gzip'),
     class_col = 'loan_status',
     project_dir = project_dir,
@@ -530,7 +530,7 @@ def lending_samp_data(random_state=123, project_dir=None):
 # lending small sample: 0.01
 def lending_small_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_small_samp.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_small_samp.csv.gz',
                     compression='gzip'),
     class_col = 'loan_status',
     project_dir = project_dir,
@@ -551,7 +551,7 @@ def lending_small_samp_data(random_state=123, project_dir=None):
 # lending tiny sample: 0.0025
 def lending_tiny_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_tiny_samp.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_tiny_samp.csv.gz',
                     compression='gzip'),
     class_col = 'loan_status',
     project_dir = project_dir,
@@ -572,7 +572,7 @@ def lending_tiny_samp_data(random_state=123, project_dir=None):
 # nursery
 def nursery_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery.csv.gz',
                     compression='gzip'),
     class_col = 'decision',
     project_dir = project_dir,
@@ -598,7 +598,7 @@ def nursery_data(random_state=123, project_dir=None):
 # nursery sample: 0.2
 def nursery_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery_samp.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery_samp.csv.gz',
                     compression='gzip'),
     class_col = 'decision',
     project_dir = project_dir,
@@ -624,7 +624,7 @@ def nursery_samp_data(random_state=123, project_dir=None):
 # rcdv
 def rcdv_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'rcdv.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'rcdv.csv.gz',
                     compression='gzip'),
     class_col = 'recid',
     project_dir = project_dir,
@@ -678,7 +678,7 @@ def rcdv_data(random_state=123, project_dir=None):
 # rcdv sample: 0.1
 def rcdv_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'rcdv_samp.csv.gz',
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'rcdv_samp.csv.gz',
                     compression='gzip'),
     class_col = 'recid',
     project_dir = project_dir,
