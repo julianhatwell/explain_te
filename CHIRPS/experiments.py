@@ -7,7 +7,7 @@ from pandas import DataFrame, Series
 import multiprocessing as mp
 from CHIRPS import p_count, p_count_corrected
 import CHIRPS.datasets as ds
-from CHIRPS.structures import forest_walker, batch_getter, rule_tester, loo_encoder
+from CHIRPS.structures import forest_walker
 from CHIRPS.routines import tune_rf, train_rf, evaluate_model, CHIRPS_explanation, anchors_preproc, anchors_explanation
 from scipy.stats import chi2_contingency
 from math import sqrt
@@ -41,7 +41,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
     #####################################################
 
     best_params = tune_rf(tt['X_train_enc'], tt['y_train'],
-     save_path = mydata.pickle_path(),
+     save_path = mydata.make_save_path(),
      random_state=mydata.random_state,
      override_tuning=override_tuning)
 
@@ -83,7 +83,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
     wb_start_time = timeit.default_timer()
 
     # collect completed rule_acc_lite objects for the whole batch
-    completed_rule_accs, result_sets = CHIRPS_explanation(f_walker=f_walker,
+    explainers, result_sets = CHIRPS_explanation(f_walker=f_walker,
      getter=getter,
      data_container=mydata,
      encoder=tt['encoder'],
@@ -119,7 +119,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
                 'precision(tt)', 'recall(tt)', 'f1(tt)',
                 'accuracy(tt)', 'lift(tt)',
                 'total coverage(tt)', 'model_acc', 'model_ck']
-    output = [[]] * len(completed_rule_accs) * len(result_sets)
+    output = [[]] * len(explainers) * len(result_sets)
 
     # get all the label predictions done
     predictor = rule_tester(data_container=mydata,
@@ -131,26 +131,26 @@ def experiment(grid_idx, dataset, random_state, add_trees,
 
     # iterate over all the test instances to determine the various scores using leave-one-out testing
     print('evaluating found explanations')
-    for i in range(len(completed_rule_accs)):
+    for i in range(len(explainers)):
         # these are the same for a whole result set
-        instance_id = completed_rule_accs[i][0].instance_id
-        mc = completed_rule_accs[i][0].major_class
-        mc_lab = completed_rule_accs[i][0].major_class_label
-        tc = completed_rule_accs[i][0].target_class
-        tc_lab = completed_rule_accs[i][0].target_class_label
-        vt = completed_rule_accs[i][0].model_votes['counts'][tc]
-        mvs = completed_rule_accs[i][0].model_post[tc]
-        prior = completed_rule_accs[i][0].pri_and_post[0][tc]
+        instance_id = explainers[i][0].instance_id
+        mc = explainers[i][0].major_class
+        mc_lab = explainers[i][0].major_class_label
+        tc = explainers[i][0].target_class
+        tc_lab = explainers[i][0].target_class_label
+        vt = explainers[i][0].model_votes['counts'][tc]
+        mvs = explainers[i][0].model_post[tc]
+        prior = explainers[i][0].posterior[0][tc]
         for j, rs in enumerate(result_sets):
-            rule = completed_rule_accs[i][j].pruned_rule
+            rule = explainers[i][j].pruned_rule
             pretty_rule = mydata.pretty_rule(rule)
             rule_len = len(rule)
-            tr_prec = list(reversed(completed_rule_accs[i][j].pri_and_post))[0][tc]
-            tr_recall = list(reversed(completed_rule_accs[i][j].pri_and_post_recall))[0][tc]
-            tr_f1 = list(reversed(completed_rule_accs[i][j].pri_and_post_f1))[0][tc]
-            tr_acc = list(reversed(completed_rule_accs[i][j].pri_and_post_accuracy))[0][tc]
-            tr_lift = list(reversed(completed_rule_accs[i][j].pri_and_post_lift))[0][tc]
-            tr_coverage = list(reversed(completed_rule_accs[i][j].coverage))[0]
+            tr_prec = list(reversed(explainers[i][j].posterior))[0][tc]
+            tr_recall = list(reversed(explainers[i][j].recall))[0][tc]
+            tr_f1 = list(reversed(explainers[i][j].f1))[0][tc]
+            tr_acc = list(reversed(explainers[i][j].accuracy))[0][tc]
+            tr_lift = list(reversed(explainers[i][j].lift))[0][tc]
+            tr_coverage = list(reversed(explainers[i][j].coverage))[0]
 
             # get test sample ready by leave-one-out then evaluating
             instances, enc_instances, labels = looe.loo_encode(instance_id)
@@ -167,7 +167,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
             tt_lift = eval_rule['lift'][tc]
             tt_coverage = eval_rule['coverage']
 
-            output[j * len(completed_rule_accs) + i] = [instance_id,
+            output[j * len(explainers) + i] = [instance_id,
                     rs,
                     pretty_rule,
                     rule_len,
@@ -205,7 +205,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
         # collect timings
         anch_start_time = timeit.default_timer()
         instance_ids = tt['X_test'].index.tolist() # record of row indices will be lost after preproc
-        mydata, tt, explainer = anchors_preproc(dataset, random_state, iv_low, iv_high)
+        mydata, tt, explanation = anchors_preproc(dataset, random_state, iv_low, iv_high)
 
         rf, enc_rf = train_rf(tt['X_train_enc'], y=tt['y_train'],
         best_params=best_params,
@@ -228,9 +228,9 @@ def experiment(grid_idx, dataset, random_state, add_trees,
             instance_id = instance_ids[i]
             if i % 10 == 0: print('Working on Anchors for instance ' + str(instance_id))
             instance = tt['X_test'][i]
-            exp = anchors_explanation(instance, explainer, rf, threshold=precis_threshold)
+            exp = anchors_explanation(instance, explanation, rf, threshold=precis_threshold)
             # capture the explainer
-            completed_rule_accs[i].append(exp)
+            explainers[i].append(exp)
 
             # Get test examples where the anchor applies
             fit_anchor_train = np.where(np.all(tt['X_train'][:, exp.features()] == instance[exp.features()], axis=1))[0]
@@ -359,12 +359,12 @@ def experiment(grid_idx, dataset, random_state, add_trees,
 
     # save the tabular results to a file
     output_df = DataFrame(output, columns=headers)
-    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(mydata.random_state) + "_addt_" + str(add_trees) + '_timetest.csv'))
+    output_df.to_csv(mydata.make_save_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(mydata.random_state) + "_addt_" + str(add_trees) + '_timetest.csv'))
     # save the full rule_acc_lite objects
     if save_rule_accs:
-        completed_rule_accs_store = open(mydata.pickle_path('completed_rule_accs' + '_rnst_' + str(mydata.random_state) + "_addt_" + str(add_trees) + '.pickle'), "wb")
-        pickle.dump(completed_rule_accs, completed_rule_accs_store)
-        completed_rule_accs_store.close()
+        explainers_store = open(mydata.make_save_path('explainers' + '_rnst_' + str(mydata.random_state) + "_addt_" + str(add_trees) + '.pickle'), "wb")
+        pickle.dump(explainers, explainers_store)
+        explainers_store.close()
 
     print('Completed experiment for ' + str(dataset) + ':')
     print('random_state ' + str(mydata.random_state) + ' and ' +str(add_trees) + ' additional trees')

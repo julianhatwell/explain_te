@@ -7,34 +7,13 @@ from pandas import DataFrame, Series
 from pyfpgrowth import find_frequent_patterns
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.model_selection import train_test_split
-from collections import deque, defaultdict
 from scipy import sparse
-from scipy.stats import sem, entropy
+from scipy.stats import sem
 from operator import itemgetter
 from itertools import chain
-from copy import deepcopy
 from scipy.stats import chi2_contingency
 from CHIRPS import config as cfg
-from CHIRPS.async_structures import as_tree_walk
-
-# global function for setting a default seed
-class non_deterministic:
-
-    def __init__(self, random_state=None):
-        if random_state is None:
-            self.random_state = 123
-        else:
-            self.random_state = random_state
-
-    def set_random_state(self, random_state=None):
-        if random_state is not None:
-            self.random_state = random_state
-
-    def default_if_none_random_state(self, random_state=None):
-        if random_state is None:
-            return(self.random_state)
-        else:
-            return(random_state)
+from CHIRPS.async_structures import *
 
 class default_encoder:
 
@@ -45,18 +24,27 @@ class default_encoder:
 
 class data_split_container:
 
-    def __init__(self, X_train, X_train_enc, X_test,
-                y_train, y_test, encoder,
+    def __init__(self, X_train, X_train_enc,
+                X_test, X_test_enc,
+                y_train, y_test,
                 train_priors, test_priors,
                 train_index=None, test_index=None):
         self.X_train = X_train
         self.X_train_enc = X_train_enc
+        self.X_test_enc = X_test_enc
         self.X_test = X_test
         self.y_train = y_train
         self.y_test = y_test
-        self.encoder = encoder
         self.train_priors = train_priors
         self.test_priors = test_priors
+
+        self.X_train_matrix = np.matrix(X_train)
+        self.X_test_matrix = np.matrix(X_test)
+
+        to_mat = lambda x : x.todense() if isinstance(x, sparse.csr.csr_matrix) else x
+        self.X_train_enc_matrix = to_mat(X_train_enc)
+        self.X_train_enc_matrix = to_mat(X_train_enc)
+
         if train_index is None:
             self.train_index = X_train.index
         else:
@@ -65,11 +53,41 @@ class data_split_container:
             self.test_index = X_test.index
         else:
             self.test_index = test_index
+        self.current_row_train = 0
+        self.current_row_test = 0
+
+    def get_next(self, batch_size = 1, encoded=False, which_split='train'):
+        if which_split == 'train':
+            instances = self.X_train[self.current_row_train:self.current_row_train + batch_size]
+            instances_enc = self.X_train_enc[self.current_row_train:self.current_row_train + batch_size]
+            instances_enc_matrix = self.X_train_enc_matrix[self.current_row_train:self.current_row_train + batch_size]
+            labels = self.y_train[self.current_row_train:self.current_row_train + batch_size]
+            self.current_row_train += batch_size
+        else:
+            instances = self.X_test[self.current_row_test:self.current_row_test + batch_size]
+            instances_enc = self.X_test_enc[self.current_row_test:self.current_row_test + batch_size]
+            instances_enc_matrix = self.X_test_enc[self.current_row_test:self.current_row_test + batch_size]
+            labels = self.y_test[self.current_row_test:self.current_row_test + batch_size]
+            self.current_row_test += batch_size
+        return(instances, instances_enc, instances_enc_matrix, labels)
+
+    # leave one out by instance_id and encode the rest
+    def get_loo_instances(self, instance_id, encoded=False, which_split='test'):
+        if which_split == 'train':
+            instances = self.X_train.drop(instance_id)
+            instances_enc = self.X_train_enc.drop(instance_id)
+            labels = self.y_train.drop(instance_id)
+        else:
+            instances = self.X_test.drop(instance_id)
+            instances_enc = self.X_test_enc.drop(instance_id)
+            labels = self.y_test.drop(instance_id)
+        return(instances, instances_enc, labels)
 
     def to_dict(self):
         return({'X_train': self.X_train,
             'X_train_enc' : self.X_train_enc,
             'X_test' : self.X_test,
+            'X_test_enc' : self.X_test_enc,
             'y_train' : self.y_train,
             'y_test' : self.y_test,
             'encoder' : self.encoder,
@@ -90,6 +108,9 @@ class data_split_container:
             DataFrame(self.X_train_enc.todense(),
                     columns=encoded_features).to_csv(
                                                     path_or_buf = save_path + 'X_train_enc.csv')
+            DataFrame(self.X_test_enc.todense(),
+                    columns=encoded_features).to_csv(
+                                                    path_or_buf = save_path + 'X_test_enc.csv')
         self.y_train.to_csv(path = save_path + 'y_train.csv')
         self.X_test.to_csv(path_or_buf = save_path + 'X_test.csv')
         self.y_test.to_csv(path = save_path + 'y_test.csv')
@@ -194,7 +215,7 @@ class data_container(non_deterministic):
             self.encoder = default_encoder
 
     # helper function for pickling files
-    def get_save_path(self, filename = ''):
+    def make_save_path(self, filename = ''):
         if len(self.project_dir) > 0:
             return(self.project_dir + cfg.path_sep + self.save_dir + cfg.path_sep + filename)
         else:
@@ -238,95 +259,45 @@ class data_container(non_deterministic):
 
         return(train_idx, test_idx)
 
-    def tt_split_by_idx(self, train_index, test_index):
+    def tt_split(self, train_index=None, test_index=None, test_size=0.3, random_state=None):
 
         # data in readiness
         X, y = self.data_pre[self.features], self.data_pre[self.class_col]
 
-        # perform the split
-        X_test = X.loc[test_index]
-        y_test = y.loc[test_index]
-        X_train = X.loc[train_index]
-        y_train = y.loc[train_index]
+        # determine which method to use
+        if train_index is None or test_index is None:
+            # use scikit
+            # common default setting: see class non_deterministic
+            random_state = self.default_if_none_random_state(random_state)
+            X, y = self.data_pre[self.features], self.data_pre[self.class_col]
 
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
+
+        else:
+            # use given indices
+            X_test = X.loc[test_index]
+            y_test = y.loc[test_index]
+            X_train = X.loc[train_index]
+            y_train = y.loc[train_index]
+
+        # determine the priors for each split
         train_priors = y_train.value_counts().sort_index()/len(y_train)
         test_priors = y_test.value_counts().sort_index()/len(y_test)
 
+        # create an encoded copy
         X_train_enc = self.encoder.transform(X_train)
+        X_test_enc = self.encoder.transform(X_test)
 
         tt = data_split_container(X_train = X_train,
         X_train_enc = X_train_enc,
         X_test = X_test,
+        X_test_enc = X_test_enc,
         y_train = y_train,
         y_test = y_test,
-        encoder = self.encoder,
         train_priors = train_priors,
         test_priors = test_priors)
 
         return(tt)
-
-    # train test splitting
-    def tt_split_by_sk(self, test_size=0.3, random_state=None):
-        # common default setting: see class non_deterministic
-        random_state = self.default_if_none_random_state(random_state)
-        X, y = self.data_pre[self.features], self.data_pre[self.class_col]
-
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
-
-        train_priors = y_train.value_counts().sort_index()/len(y_train)
-        test_priors = y_test.value_counts().sort_index()/len(y_test)
-
-        X_train_enc = self.encoder.transform(X_train)
-
-        tt = data_split_container(X_train = X_train,
-        X_train_enc = X_train_enc,
-        X_test = X_test,
-        y_train = y_train,
-        y_test = y_test,
-        encoder = self.encoder,
-        train_priors = train_priors,
-        test_priors = test_priors)
-
-        return(tt)
-
-    # def xval_split(self, iv_low, iv_high, test_index, random_state=None):
-    #     iv_high = int(iv_high)
-    #     iv_low = int(iv_low)
-    #     test_index = int(test_index)
-    #
-    #     if test_index >= iv_high or test_index < iv_low:
-    #         print('test_index out of range. Setting to lowest value in range (iv_low)')
-    #         test_index = iv_low
-    #
-    #     # common default setting: see class non_deterministic
-    #     random_state = self.default_if_none_random_state(random_state)
-    #
-    #     # generate an indexing vector
-    #     iv = np.random.RandomState(random_state).randint(low=iv_low, high=iv_high, size=np.shape(self.data_pre)[0])
-    #
-    #     # data in readiness
-    #     X, y = self.data_pre[self.features], self.data_pre[self.class_col]
-    #
-    #     # perform the split
-    #     X_test = X.iloc[iv == test_index]
-    #     y_test = y.iloc[iv == test_index]
-    #     X_train = X.iloc[iv != test_index]
-    #     y_train = y.iloc[iv != test_index]
-    #
-    #     train_priors = y_train.value_counts().sort_index()/len(y_train)
-    #     test_priors = y_test.value_counts().sort_index()/len(y_test)
-    #
-    #     X_train_enc = self.encoder.transform(X_train)
-    #
-    #     return({
-    #     'X_train': X_train,
-    #     'X_train_enc' : X_train_enc,
-    #     'X_test' : X_test,
-    #     'y_train' : y_train,
-    #     'y_test' : y_test,
-    #     'encoder' : self.encoder,
-    #     'train_priors' : train_priors,
-    #     'test_priors' : test_priors})
 
     def pretty_rule(self, rule):
         Tr_Fa = lambda x, y, z : x + ' True' if ~y else x + ' False'
@@ -342,12 +313,10 @@ class instance_paths_container:
     def __init__(self
     , paths
     , tree_preds
-    , patterns=None
-    , instance_id=None):
+    , patterns=None):
         self.paths = paths
         self.tree_preds = tree_preds
         self.patterns = patterns
-        self.instance_id = instance_id
 
     def discretize_paths(self, var_dict, bins=4, equal_counts=False):
         # check if bins is not numeric or can't be cast, then force equal width (equal_counts = False)
@@ -499,8 +468,7 @@ class forest_walker:
 
     def __init__(self
     , forest
-    , data_container
-    , encoder = None):
+    , data_container):
         self.forest = forest
         self.features = data_container.onehot_features
         self.n_features = len(self.features)
@@ -511,7 +479,6 @@ class forest_walker:
         else:
             self.class_names = data_container.class_names
             self.get_label = None
-        self.encoder = encoder
 
         # base counts for all trees
         self.root_features = np.zeros(len(self.features)) # set up a 1d feature array to count features appearing as root nodes
@@ -543,11 +510,8 @@ class forest_walker:
 
     def full_survey(self
         , instances
-        , labels
-        , encode_instances = True):
+        , labels):
 
-        if encode_instances and self.encoder is not None:
-            instances = self.encoder.transform(instances)
         self.instances = instances
         self.labels = labels
         self.n_instances = instances.shape[0]
@@ -722,23 +686,13 @@ class forest_walker:
 
         return(tree_pred, tree_pred_labels, tree_pred_proba, tree_correct, feature, threshold, path)
 
-    def forest_walk(self, instances, labels = None, async=False):
+    def forest_walk(self, instances, labels = None, forest_walk_async=False):
 
         features = self.features
         n_instances = instances.shape[0]
-        instance_ids = instances.index.tolist()
+        instance_ids = labels.index.tolist()
 
-        # encode features prior to sending into tree for path analysis
-        if self.encoder is None:
-            instances = np.matrix(instances)
-            n_features = instances.shape[1]
-        else:
-            instances = self.encoder.transform(instances)
-            if 'todense' in dir(instances): # it's a sparse matrix
-                instances = instances.todense()
-            n_features = instances.shape[1]
-
-        if async:
+        if forest_walk_async:
             async_out = []
             n_cores = mp.cpu_count()-1
             pool = mp.Pool(processes=n_cores)
@@ -784,580 +738,89 @@ class forest_walker:
 
         return(batch_paths_container(tree_paths, by_tree=True))
 
-class batch_getter:
+class CHIRPS_explainer:
 
-    def __init__(self, instances, labels):
-        self.instances = instances
-        self.labels = labels
-        self.current_row = 0
-
-    def get_next(self, batch_size = 1):
-        instances_out = self.instances[self.current_row:self.current_row + batch_size]
-        labels_out = self.labels[self.current_row:self.current_row + batch_size]
-        self.current_row += batch_size
-        return(instances_out, labels_out)
-
-class rule_acc_lite:
-
-    def __init__(self, instance_id, var_dict,
-                paths, patterns,
-                rule, pruned_rule, conjunction_rule,
-                target_class, target_class_label,
-                major_class, major_class_label,
-                model_votes, model_post,
-                coverage, precision, pri_and_post,
-                pri_and_post_accuracy,
-                pri_and_post_counts,
-                pri_and_post_recall,
-                pri_and_post_f1,
-                pri_and_post_lift):
-        self.instance_id = instance_id
-        self.var_dict = var_dict
-        self.paths = paths
-        self.patterns = patterns
-        self.rule = rule
-        self.pruned_rule = pruned_rule
-        self.conjunction_rule = conjunction_rule
-        self.target_class = target_class
-        self.target_class_label = target_class_label
-        self.major_class = major_class
-        self.major_class_label = major_class_label
-        self.model_votes = model_votes
-        self.model_post = model_post
-        self.coverage = coverage
-        self.precision = precision
-        self.pri_and_post = pri_and_post
-        self.pri_and_post_accuracy = pri_and_post_accuracy
-        self.pri_and_post_counts = pri_and_post_counts
-        self.pri_and_post_recall = pri_and_post_recall
-        self.pri_and_post_f1 = pri_and_post_f1
-        self.pri_and_post_lift = pri_and_post_lift
-
-    def to_dict(self):
-        return({'instance_id' : self.instance_id,
-        'var_dict' : self.var_dict,
-        'paths' : self.paths,
-        'patterns' : self.patterns,
-        'rule' : self.rule,
-        'pruned_rule' : self.pruned_rule,
-        'conjunction_rule' : self.conjunction_rule,
-        'target_class' :self.target_class,
-        'target_class_label' :self.target_class_label,
-        'major_class' : self.major_class,
-        'major_class_label' :self.major_class_label,
-        'model_votes' : self.model_votes,
-        'model_post' : self.model_post,
-        'coverage' : self.coverage,
-        'precision' : self.precision,
-        'pri_and_post' : self.pri_and_post,
-        'pri_and_post_accuracy' : self.pri_and_post_accuracy,
-        'pri_and_post_counts' : self.pri_and_post_counts,
-        'pri_and_post_recall' : self.pri_and_post_recall,
-        'pri_and_post_f1' : self.pri_and_post_f1,
-        'pri_and_post_lift' : self.pri_and_post_lift})
-
-    def to_dict(self):
-        return([self.instance_id, self.var_dict, self.paths, self.patterns,
-                self.rule, self.pruned_rule, self.conjunction_rule,
-                self.target_class, self.target_class_label,
-                self.major_class, self.major_class_label,
-                self.model_votes, self.model_votes,
-                self.coverage, self.precision, self.pri_and_post,
-                self.pri_and_post_accuracy,
-                self.pri_and_post_counts,
-                self.pri_and_post_recall,
-                self.pri_and_post_f1,
-                self.pri_and_post_lift])
-
-class loo_encoder:
-
-    def __init__(self, sample_instances, sample_labels, encoder=None):
+    def __init__(self, bp_container, # batch_paths_container
+                        data_container, forest,
+                        sample_instances, sample_labels):
+        self.bp_container = bp_container
+        self.data_container = data_container
+        self.forest = forest
         self.sample_instances = sample_instances
         self.sample_labels = sample_labels
-        if encoder is None:
-            self.encoder = default_encoder
+
+    def get_CHIRPS(self, support_paths=0.1, alpha_paths=0.5,
+                        disc_path_bins=4, disc_path_eqcounts=False,
+                        alpha_scores=0.5, which_trees='majority',
+                        precis_threshold=0.95, weighting='chisq',
+                        algorithm='greedy_prec', chirps_explanation_async=False):
+
+        # convenience function to orient the top level of bpc
+        # a bit like reshaping an array
+        # reason: rf paths quickly extracted per tree for all instances
+        # so when constructed, this structure is oriented by tree
+        # and we would like to easily iterate by instance
+        if self.bp_container.by_tree:
+            self.bp_container.flip()
+        n_instances = len(self.bp_container.path_detail)
+
+        # initialise a list for the results
+        explainers = [[]] * n_instances
+
+        # generate the explanations
+        if chirps_explanation_async:
+
+            async_out = []
+            n_cores = mp.cpu_count()-1
+            pool = mp.Pool(processes=n_cores)
+
+            # loop for each instance
+            for i in range(n_instances):
+
+                # extract the current instance paths container for freq patt mining
+                # filtering by the chosen set of trees - default: majority voting
+                ip_container = self.bp_container.get_instance_paths(i, which_trees=which_trees)
+
+                # run the chirps process on each instance paths
+                async_out.append(pool.apply_async(as_chirps,
+                    (ip_container, self.data_container,
+                    self.sample_instances, self.sample_labels,
+                    self.forest,
+                    support_paths, alpha_paths,
+                    disc_path_bins, disc_path_eqcounts,
+                    which_trees, weighting,
+                    algorithm, precis_threshold,
+                    i)
+                ))
+
+            # block and collect the pool
+            pool.close()
+            pool.join()
+
+            # get the async results and sort to ensure original batch index order and remove batch index
+            ce = [async_out[j].get() for j in range(len(async_out))]
+            ce.sort()
+            for i in range(n_instances):
+                explainers[i] = ce[i][1] # embed object in list
+
         else:
-            self.encoder = encoder
+            for i in range(n_instances):
+                # get the current individual_paths_container
+                # filtering by the chosen set of trees - default: majority voting
+                ip_container = self.bp_container.get_instance_paths(i, which_trees=which_trees)
 
-    # leave one out by instance_id and encode the rest
-    def loo_encode(self, instance_id):
-        instances = self.sample_instances.drop(instance_id)
-        labels = self.sample_labels.drop(instance_id)
-        enc_instances = self.encoder.transform(instances)
-        return(instances, enc_instances, labels)
+                # run the chirps process on each instance paths
+                _, explainer = \
+                    as_chirps(ip_container, self.data_container,
+                    self.sample_instances, self.sample_labels,
+                    self.forest,
+                    support_paths, alpha_paths,
+                    disc_path_bins, disc_path_eqcounts,
+                    which_trees, weighting,
+                    algorithm, precis_threshold,
+                    i)
 
-class rule_evaluator(non_deterministic):
+                # add the finished rule accumulator to the results
+                explainers[i] = explainer
 
-    def encode_pred(self, prediction_model, instances=None, bootstrap=False, random_state=None):
-        if instances is None:
-            pred_instances=self.sample_instances
-        else:
-            pred_instances=instances
-        # common default setting: see class non_deterministic
-        random_state = self.default_if_none_random_state(random_state)
-        if bootstrap:
-            pred_instances = pred_instances.sample(frac=1.0, replace=True, random_state=random_state)
-        pred_labels = Series(prediction_model.predict((pred_instances)), index=pred_instances.index)
-        return(pred_instances, pred_labels)
-
-    def apply_rule(self, rule=None, instances=None):
-        if rule is None:
-            rule = self.rule
-        if instances is None:
-            instances = self.sample_instances
-        lt_gt = lambda x, y, z : x < y if z else x > y # if z is True, x < y else x > y
-        idx = np.full(instances.shape[0], 1, dtype='bool')
-        for r in rule:
-            idx = np.logical_and(idx, lt_gt(instances.getcol(self.onehot_features.index(r[0])).toarray().flatten(), r[2], r[1]))
-        return(idx)
-
-    def evaluate_rule(self, rule=None, instances=None,
-                    labels=None, class_names=None):
-        if rule is None:
-            rule = self.rule
-        if instances is None:
-            instances = self.sample_instances
-        if labels is None:
-            labels = self.sample_labels
-        if labels is None:
-            print('Test labels are required for rule evaluation')
-            return()
-        if class_names is None:
-            class_names = self.class_names
-
-        idx = self.apply_rule(rule, instances)
-        coverage = idx.sum()/len(idx) # tp + fp / tp + fp + tn + fn
-
-        priors = p_count_corrected(labels, [i for i in range(len(class_names))])
-
-        p_counts = p_count_corrected(labels.iloc[idx], [i for i in range(len(class_names))]) # true positives
-        post = p_counts['p_counts']
-        p_corrected = np.array([p if p > 0.0 else 1.0 for p in post]) # to avoid div by zeros
-
-        counts = p_counts['counts']
-        labels = p_counts['labels']
-
-        observed = np.array((counts, priors['counts']))
-        if counts.sum() > 0: # previous_counts.sum() == 0 is impossible
-            chisq = chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)
-        else:
-            chisq = None
-
-        # class coverage, TPR (recall) TP / (TP + FN)
-        recall = counts / priors['counts']
-        r_corrected = np.array([r if r > 0.0 else 1.0 for r in recall]) # to avoid div by zeros
-        f1 = [2] * ((post * recall) / (p_corrected + r_corrected))
-
-        not_covered_counts = counts + (np.sum(priors['counts']) - priors['counts']) - (np.sum(counts) - counts)
-        # accuracy = (TP + TN) / num_instances formula: https://books.google.co.uk/books?id=ubzZDQAAQBAJ&pg=PR75&lpg=PR75&dq=rule+precision+and+coverage&source=bl&ots=Aa4Gj7fh5g&sig=6OsF3y4Kyk9KlN08OPQfkZCuZOc&hl=en&sa=X&ved=0ahUKEwjM06aW2brZAhWCIsAKHY5sA4kQ6AEIUjAE#v=onepage&q=rule%20precision%20and%20coverage&f=false
-        accu = not_covered_counts/priors['counts'].sum()
-
-        # to avoid div by zeros
-        pri_corrected = np.array([pri if pri > 0.0 else 1.0 for pri in priors['p_counts']])
-        pos_corrected = np.array([pos if pri > 0.0 else 0.0 for pri, pos in zip(priors['p_counts'], post)])
-        if counts.sum() == 0:
-            rec_corrected = np.array([0.0] * len(pos_corrected))
-            cov_corrected = np.array([1.0] * len(pos_corrected))
-        else:
-            rec_corrected = counts / counts.sum()
-            cov_corrected = np.array([counts.sum() / priors['counts'].sum()])
-
-        # lift = precis / (total_cover * prior)
-        lift = pos_corrected / ( ( cov_corrected ) * pri_corrected )
-
-        return({'coverage' : coverage,
-                'priors' : priors,
-                'post' : post,
-                'counts' : counts,
-                'labels' : labels,
-                'recall' : recall,
-                'f1' : f1,
-                'accuracy' : accu,
-                'lift' : lift,
-                'chisq' : chisq})
-
-class rule_tester(rule_evaluator):
-
-    def __init__(self, data_container, rule, sample_instances, sample_labels=None):
-        self.onehot_features = data_container.onehot_features
-        if data_container.class_col in data_container.le_dict.keys():
-            self.class_names = data_container.get_label(data_container.class_col, [i for i in range(len(data_container.class_names))])
-            self.get_label = data_container.get_label
-        else:
-            self.class_names = data_container.class_names
-            self.get_label = None
-        self.rule = rule
-        self.sample_instances = sample_instances
-        self.sample_labels = sample_labels
-        self.random_state = data_container.random_state
-
-class rule_accumulator(rule_evaluator):
-
-    def __init__(self, data_container, paths_container):
-
-        self.instance_id = paths_container.instance_id
-        self.random_state = data_container.random_state
-        self.onehot_features = data_container.onehot_features
-        self.onehot_dict = data_container.onehot_dict
-        self.var_dict = deepcopy(data_container.var_dict)
-        self.paths = paths_container.paths
-        self.patterns = paths_container.patterns
-        self.unapplied_rules = [i for i in range(len(self.patterns))]
-
-        self.class_col = data_container.class_col
-        if data_container.class_col in data_container.le_dict.keys():
-            self.class_names = data_container.get_label(data_container.class_col, [i for i in range(len(data_container.class_names))])
-            self.get_label = data_container.get_label
-        else:
-            self.class_names = data_container.class_names
-            self.get_label = None
-
-        self.model_votes = p_count_corrected(paths_container.tree_preds, self.class_names)
-
-        for item in self.var_dict:
-            if self.var_dict[item]['class_col']:
-                continue
-            else:
-                if self.var_dict[item]['data_type'] == 'nominal':
-                    n_labs = len(self.var_dict[item]['labels'])
-                else:
-                    n_labs = 1
-                self.var_dict[item]['upper_bound'] = [math.inf] * n_labs
-                self.var_dict[item]['lower_bound'] = [-math.inf] * n_labs
-        self.rule = []
-        self.pruned_rule = []
-        self.conjunction_rule = []
-        self.previous_rule = []
-        self.reverted = []
-        self.total_points = sum([scrs[2] for scrs in self.patterns])
-        self.accumulated_points = 0
-        self.encoder = None
-        self.sample_instances = None
-        self.sample_labels = None
-        self.n_instances = None
-        self.n_classes = None
-        self.target_class = None
-        self.target_class_label = None
-        self.major_class = None
-        self.model_entropy = None
-        self.model_info_gain = None
-        self.model_post = None
-        self.max_ent = None
-        self.coverage = None
-        self.precision = None
-        self.cum_info_gain = None
-        self.information_gain = None
-        self.prior_entropy = None
-        self.prior_info = None
-        self.pri_and_post = None
-        self.pri_and_post_accuracy = None
-        self.pri_and_post_counts = None
-        self.pri_and_post_recall = None
-        self.pri_and_post_f1 = None
-        self.pri_and_post_lift = None
-        self.isolation_pos = None
-        self.stopping_param = None
-        self.build_rule_iter = None
-
-    def add_rule(self, p_total = 0.1):
-        self.previous_rule = deepcopy(self.rule)
-        next_rule = self.patterns[self.unapplied_rules[0]]
-        for item in next_rule[0]:
-            if item in self.rule:
-                continue # skip duplicates (essential for pruning reasons)
-            if item[0] in self.onehot_dict: # binary feature
-                # update the master list
-                position = self.var_dict[self.onehot_dict[item[0]]]['onehot_labels'].index(item[0])
-                if item[1]: # leq_threshold True
-                    self.var_dict[self.onehot_dict[item[0]]]['upper_bound'][position] = item[2]
-                else:
-                    self.var_dict[self.onehot_dict[item[0]]]['lower_bound'][position] = item[2]
-                # append or update
-                self.rule.append(item)
-
-            else: # continuous feature
-                append_or_update = False
-                if item[1]: # leq_threshold True
-                    if item[2] <= self.var_dict[item[0]]['upper_bound'][0]:
-                        self.var_dict[item[0]]['upper_bound'][0] = item[2]
-                        append_or_update = True
-
-                else:
-                    if item[2] > self.var_dict[item[0]]['lower_bound'][0]:
-                        self.var_dict[item[0]]['lower_bound'][0] = item[2]
-                        append_or_update = True
-
-                if append_or_update:
-                    feature_appears = [(f, ) for (f, t, _) in self.rule]
-                    if (item[0],) in feature_appears:
-                        # print(item, 'feature appears already')
-                        valueless_rule = [(f, t) for (f, t, _) in self.rule]
-                        if (item[0], item[1]) in valueless_rule: # it's already there and needs updating
-                            # print(item, 'feature values appears already')
-                            self.rule[valueless_rule.index((item[0], item[1]))] = item
-                        else: # feature has been used at the opposite end (either lower or upper bound) and needs inserting
-                            # print(item, 'feature values with new discontinuity')
-                            self.rule.insert(feature_appears.index((item[0],)) + 1, item)
-                    else:
-                        # print(item, 'feature first added')
-                        self.rule.append(item)
-
-            # accumlate points from rule and tidy up
-            # remove the first item from unapplied_rules as it's just been applied or ignored for being out of range
-            self.accumulated_points += self.patterns[0][2]
-            del self.unapplied_rules[0]
-            # accumlate all the freq patts that are subsets of the current rules
-            # remove the index from the unapplied rules list (including the current rule just added)
-            to_remove = []
-            for ur in self.unapplied_rules:
-                # check if all items are already part of the rule (i.e. it's a subset)
-                if all([item in self.rule for item in self.patterns[ur][0]]):
-                    self.accumulated_points += self.patterns[ur][2]
-                    # collect up the values to remove. don't want to edit the iterator in progress
-                    to_remove.append(ur)
-            for rmv in reversed(to_remove):
-                self.unapplied_rules.remove(rmv)
-
-    def prune_rule(self):
-        # remove all other binary items if one Greater than is found.
-        gt_items = {} # find all the items with the leq_threshold False
-        for item in self.rule:
-            if ~item[1] and item[0] in self.onehot_dict: # item is greater than thresh and a nominal type
-                gt_items[self.onehot_dict[item[0]]] = item[0] # capture the parent feature and the feature value
-
-        gt_pruned_rule = []
-        for item in self.rule:
-            if item[0] in self.onehot_dict: # binary variable
-                if self.onehot_dict[item[0]] not in gt_items.keys():
-                    gt_pruned_rule.append(item)
-                elif ~item[1]:
-                    gt_pruned_rule.append(item)
-            else: # leave continuous as is
-                gt_pruned_rule.append(item)
-
-        # if all but one of a feature set is False, swap them out for the remaining value
-        # start by counting all the lt thresholds in each parent feature
-        lt_items = defaultdict(lambda: 0)
-        for item in gt_pruned_rule: # find all the items with the leq_threshold True
-            if item[1] and item[0] in self.onehot_dict: # item is less than thresh and a nominal type
-                lt_items[self.onehot_dict[item[0]]] += 1 # capture the parent feature and count each
-
-        # checking if just one other feature value remains unused
-        pruned_items = [item[0] for item in gt_pruned_rule]
-        for lt in dict(lt_items).keys():
-            n_categories = len([i for i in self.onehot_dict.values() if i == lt])
-            if n_categories - dict(lt_items)[lt] == 1:
-                # get the remaining value for this feature
-                lt_labels = self.var_dict[lt]['onehot_labels']
-                to_remove = [label for label in lt_labels if label in pruned_items]
-                remaining_value = [label for label in lt_labels if label not in pruned_items]
-
-                lt_pruned_rule = []
-                pos = -1
-                for rule in gt_pruned_rule:
-                    pos += 1
-                    if rule[0] not in to_remove:
-                        lt_pruned_rule.append(rule)
-                    else:
-                        # set the position of the last term of the parent feature
-                        insert_pos = pos
-                        pos -= 1
-                lt_pruned_rule.insert(insert_pos, (remaining_value[0], False, 0.5))
-                # the main rule is updated for passing through the loop again
-                gt_pruned_rule = lt_pruned_rule.copy()
-
-        self.pruned_rule = gt_pruned_rule
-
-        # find a rule with only binary True values
-        self.conjunction_rule = [r for r in self.pruned_rule if ~r[1]]
-
-    def __greedy_commit__(self, current, previous):
-        if current <= previous:
-            self.rule = deepcopy(self.previous_rule)
-            self.reverted.append(True)
-            return(True)
-        else:
-            self.reverted.append(False)
-            return(False)
-
-    def build_rule(self, encoder, sample_instances, sample_labels, prediction_model
-                        , stopping_param = 1
-                        , precis_threshold = 1.0
-                        , fixed_length = None
-                        , target_class=None
-                        , algorithm=None
-                        , bootstrap=False
-                        , random_state=None):
-
-        # basic setup
-        # common default setting: see class non_deterministic
-        random_state = self.default_if_none_random_state(random_state)
-        if stopping_param > 1 or stopping_param < 0:
-            stopping_param = 1
-            print('warning: stopping_param should be 0 <= p <= 1. Value was reset to 1')
-        self.stopping_param = stopping_param
-        self.encoder = encoder
-        self.sample_instances = sample_instances
-        self.sample_labels = sample_labels
-        self.n_classes = len(np.unique(self.sample_labels))
-        self.n_instances = len(self.sample_labels)
-
-        # model posterior
-        # model votes collected in constructor
-        self.model_post = self.model_votes['p_counts']
-
-        # model final entropy
-        self.model_entropy = entropy(self.model_post)
-
-        # model predicted class
-        self.major_class = np.argmax(self.model_post)
-        if self.get_label is None:
-            self.major_class_label = self.major_class
-        else:
-            self.major_class_label = self.get_label(self.class_col, self.major_class)
-
-        # this analysis
-        # target class
-        if target_class is None:
-            self.target_class = self.major_class
-            self.target_class_label = self.major_class_label
-        else:
-            self.target_class = target_class
-            if self.get_label is None:
-                self.target_class_label = self.target_class
-            else:
-                self.target_class_label = self.get_label(self.class_col, self.target_class)
-
-        # first get all the predictions from the model
-        pred_instances, pred_labels = self.encode_pred(prediction_model, sample_instances, bootstrap=bootstrap, random_state=random_state) # what the model would predict on the training sample
-
-        # prior - empty rule
-        p_counts = p_count_corrected(pred_labels.values, [i for i in range(len(self.class_names))])
-        self.pri_and_post = np.array([p_counts['p_counts'].tolist()])
-        self.pri_and_post_counts = np.array([p_counts['counts'].tolist()])
-        self.pri_and_post_recall = [np.full(self.n_classes, 1.0)] # counts / prior counts
-        self.pri_and_post_f1 =  [2] * ( ( self.pri_and_post * self.pri_and_post_recall ) / ( self.pri_and_post + self.pri_and_post_recall ) ) # 2 * (precis * recall/(precis + recall) )
-        self.pri_and_post_accuracy = np.array([p_counts['p_counts'].tolist()])
-        self.pri_and_post_lift = [np.full(self.n_classes, 1.0)] # precis / (total_cover * prior)
-        self.prior_entropy = entropy(self.pri_and_post_counts[0])
-
-        # info gain
-        self.max_ent = entropy([1 / self.n_classes] * self.n_classes)
-        self.model_info_gain = self.max_ent - self.model_entropy
-        self.prior_info = self.max_ent - self.prior_entropy
-
-        # pre-loop set up
-        # rule based measures - prior/empty rule
-        current_precision = p_counts['p_counts'][np.where(p_counts['labels'] == self.target_class)][0] # based on priors
-
-        self.coverage = [1.0]
-        self.precision = [current_precision]
-
-        # rule posteriors
-        previous_entropy = self.max_ent # start at max possible
-        current_entropy = self.prior_entropy # entropy of prior distribution
-        self.information_gain = [previous_entropy - current_entropy] # information baseline (gain of priors over maximum)
-        self.cum_info_gain = self.information_gain.copy()
-
-        # accumulate rule terms
-        cum_points = 0
-        self.build_rule_iter = 0
-
-        while current_precision != 1.0 and current_precision != 0.0 and current_precision < precis_threshold and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or len(self.cum_info_gain) < max(1, fixed_length) + 1):
-            self.build_rule_iter += 1
-            self.add_rule(p_total = self.stopping_param)
-            # you could add a round of bootstrapping here, but what does that do to performance
-            eval_rule = self.evaluate_rule(instances=encoder.transform(pred_instances),
-                                            labels=pred_labels)
-
-            # entropy / information
-            previous_entropy = current_entropy
-            current_entropy = entropy(eval_rule['post'])
-
-            # code to confirm rule, or revert to previous
-            # choosing from a range of possible metrics and learning improvement
-            # possible to introduce annealing?
-            # e.g if there was no change, or an decrease in precis
-            if algorithm is not None:
-                if algorithm == 'greedy_prec':
-                    current = eval_rule['post'][np.where(eval_rule['labels'] == self.target_class)]
-                    previous = list(reversed(self.pri_and_post))[0][np.where(eval_rule['labels'] == self.target_class)]
-                    should_continue = self.__greedy_commit__(current, previous)
-                elif algorithm == 'greedy_f1':
-                    current = eval_rule['f1'][np.where(eval_rule['labels'] == self.target_class)]
-                    previous = list(reversed(self.pri_and_post_f1))[0][np.where(eval_rule['labels'] == self.target_class)]
-                    should_continue = self.__greedy_commit__(current, previous)
-                elif algorithm == 'greedy_acc':
-                    current = eval_rule['accuracy'][np.where(eval_rule['labels'] == self.target_class)]
-                    previous = list(reversed(self.pri_and_post_accuracy))[0][np.where(eval_rule['labels'] == self.target_class)]
-                    should_continue = self.__greedy_commit__(current, previous)
-                elif algorithm == 'chi2':
-                    previous_counts = list(reversed(self.pri_and_post_counts))[0]
-                    observed = np.array((eval_rule['counts'], previous_counts))
-                    if eval_rule['counts'].sum() == 0: # previous_counts.sum() == 0 is impossible
-                        should_continue = self.__greedy_commit__(1, 0) # go ahead with rule as the algorithm will finish here
-                    else: # do the chi square test but mask any classes where prev and current are zero
-                        should_continue = self.__greedy_commit__(0.05, chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)[1])
-                # add more options here
-                else: should_continue = False
-                if should_continue:
-                    continue # don't update all the metrics, just go to the next round
-
-            # check for end conditions; no target class coverage
-            if eval_rule['post'][np.where(eval_rule['labels'] == self.target_class)] == 0.0:
-                current_precision = 0.0
-            else:
-                current_precision = eval_rule['post'][np.where(eval_rule['labels'] == self.target_class)][0]
-
-            # if we keep the new rule, append the results to the persisted arrays
-            # general coverage and precision
-            self.precision.append(current_precision)
-            self.coverage.append(eval_rule['coverage'])
-
-            # per class measures
-            self.pri_and_post = np.append(self.pri_and_post, [eval_rule['post']], axis=0)
-            self.pri_and_post_counts = np.append(self.pri_and_post_counts, [eval_rule['counts']], axis=0)
-            self.pri_and_post_accuracy = np.append(self.pri_and_post_accuracy, [eval_rule['accuracy']], axis=0)
-            self.pri_and_post_recall = np.append(self.pri_and_post_recall, [eval_rule['recall']], axis=0 )
-            self.pri_and_post_f1 = np.append(self.pri_and_post_f1, [eval_rule['f1']], axis=0 )
-            self.pri_and_post_lift = np.append(self.pri_and_post_lift, [eval_rule['lift']], axis=0 )
-
-            # entropy and info gain
-            self.information_gain.append(previous_entropy - current_entropy)
-            self.cum_info_gain.append(sum(self.information_gain))
-
-        # first time major_class is isolated
-        if any(np.argmax(self.pri_and_post, axis=1) == self.target_class):
-            self.isolation_pos = np.min(np.where(np.argmax(self.pri_and_post, axis=1) == self.target_class))
-        else: self.isolation_pos = None
-
-    def score_rule(self, alpha=0.5):
-        target_precision = [p[self.target_class] for p in self.pri_and_post]
-        target_recall = [r[self.target_class] for r in self.pri_and_post_recall]
-        target_f1 = [f[self.target_class] for f in self.pri_and_post_f1]
-        target_accuracy = [a[self.target_class] for a in self.pri_and_post_accuracy]
-        target_prf = [[p, r, f, a] for p, r, f, a in zip(target_precision, target_recall, target_f1, target_accuracy)]
-
-        target_cardinality = [i for i in range(len(target_precision))]
-
-        lf = lambda x: math.log2(x + 1)
-        score_fun1 = lambda f, crd, alp: lf(f * crd * alp / (1.0 + ((1 - alp) * crd**2)))
-        score_fun2 = lambda a, crd, alp: lf(a * crd * alp / (1.0 + ((1 - alp) * crd**2)))
-
-        score1 = [s for s in map(score_fun1, target_f1, target_cardinality, [alpha] * len(target_cardinality))]
-        score2 = [s for s in map(score_fun2, target_accuracy, target_cardinality, [alpha] * len(target_cardinality))]
-
-        return(target_prf, score1, score2)
-
-    def lite_instance(self):
-        return(rule_acc_lite(self.instance_id, self.var_dict, self.paths,
-        self.patterns, self.rule, self.pruned_rule, self.conjunction_rule,
-        self.target_class, self.target_class_label,
-        self.major_class, self.major_class_label,
-        self.model_votes, self.model_post,
-        self.coverage, self.precision, self.pri_and_post,
-        self.pri_and_post_accuracy,
-        self.pri_and_post_counts,
-        self.pri_and_post_recall,
-        self.pri_and_post_f1,
-        self.pri_and_post_lift))
+        self.CHIRPS = explainers

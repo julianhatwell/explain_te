@@ -6,8 +6,8 @@ import multiprocessing as mp
 from pandas import DataFrame, Series
 from CHIRPS import p_count, p_count_corrected, if_nexists_make_dir
 from CHIRPS.plotting import plot_confusion_matrix
-from CHIRPS.structures import rule_accumulator, forest_walker, batch_getter, rule_tester, loo_encoder
-from CHIRPS.async_routines import as_chirps
+from CHIRPS.structures import rule_accumulator, forest_walker
+# from CHIRPS.async_routines import as_chirps
 
 from scipy.stats import chi2_contingency
 from math import sqrt
@@ -85,7 +85,7 @@ def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuni
 
     return(best_params)
 
-def train_rf(X, y, best_params = None, encoder = None, random_state = 123):
+def train_rf(X, y, best_params = None, random_state = 123):
 
     # to do - test allowable structure of grid input
     if best_params is not None:
@@ -97,16 +97,9 @@ def train_rf(X, y, best_params = None, encoder = None, random_state = 123):
         rf = RandomForestClassifier(random_state=random_state, oob_score=True)
 
     rf.fit(X, y)
+    return(rf)
 
-    if encoder is not None:
-        # create helper function enc_model(). A pipeline: feature encoding -> rf model
-        enc_model = make_pipeline(encoder, rf)
-        return(rf, enc_model)
-    else:
-        # if no encoder provided, return the basic model
-        return(rf, rf)
-
-def evaluate_model(prediction_model, X, y, class_names=None, plot_cm=True, plot_cm_norm=True):
+def evaluate_model(X, y, prediction_model, class_names=None, plot_cm=True, plot_cm_norm=True):
     pred = prediction_model.predict(X)
 
     # view the confusion matrix
@@ -126,6 +119,9 @@ def evaluate_model(prediction_model, X, y, class_names=None, plot_cm=True, plot_
                               title='Normalized confusion matrix')
     return(cm, acc, coka, prfs)
 
+def encode_pred(instances, enc_model):
+    return(Series(enc_model.predict(instances), index=instances.index))
+
 # def forest_survey(f_walker, X, y):
 #
 #     if f_walker.encoder is not None:
@@ -134,7 +130,7 @@ def evaluate_model(prediction_model, X, y, class_names=None, plot_cm=True, plot_
 #     f_walker.full_survey(X, y)
 #     return(f_walker.forest_stats(np.unique(y)))
 
-def CHIRPS_explain(bpc, # batch_paths_container
+def CHIRPS_explain(bp_container, # batch_paths_container
                     data_container, encoder, pred_model,
                     sample_instances, sample_labels,
                     support_paths=0.1, alpha_paths=0.5,
@@ -142,90 +138,8 @@ def CHIRPS_explain(bpc, # batch_paths_container
                     alpha_scores=0.5, which_trees='majority',
                     precis_threshold=0.95, weighting='chisq',
                     algorithm='greedy_prec', chirps_explanation_async=False):
+    print('nothing')
 
-    # convenience function to orient the top level
-    # a bit like reshaping an array
-    # reason: rf paths quickly extracted per tree for all instances
-    # so when constructed, this structure is oriented by tree
-    # and we would like to easily iterate by instance
-    if bpc.by_tree:
-        bpc.flip()
-    n_instances = len(bpc.path_detail)
-
-    # initialise a list for the results
-    completed_rule_accs = [[]] * n_instances
-
-    print('Running CHIRPS on batch of ' + str(n_instances) + ' instances... (please wait)')
-    # start a timer
-    ce_start_time = timeit.default_timer()
-
-    # generate the explanations
-    if chirps_explanation_async:
-
-        # start another timer
-        chp_start_time = timeit.default_timer()
-        async_out = []
-        n_cores = mp.cpu_count()-1
-        pool = mp.Pool(processes=n_cores)
-
-        # loop for each instance
-        for i in range(n_instances):
-
-            # extract the current instance paths container for freq patt mining
-            # filtering by the chosen set of trees - default: majority voting
-            ipc = bpc.get_instance_paths(i, which_trees=which_trees)
-
-            # run the chirps process on each instance paths
-            async_out.append(pool.apply_async(as_chirps,
-                (ipc, data_container,
-                sample_instances, sample_labels,
-                encoder, pred_model,
-                support_paths, alpha_paths,
-                disc_path_bins, disc_path_eqcounts,
-                which_trees, weighting,
-                algorithm, precis_threshold,
-                i)
-            ))
-
-        # block and collect the pool
-        pool.close()
-        pool.join()
-
-        # get the async results and sort to ensure original batch index order and remove batch index
-        ce = [async_out[j].get() for j in range(len(async_out))]
-        ce.sort()
-        for i in range(n_instances):
-            completed_rule_accs[i] = [ce[i][1]] # embed object in list
-
-        ce_end_time = timeit.default_timer()
-        ce_elapsed_time = ce_end_time - ce_start_time
-
-    else:
-        for i in range(n_instances):
-            # filtering by the chosen set of trees - default: majority voting
-            ipc = bpc.get_instance_paths(i, which_trees=which_trees)
-
-
-            # run the chirps process on each instance paths
-            _, completed_rule_acc = \
-                as_chirps(ipc, data_container,
-                sample_instances, sample_labels,
-                encoder, pred_model,
-                support_paths, alpha_paths,
-                disc_path_bins, disc_path_eqcounts,
-                which_trees, weighting,
-                algorithm, precis_threshold,
-                i)
-
-            # add the finished rule accumulator to the results
-            completed_rule_accs[i] = [completed_rule_acc]
-
-        ce_end_time = timeit.default_timer()
-        ce_elapsed_time = ce_end_time - ce_start_time
-    print('CHIRPS time elapsed:', "{:0.4f}".format(ce_elapsed_time), 'seconds')
-    print('CHIRPS with async = ' + str(chirps_explanation_async))
-
-    return(completed_rule_accs)
 
 def CHIRPS_explanation(f_walker, getter,
  data_container, encoder, sample_instances, sample_labels,
@@ -238,7 +152,7 @@ def CHIRPS_explanation(f_walker, getter,
 
     pred_model = f_walker.prediction_model
     # create a list to collect completed rule accumulators
-    completed_rule_accs = [[]] * (batch_size * n_batches)
+    explainers = [[]] * (batch_size * n_batches)
 
     for b in range(n_batches):
         print('Walking forest for batch ' + str(b) + ' of batch size ' + str(batch_size) + '... (please wait)')
@@ -291,7 +205,7 @@ def CHIRPS_explanation(f_walker, getter,
             ce = [async_out[j].get() for j in range(len(async_out))]
             ce.sort()
             for batch_idx in range(batch_size):
-                completed_rule_accs[b * batch_size + batch_idx] = [ce[batch_idx][1]] # embed object in list
+                explainers[b * batch_size + batch_idx] = [ce[batch_idx][1]] # embed object in list
 
             ce_end_time = timeit.default_timer()
             ce_elapsed_time = ce_end_time - ce_start_time
@@ -315,7 +229,7 @@ def CHIRPS_explanation(f_walker, getter,
                     batch_idx)
 
                 # add the finished rule accumulator to the results
-                completed_rule_accs[b * batch_size + batch_idx] = [completed_rule_acc]
+                explainers[b * batch_size + batch_idx] = [completed_rule_acc]
             ce_end_time = timeit.default_timer()
             ce_elapsed_time = ce_end_time - ce_start_time
 
@@ -324,7 +238,7 @@ def CHIRPS_explanation(f_walker, getter,
 
 
     algorithm = [algorithm] # this method proved to be the best. For alternatives, go to the github and see older versions
-    return(completed_rule_accs, algorithm)
+    return(explainers, algorithm)
 
 def anchors_preproc(dataset, random_state, iv_low, iv_high):
     mydata = dataset(random_state)
