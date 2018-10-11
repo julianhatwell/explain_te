@@ -25,176 +25,50 @@ class non_deterministic:
         else:
             return(random_state)
 
-class explanation:
+class rule_evaluator:
 
-    def __init__(self, var_dict,
-                paths, patterns,
-                rule, pruned_rule, conjunction_rule,
-                target_class, target_class_label,
-                major_class, major_class_label,
-                model_votes, model_posterior,
-                coverage, precision, posterior,
-                accuracy,
-                counts,
-                recall,
-                f1,
-                lift):
-        self.var_dict = var_dict
-        self.paths = paths
-        self.patterns = patterns
-        self.rule = rule
-        self.pruned_rule = pruned_rule
-        self.conjunction_rule = conjunction_rule
-        self.target_class = target_class
-        self.target_class_label = target_class_label
-        self.major_class = major_class
-        self.major_class_label = major_class_label
-        self.model_votes = model_votes
-        self.model_posterior = model_posterior
-        self.coverage = coverage
-        self.precision = precision
-        self.posterior = posterior
-        self.accuracy = accuracy
-        self.counts = counts
-        self.recall = recall
-        self.f1 = f1
-        self.lift = lift
+    def entry_test(self, rule=None, features=None, class_names=None,
+                    instances=None, labels=None):
 
-    def to_dict(self):
-        return({'var_dict' : self.var_dict,
-        'paths' : self.paths,
-        'patterns' : self.patterns,
-        'rule' : self.rule,
-        'pruned_rule' : self.pruned_rule,
-        'conjunction_rule' : self.conjunction_rule,
-        'target_class' :self.target_class,
-        'target_class_label' :self.target_class_label,
-        'major_class' : self.major_class,
-        'major_class_label' :self.major_class_label,
-        'model_votes' : self.model_votes,
-        'model_posterior' : self.model_posterior,
-        'coverage' : self.coverage,
-        'precision' : self.precision,
-        'posterior' : self.posterior,
-        'accuracy' : self.accuracy,
-        'counts' : self.counts,
-        'recall' : self.recall,
-        'f1' : self.f1,
-        'lift' : self.lift})
-
-    def to_dict(self):
-        return([self.var_dict, self.paths, self.patterns,
-                self.rule, self.pruned_rule, self.conjunction_rule,
-                self.target_class, self.target_class_label,
-                self.major_class, self.major_class_label,
-                self.model_votes, self.model_votes,
-                self.coverage, self.precision, self.posterior,
-                self.accuracy,
-                self.counts,
-                self.recall,
-                self.f1,
-                self.lift])
-
-
-class rule_accumulator(non_deterministic):
-
-    def __init__(self, data_container, paths_container):
-
-        self.random_state = data_container.random_state
-        self.onehot_features = data_container.onehot_features
-        self.onehot_dict = data_container.onehot_dict
-        self.var_dict = deepcopy(data_container.var_dict)
-        self.paths = paths_container.paths
-        self.patterns = paths_container.patterns
-        self.unapplied_rules = [i for i in range(len(self.patterns))]
-
-        self.class_col = data_container.class_col
-        if data_container.class_col in data_container.le_dict.keys():
-            self.class_names = data_container.get_label(data_container.class_col, [i for i in range(len(data_container.class_names))])
-            self.get_label = data_container.get_label
-        else:
-            self.class_names = data_container.class_names
-            self.get_label = None
-
-        self.model_votes = p_count_corrected(paths_container.tree_preds, self.class_names)
-
-        for item in self.var_dict:
-            if self.var_dict[item]['class_col']:
-                continue
-            else:
-                if self.var_dict[item]['data_type'] == 'nominal':
-                    n_labs = len(self.var_dict[item]['labels'])
-                else:
-                    n_labs = 1
-                self.var_dict[item]['upper_bound'] = [math.inf] * n_labs
-                self.var_dict[item]['lower_bound'] = [-math.inf] * n_labs
-        self.rule = []
-        self.pruned_rule = []
-        self.conjunction_rule = []
-        self.previous_rule = []
-        self.reverted = []
-        self.total_points = sum([scrs[2] for scrs in self.patterns])
-        self.accumulated_points = 0
-        self.sample_instances = None
-        self.sample_labels = None
-        self.n_instances = None
-        self.n_classes = None
-        self.target_class = None
-        self.target_class_label = None
-        self.major_class = None
-        self.model_entropy = None
-        self.model_info_gain = None
-        self.model_posterior = None
-        self.max_ent = None
-        self.coverage = None
-        self.precision = None
-        self.cum_info_gain = None
-        self.information_gain = None
-        self.prior_entropy = None
-        self.prior_info = None
-        self.posterior = None
-        self.accuracy = None
-        self.counts = None
-        self.recall = None
-        self.f1 = None
-        self.lift = None
-        self.isolation_pos = None
-        self.stopping_param = None
-        self.build_rule_iter = None
-        self.algorithm = None
-
-    def apply_rule(self, rule=None, instances=None):
         # try to find a rule, or return []
         if rule is None:
-            if self.rule is None:
-                rule = []
-            else:
                 rule = self.rule
-        if instances is None:
-            instances = self.sample_instances
-        lt_gt = lambda x, y, z : x < y if z else x > y # if z is True, x < y else x > y
-        idx = np.full(instances.shape[0], 1, dtype='bool')
-        for r in rule:
-            idx = np.logical_and(idx, lt_gt(instances.getcol(self.onehot_features.index(r[0])).toarray().flatten(), r[2], r[1]))
-        return(idx)
-
-    def evaluate_rule(self, rule=None, instances=None,
-                    labels=None, class_names=None):
-        if self.rule is None:
-            rule = []
-        else:
-            rule = self.rule
-        if instances is None:
-            instances = self.sample_instances
-        if labels is None:
-            labels = self.sample_labels
-        if labels is None:
-            print('Test labels are required for rule evaluation')
-            return()
+        if features is None:
+            features = self.features_enc # default
         if class_names is None:
             class_names = self.class_names
 
-        idx = self.apply_rule(rule, instances)
+        if instances is None:
+            if self.sample_instances is None:
+                print('Sample intances (e.g. X_train_enc) are required for rule evaluation')
+                return()
+            else:
+                instances = self.sample_instances
+        if labels is None:
+            if self.sample_labels is None:
+                print('Test labels are required for rule evaluation')
+                return()
+            else:
+                labels = self.sample_labels
+
+        return(rule, features, class_names, instances, labels)
+
+    def apply_rule(self, rule=None, instances=None, features=None):
+
+        lt_gt = lambda x, y, z : x <= y if z else x > y # if z is True, x <= y else x > y
+        idx = np.full(instances.shape[0], 1, dtype='bool')
+        for r in rule:
+            idx = np.logical_and(idx, lt_gt(instances.getcol(features.index(r[0])).toarray().flatten(), r[2], r[1]))
+        return(idx)
+
+    def evaluate_rule(self, rule=None, features=None, class_names=None,
+                        instances=None, labels=None):
+
+        rule, features, class_names, instances, labels = \
+                self.entry_test(rule=rule, features=features, class_names=class_names,
+                                instances=instances, labels=labels)
+
+        idx = self.apply_rule(rule, instances, features)
         coverage = idx.sum()/len(idx) # tp + fp / tp + fp + tn + fn
 
         priors = p_count_corrected(labels, [i for i in range(len(class_names))])
@@ -245,19 +119,170 @@ class rule_accumulator(non_deterministic):
                 'lift' : lift,
                 'chisq' : chisq})
 
+class CHIRPS_container(rule_evaluator):
+
+    def __init__(self, features, features_enc, class_names,
+                var_dict, var_dict_enc,
+                paths, patterns,
+                rule, pruned_rule, conjunction_rule,
+                target_class, target_class_label,
+                major_class, major_class_label,
+                model_votes, model_posterior,
+                coverage, precision, posterior,
+                accuracy,
+                counts,
+                recall,
+                f1,
+                lift):
+        self.features = features
+        self.features_enc = features_enc
+        self.class_names = class_names
+        self.var_dict = var_dict
+        self.var_dict_enc = var_dict_enc
+        self.paths = paths
+        self.patterns = patterns
+        self.rule = rule
+        self.pruned_rule = pruned_rule
+        self.conjunction_rule = conjunction_rule
+        self.target_class = target_class
+        self.target_class_label = target_class_label
+        self.major_class = major_class
+        self.major_class_label = major_class_label
+        self.model_votes = model_votes
+        self.model_posterior = model_posterior
+        self.coverage = coverage
+        self.precision = precision
+        self.posterior = posterior
+        self.accuracy = accuracy
+        self.counts = counts
+        self.recall = recall
+        self.f1 = f1
+        self.lift = lift
+
+    def prettify_rule(self, rule=None, var_dict=None):
+
+        if rule is None: # default
+            rule = self.pruned_rule
+
+        if var_dict is None: # default - match prediction model
+            var_dict = self.var_dict_enc
+
+        Tr_Fa = lambda x, y, z : x + ' True' if ~y else x + ' False'
+        lt_gt = lambda x, y, z : x + ' <= ' + str(z) if y else x + ' > ' + str(z)
+        def bin_or_cont(x, y, z):
+            if x in var_dict:
+                return(Tr_Fa(x,y,z))
+            else:
+                return(lt_gt(x,y,z))
+        return(' AND '.join([bin_or_cont(f, t, v) for f, t, v in rule]))
+
+    def to_dict(self):
+        return({'features' : self.features,
+        'features_enc' : self.features_enc,
+        'class_names' : self.class_names,
+        'var_dict' : self.var_dict,
+        'var_dict_enc' : self.var_dict_enc,
+        'paths' : self.paths,
+        'patterns' : self.patterns,
+        'rule' : self.rule,
+        'pruned_rule' : self.pruned_rule,
+        'conjunction_rule' : self.conjunction_rule,
+        'target_class' :self.target_class,
+        'target_class_label' :self.target_class_label,
+        'major_class' : self.major_class,
+        'major_class_label' :self.major_class_label,
+        'model_votes' : self.model_votes,
+        'model_posterior' : self.model_posterior,
+        'coverage' : self.coverage,
+        'precision' : self.precision,
+        'posterior' : self.posterior,
+        'accuracy' : self.accuracy,
+        'counts' : self.counts,
+        'recall' : self.recall,
+        'f1' : self.f1,
+        'lift' : self.lift})
+
+class rule_accumulator(non_deterministic, rule_evaluator):
+
+    def __init__(self, data_container, paths_container):
+
+        self.random_state = data_container.random_state
+        self.features_enc = data_container.features_enc
+        self.var_dict_enc = data_container.var_dict_enc
+        self.features = data_container.features
+        self.var_dict = deepcopy(data_container.var_dict)
+        self.paths = paths_container.paths
+        self.patterns = paths_container.patterns
+        self.unapplied_rules = [i for i in range(len(self.patterns))]
+
+        self.class_col = data_container.class_col
+        if data_container.class_col in data_container.le_dict.keys():
+            self.class_names = data_container.get_label(data_container.class_col, [i for i in range(len(data_container.class_names))])
+            self.get_label = data_container.get_label
+        else:
+            self.class_names = data_container.class_names
+            self.get_label = None
+
+        self.model_votes = p_count_corrected(paths_container.tree_preds, self.class_names)
+
+        for item in self.var_dict:
+            if self.var_dict[item]['class_col']:
+                continue
+            else:
+                if self.var_dict[item]['data_type'] == 'nominal':
+                    n_labs = len(self.var_dict[item]['labels'])
+                else:
+                    n_labs = 1
+                self.var_dict[item]['upper_bound'] = [math.inf] * n_labs
+                self.var_dict[item]['lower_bound'] = [-math.inf] * n_labs
+        self.rule = []
+        self.pruned_rule = []
+        self.conjunction_rule = []
+        self.__previous_rule = []
+        self.__reverted = []
+        self.total_points = sum([scrs[2] for scrs in self.patterns])
+        self.accumulated_points = 0
+        self.sample_instances = None
+        self.sample_labels = None
+        self.n_instances = None
+        self.n_classes = None
+        self.target_class = None
+        self.target_class_label = None
+        self.major_class = None
+        self.model_entropy = None
+        self.model_info_gain = None
+        self.model_posterior = None
+        self.max_ent = None
+        self.coverage = None
+        self.precision = None
+        self.cum_info_gain = None
+        self.information_gain = None
+        self.prior_entropy = None
+        self.prior_info = None
+        self.posterior = None
+        self.accuracy = None
+        self.counts = None
+        self.recall = None
+        self.f1 = None
+        self.lift = None
+        self.isolation_pos = None
+        self.stopping_param = None
+        self.build_rule_iter = None
+        self.algorithm = None
+
     def add_rule_term(self, p_total = 0.1):
-        self.previous_rule = deepcopy(self.rule)
+        self.__previous_rule = deepcopy(self.rule)
         next_rule = self.patterns[self.unapplied_rules[0]]
         for item in next_rule[0]:
             if item in self.rule:
                 continue # skip duplicates (essential for pruning reasons)
-            if item[0] in self.onehot_dict: # binary feature
+            if item[0] in self.var_dict_enc: # binary feature
                 # update the master list
-                position = self.var_dict[self.onehot_dict[item[0]]]['onehot_labels'].index(item[0])
+                position = self.var_dict[self.var_dict_enc[item[0]]]['onehot_labels'].index(item[0])
                 if item[1]: # leq_threshold True
-                    self.var_dict[self.onehot_dict[item[0]]]['upper_bound'][position] = item[2]
+                    self.var_dict[self.var_dict_enc[item[0]]]['upper_bound'][position] = item[2]
                 else:
-                    self.var_dict[self.onehot_dict[item[0]]]['lower_bound'][position] = item[2]
+                    self.var_dict[self.var_dict_enc[item[0]]]['lower_bound'][position] = item[2]
                 # append or update
                 self.rule.append(item)
 
@@ -308,13 +333,13 @@ class rule_accumulator(non_deterministic):
         # remove all other binary items if one Greater than is found.
         gt_items = {} # find all the items with the leq_threshold False
         for item in self.rule:
-            if ~item[1] and item[0] in self.onehot_dict: # item is greater than thresh and a nominal type
-                gt_items[self.onehot_dict[item[0]]] = item[0] # capture the parent feature and the feature value
+            if ~item[1] and item[0] in self.var_dict_enc: # item is greater than thresh and a nominal type
+                gt_items[self.var_dict_enc[item[0]]] = item[0] # capture the parent feature and the feature value
 
         gt_pruned_rule = []
         for item in self.rule:
-            if item[0] in self.onehot_dict: # binary variable
-                if self.onehot_dict[item[0]] not in gt_items.keys():
+            if item[0] in self.var_dict_enc: # binary variable
+                if self.var_dict_enc[item[0]] not in gt_items.keys():
                     gt_pruned_rule.append(item)
                 elif ~item[1]:
                     gt_pruned_rule.append(item)
@@ -325,13 +350,13 @@ class rule_accumulator(non_deterministic):
         # start by counting all the lt thresholds in each parent feature
         lt_items = defaultdict(lambda: 0)
         for item in gt_pruned_rule: # find all the items with the leq_threshold True
-            if item[1] and item[0] in self.onehot_dict: # item is less than thresh and a nominal type
-                lt_items[self.onehot_dict[item[0]]] += 1 # capture the parent feature and count each
+            if item[1] and item[0] in self.var_dict_enc: # item is less than thresh and a nominal type
+                lt_items[self.var_dict_enc[item[0]]] += 1 # capture the parent feature and count each
 
         # checking if just one other feature value remains unused
         pruned_items = [item[0] for item in gt_pruned_rule]
         for lt in dict(lt_items).keys():
-            n_categories = len([i for i in self.onehot_dict.values() if i == lt])
+            n_categories = len([i for i in self.var_dict_enc.values() if i == lt])
             if n_categories - dict(lt_items)[lt] == 1:
                 # get the remaining value for this feature
                 lt_labels = self.var_dict[lt]['onehot_labels']
@@ -359,11 +384,11 @@ class rule_accumulator(non_deterministic):
 
     def __greedy_commit__(self, current, previous):
         if current <= previous:
-            self.rule = deepcopy(self.previous_rule)
-            self.reverted.append(True)
+            self.rule = deepcopy(self.__previous_rule)
+            self.__reverted.append(True)
             return(True)
         else:
-            self.reverted.append(False)
+            self.__reverted.append(False)
             return(False)
 
     def build_rule(self, sample_instances, sample_labels, forest
@@ -534,9 +559,11 @@ class rule_accumulator(non_deterministic):
 
         return(target_prf, score1, score2)
 
-    def get_explanation(self):
-        return(explanation(self.var_dict, self.paths,
-        self.patterns, self.rule, self.pruned_rule, self.conjunction_rule,
+    def get_CHIRPS_container(self):
+        return(CHIRPS_container(self.features, self.features_enc, self.class_names,
+        self.var_dict, self.var_dict_enc,
+        self.paths, self.patterns,
+        self.rule, self.pruned_rule, self.conjunction_rule,
         self.target_class, self.target_class_label,
         self.major_class, self.major_class_label,
         self.model_votes, self.model_posterior,
@@ -638,7 +665,7 @@ def apply_rule(rule, sample_instances, features):
     # try to find a rule, or return []
     if rule is None:
         rule = []
-    lt_gt = lambda x, y, z : x < y if z else x > y # if z is True, x < y else x > y
+    lt_gt = lambda x, y, z : x <= y if z else x > y # if z is True, x <= y else x > y
     idx = np.full(sample_instances.shape[0], 1, dtype='bool')
     for r in rule:
         idx = np.logical_and(idx, lt_gt(sample_instances.getcol(features.index(r[0])).toarray().flatten(), r[2], r[1]))
@@ -653,7 +680,7 @@ def score_sort_path_segments(ip_container, data_container,
         weights = [] * len(ip_container.patterns)
         for wp in ip_container.patterns:
 
-            idx = apply_rule(rule=wp, sample_instances=sample_instances, features=data_container.onehot_features)
+            idx = apply_rule(rule=wp, sample_instances=sample_instances, features=data_container.features_enc)
             covered = p_count_corrected(sample_labels[idx], [i for i in range(len(data_container.class_names))])['counts']
             not_covered = p_count_corrected(sample_labels[~idx], [i for i in range(len(data_container.class_names))])['counts']
             observed = np.array((covered, not_covered))
@@ -680,10 +707,10 @@ def get_rule(rule_acc, sample_instances, sample_labels, forest,
                     algorithm=algorithm,
                     precis_threshold=precis_threshold)
         rule_acc.prune_rule()
-        explanation = rule_acc.get_explanation()
+        CHIRPS_cont = rule_acc.get_CHIRPS_container()
 
         # collect completed rule accumulator
-        return(explanation)
+        return(CHIRPS_cont)
 
 def as_chirps(ip_container, data_container,
                         sample_instances, sample_labels, forest,
@@ -704,7 +731,7 @@ def as_chirps(ip_container, data_container,
                                     alpha_paths, weighting)
     # greedily add terms to create rule
     rule_acc = rule_accumulator(data_container=data_container, paths_container=ip_container)
-    explanation = get_rule(rule_acc, sample_instances, sample_labels, forest,
+    CHIRPS_cont = get_rule(rule_acc, sample_instances, sample_labels, forest,
     algorithm, precis_threshold)
 
-    return(batch_idx, explanation)
+    return(batch_idx, CHIRPS_cont)

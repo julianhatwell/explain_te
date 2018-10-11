@@ -75,11 +75,13 @@ class data_split_container:
     def get_loo_instances(self, instance_id, encoded=False, which_split='test'):
         if which_split == 'train':
             instances = self.X_train.drop(instance_id)
-            instances_enc = self.X_train_enc.drop(instance_id)
+            loc_index = self.y_train.index == instance_id
+            instances_enc = self.X_train_enc[~loc_index,:]
             labels = self.y_train.drop(instance_id)
         else:
             instances = self.X_test.drop(instance_id)
-            instances_enc = self.X_test_enc.drop(instance_id)
+            loc_index = self.y_test.index == instance_id
+            instances_enc = self.X_test_enc[~loc_index,:]
             labels = self.y_test.drop(instance_id)
         return(instances, instances_enc, labels)
 
@@ -160,7 +162,7 @@ class data_container(non_deterministic):
 
         self.le_dict = {}
         self.var_dict = {}
-        self.onehot_dict = {}
+        self.var_dict_enc = {}
 
         for i, (v, t) in enumerate(zip(self.var_names, self.var_types)):
             if t == 'nominal':
@@ -172,7 +174,7 @@ class data_container(non_deterministic):
                 self.data_pre[v] = self.le_dict[v].transform(self.data[v])
                 # create the reverse lookup
                 for n in names:
-                    self.onehot_dict[v + '_' + str(n)] = v
+                    self.var_dict_enc[v + '_' + str(n)] = v
             else:
                 self.data_pre[v] = self.data[v]
 
@@ -189,19 +191,19 @@ class data_container(non_deterministic):
         [self.var_dict[f]['data_type'] == 'nominal' for f in self.features])) if not c and t]
 
         # creates a flat list just for the features
-        self.onehot_features = []
+        self.features_enc = []
         self.continuous_features = []
         for f, t in zip(self.var_names, self.var_types):
             if f == self.class_col: continue
             if t == 'continuous':
                 self.continuous_features.append(f)
             else:
-                self.onehot_features.append(self.var_dict[f]['onehot_labels'])
+                self.features_enc.append(self.var_dict[f]['onehot_labels'])
 
         # They get stuck on the end by encoding
-        self.onehot_features.append(self.continuous_features)
+        self.features_enc.append(self.continuous_features)
         # flatten out the nesting
-        self.onehot_features = list(chain.from_iterable(self.onehot_features))
+        self.features_enc = list(chain.from_iterable(self.features_enc))
 
         # one hot encoding required for classifier
         # otherwise integer vectors will be treated as ordinal
@@ -298,16 +300,6 @@ class data_container(non_deterministic):
         test_priors = test_priors)
 
         return(tt)
-
-    def pretty_rule(self, rule):
-        Tr_Fa = lambda x, y, z : x + ' True' if ~y else x + ' False'
-        lt_gt = lambda x, y, z : x + ' <= ' + str(z) if y else x + ' > ' + str(z)
-        def bin_or_cont(x, y, z, onehot_dict):
-            if x in onehot_dict:
-                return(Tr_Fa(x,y,z))
-            else:
-                return(lt_gt(x,y,z))
-        return(' AND '.join([bin_or_cont(f, t, v, self.onehot_dict) for f, t, v in rule]))
 
 class instance_paths_container:
     def __init__(self
@@ -470,7 +462,7 @@ class forest_walker:
     , forest
     , data_container):
         self.forest = forest
-        self.features = data_container.onehot_features
+        self.features = data_container.features_enc
         self.n_features = len(self.features)
         if data_container.class_col in data_container.le_dict.keys():
             self.class_names = data_container.get_label(data_container.class_col, [i for i in range(len(data_container.class_names))])
@@ -738,7 +730,7 @@ class forest_walker:
 
         return(batch_paths_container(tree_paths, by_tree=True))
 
-class CHIRPS_explainer:
+class batch_CHIRPS_container:
 
     def __init__(self, bp_container, # batch_paths_container
                         data_container, forest,
@@ -749,7 +741,7 @@ class CHIRPS_explainer:
         self.sample_instances = sample_instances
         self.sample_labels = sample_labels
 
-    def get_CHIRPS(self, support_paths=0.1, alpha_paths=0.5,
+    def build_CHIRPS(self, support_paths=0.1, alpha_paths=0.5,
                         disc_path_bins=4, disc_path_eqcounts=False,
                         alpha_scores=0.5, which_trees='majority',
                         precis_threshold=0.95, weighting='chisq',
@@ -765,7 +757,7 @@ class CHIRPS_explainer:
         n_instances = len(self.bp_container.path_detail)
 
         # initialise a list for the results
-        explainers = [[]] * n_instances
+        instance_CHIRPS_containers = [[]] * n_instances
 
         # generate the explanations
         if chirps_explanation_async:
@@ -798,10 +790,10 @@ class CHIRPS_explainer:
             pool.join()
 
             # get the async results and sort to ensure original batch index order and remove batch index
-            ce = [async_out[j].get() for j in range(len(async_out))]
-            ce.sort()
+            CHIRPS_conts = [async_out[j].get() for j in range(len(async_out))]
+            CHIRPS_conts.sort()
             for i in range(n_instances):
-                explainers[i] = ce[i][1] # embed object in list
+                instance_CHIRPS_containers[i] = CHIRPS_conts[i][1]  # return in list
 
         else:
             for i in range(n_instances):
@@ -810,7 +802,7 @@ class CHIRPS_explainer:
                 ip_container = self.bp_container.get_instance_paths(i, which_trees=which_trees)
 
                 # run the chirps process on each instance paths
-                _, explainer = \
+                _, CHIRPS_cont = \
                     as_chirps(ip_container, self.data_container,
                     self.sample_instances, self.sample_labels,
                     self.forest,
@@ -821,6 +813,6 @@ class CHIRPS_explainer:
                     i)
 
                 # add the finished rule accumulator to the results
-                explainers[i] = explainer
+                instance_CHIRPS_containers[i] = CHIRPS_cont
 
-        self.CHIRPS = explainers
+        self.CHIRPS_containers = instance_CHIRPS_containers

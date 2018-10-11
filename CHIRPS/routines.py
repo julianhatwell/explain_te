@@ -119,8 +119,8 @@ def evaluate_model(X, y, prediction_model, class_names=None, plot_cm=True, plot_
                               title='Normalized confusion matrix')
     return(cm, acc, coka, prfs)
 
-def encode_pred(instances, enc_model):
-    return(Series(enc_model.predict(instances), index=instances.index))
+# def encode_pred(instances, enc_model):
+#     return(Series(enc_model.predict(instances), index=instances.index))
 
 # def forest_survey(f_walker, X, y):
 #

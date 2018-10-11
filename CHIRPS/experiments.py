@@ -143,7 +143,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
         prior = explainers[i][0].posterior[0][tc]
         for j, rs in enumerate(result_sets):
             rule = explainers[i][j].pruned_rule
-            pretty_rule = mydata.pretty_rule(rule)
+            prettify_rule = mydata.prettify_rule(rule)
             rule_len = len(rule)
             tr_prec = list(reversed(explainers[i][j].posterior))[0][tc]
             tr_recall = list(reversed(explainers[i][j].recall))[0][tc]
@@ -169,7 +169,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
 
             output[j * len(explainers) + i] = [instance_id,
                     rs,
-                    pretty_rule,
+                    prettify_rule,
                     rule_len,
                     mc,
                     mc_lab,
@@ -278,7 +278,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
             vt = np.nan
             mvs = np.nan
             prior = priors['p_counts'][tc]
-            pretty_rule = ' AND '.join(exp.names())
+            prettify_rule = ' AND '.join(exp.names())
             rule_len = len(exp.names())
             tr_prec = post[tc]
             tr_recall = recall[tc]
@@ -330,7 +330,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
 
             output_anch[i] = [instance_id,
                                 'anchors', # result_set
-                                pretty_rule,
+                                prettify_rule,
                                 rule_len,
                                 mc,
                                 mc_lab,
