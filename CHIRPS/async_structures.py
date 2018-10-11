@@ -1,3 +1,6 @@
+# this module is required for parallel processing
+# parallel requires functions/classes to be in __main__ or already referenced.
+# as this code is quite complex, the latter is preferred
 import math
 import numpy as np
 from scipy import sparse
@@ -6,7 +9,84 @@ from collections import deque, defaultdict
 from scipy.stats import chi2_contingency, entropy
 from CHIRPS import p_count, p_count_corrected
 
-# global function for setting a default seed
+# parallelisable function for the forest_walker class
+def as_tree_walk(tree_idx, instances, labels,
+                instance_ids, n_instances,
+                tree_pred, tree_pred_labels,
+                tree_pred_proba, tree_correct,
+                feature, threshold, path, features):
+
+    # object for the results
+    instance_paths = [{}] * n_instances
+
+    # rare case that tree is a single node stub
+    if len(feature) == 1:
+        for ic in range(n_instances):
+            if labels is None:
+                true_class = None
+            else:
+                true_class = labels.values[ic]
+            instance_paths[ic] = {'instance_id' : instance_ids[ic]
+                                    , 'pred_class' : tree_pred[ic].astype(np.int64)
+                                    , 'pred_class_label' : tree_pred_labels[ic]
+                                    , 'pred_proba' : tree_pred_proba[ic].tolist()
+                                    , 'true_class' : true_class
+                                    , 'tree_correct' : tree_correct[ic]
+                                    , 'path' : {'feature_idx' : []
+                                                            , 'feature_name' : []
+                                                            , 'feature_value' : []
+                                                            , 'threshold' : []
+                                                            , 'leq_threshold' : []
+                                                }
+                                    }
+    # usual case
+    else:
+        path_deque = deque(path)
+        ic = -1 # instance_count
+        while len(path_deque) > 0:
+            p = path_deque.popleft()
+            if feature[p] < 0: # leaf node
+                continue
+            pass_test = True
+            if features is None:
+                feature_name = None
+            else:
+                feature_name = features[feature[p]]
+            if p == 0: # root node
+                ic += 1
+                feature_value = instances[ic, [feature[p]]].item(0)
+                leq_threshold = feature_value <= threshold[p]
+                if labels is None:
+                    true_class = None
+                else:
+                    true_class = labels.values[ic]
+                instance_paths[ic] = {'instance_id' : instance_ids[ic]
+                                        , 'pred_class' : tree_pred[ic].astype(np.int64)
+                                        , 'pred_class_label' : tree_pred_labels[ic]
+                                        , 'pred_proba' : tree_pred_proba[ic].tolist()
+                                        , 'true_class' : true_class
+                                        , 'tree_correct' : tree_correct[ic]
+                                        , 'path' : {'feature_idx' : [feature[p]]
+                                                                , 'feature_name' : [feature_name]
+                                                                , 'feature_value' : [feature_value]
+                                                                , 'threshold' : [threshold[p]]
+                                                                , 'leq_threshold' : [leq_threshold]
+                                                    }
+                                        }
+            else:
+                feature_value = instances[ic, [feature[p]]].item(0)
+                leq_threshold = feature_value <= threshold[p]
+                instance_paths[ic]['path']['feature_idx'].append(feature[p])
+                instance_paths[ic]['path']['feature_name'].append(feature_name)
+                instance_paths[ic]['path']['feature_value'].append(feature_value)
+                instance_paths[ic]['path']['threshold'].append(threshold[p])
+                instance_paths[ic]['path']['leq_threshold'].append(leq_threshold)
+
+    return(tree_idx, instance_paths)
+
+# classes and functions for the parallelisable CHIRPS algorithm
+
+# this is inherited by rule_accumulator and data_container
 class non_deterministic:
 
     def __init__(self, random_state=None):
@@ -25,12 +105,14 @@ class non_deterministic:
         else:
             return(random_state)
 
+# this is inherited by rule_accumulator, CHIRPS_container and CHIRPS_runner
+# the main point is to have the rule_evaluator function inherited from one place
 class rule_evaluator:
 
-    def entry_test(self, rule=None, features=None, class_names=None,
+    def init_values(self, rule=None, features=None, class_names=None,
                     instances=None, labels=None):
 
-        # try to find a rule, or return []
+        # sub-classes must have these three properties
         if rule is None:
                 rule = self.rule
         if features is None:
@@ -38,6 +120,9 @@ class rule_evaluator:
         if class_names is None:
             class_names = self.class_names
 
+        # check presence of optional sample datasets:
+        # train (or other) for optimisation of rule merge
+        # test (or other) for evaluation of rule
         if instances is None:
             if self.sample_instances is None:
                 print('Sample intances (e.g. X_train_enc) are required for rule evaluation')
@@ -46,13 +131,14 @@ class rule_evaluator:
                 instances = self.sample_instances
         if labels is None:
             if self.sample_labels is None:
-                print('Test labels are required for rule evaluation')
+                print('Sample labels (e.g. y_train) are required for rule evaluation')
                 return()
             else:
                 labels = self.sample_labels
 
         return(rule, features, class_names, instances, labels)
 
+    # apply a rule on an instance space, returns covered instance idx
     def apply_rule(self, rule=None, instances=None, features=None):
 
         lt_gt = lambda x, y, z : x <= y if z else x > y # if z is True, x <= y else x > y
@@ -61,11 +147,12 @@ class rule_evaluator:
             idx = np.logical_and(idx, lt_gt(instances.getcol(features.index(r[0])).toarray().flatten(), r[2], r[1]))
         return(idx)
 
+    # score a rule on an instance space
     def evaluate_rule(self, rule=None, features=None, class_names=None,
                         instances=None, labels=None):
 
         rule, features, class_names, instances, labels = \
-                self.entry_test(rule=rule, features=features, class_names=class_names,
+                self.init_values(rule=rule, features=features, class_names=class_names,
                                 instances=instances, labels=labels)
 
         idx = self.apply_rule(rule, instances, features)
@@ -202,17 +289,18 @@ class CHIRPS_container(rule_evaluator):
         'f1' : self.f1,
         'lift' : self.lift})
 
+# this class runs all steps of the CHIRPS algorithm
 class rule_accumulator(non_deterministic, rule_evaluator):
 
-    def __init__(self, data_container, paths_container):
+    def __init__(self, data_container, instance_paths_container):
 
         self.random_state = data_container.random_state
         self.features_enc = data_container.features_enc
         self.var_dict_enc = data_container.var_dict_enc
         self.features = data_container.features
         self.var_dict = deepcopy(data_container.var_dict)
-        self.paths = paths_container.paths
-        self.patterns = paths_container.patterns
+        self.paths = instance_paths_container.paths
+        self.patterns = instance_paths_container.patterns
         self.unapplied_rules = [i for i in range(len(self.patterns))]
 
         self.class_col = data_container.class_col
@@ -223,7 +311,7 @@ class rule_accumulator(non_deterministic, rule_evaluator):
             self.class_names = data_container.class_names
             self.get_label = None
 
-        self.model_votes = p_count_corrected(paths_container.tree_preds, self.class_names)
+        self.model_votes = p_count_corrected(instance_paths_container.tree_preds, self.class_names)
 
         for item in self.var_dict:
             if self.var_dict[item]['class_col']:
@@ -267,7 +355,7 @@ class rule_accumulator(non_deterministic, rule_evaluator):
         self.lift = None
         self.isolation_pos = None
         self.stopping_param = None
-        self.build_rule_iter = None
+        self.merge_rule_iter = None
         self.algorithm = None
 
     def add_rule_term(self, p_total = 0.1):
@@ -391,7 +479,7 @@ class rule_accumulator(non_deterministic, rule_evaluator):
             self.__reverted.append(False)
             return(False)
 
-    def build_rule(self, sample_instances, sample_labels, forest
+    def merge_rule(self, sample_instances, sample_labels, forest
                         , stopping_param = 1
                         , precis_threshold = 1.0
                         , fixed_length = None
@@ -472,10 +560,10 @@ class rule_accumulator(non_deterministic, rule_evaluator):
 
         # accumulate rule terms
         cum_points = 0
-        self.build_rule_iter = 0
+        self.merge_rule_iter = 0
 
         while current_precision != 1.0 and current_precision != 0.0 and current_precision < precis_threshold and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or len(self.cum_info_gain) < max(1, fixed_length) + 1):
-            self.build_rule_iter += 1
+            self.merge_rule_iter += 1
             self.add_rule_term(p_total = self.stopping_param)
             # you could add a round of bootstrapping here, but what does that do to performance
             eval_rule = self.evaluate_rule(instances=sample_instances,
@@ -574,164 +662,83 @@ class rule_accumulator(non_deterministic, rule_evaluator):
         self.f1,
         self.lift))
 
-def as_tree_walk(tree_idx, instances, labels,
-                instance_ids, n_instances,
-                tree_pred, tree_pred_labels,
-                tree_pred_proba, tree_correct,
-                feature, threshold, path, features):
+class CHIRPS_runner(rule_evaluator):
 
-    # object for the results
-    instance_paths = [{}] * n_instances
+    def __init__(self, ip_container, data_container):
+        self.ip_container = ip_container
+        self.data_container = data_container
 
-    # rare case that tree is a single node stub
-    if len(feature) == 1:
-        for ic in range(n_instances):
-            if labels is None:
-                true_class = None
-            else:
-                true_class = labels.values[ic]
-            instance_paths[ic] = {'instance_id' : instance_ids[ic]
-                                    , 'pred_class' : tree_pred[ic].astype(np.int64)
-                                    , 'pred_class_label' : tree_pred_labels[ic]
-                                    , 'pred_proba' : tree_pred_proba[ic].tolist()
-                                    , 'true_class' : true_class
-                                    , 'tree_correct' : tree_correct[ic]
-                                    , 'path' : {'feature_idx' : []
-                                                            , 'feature_name' : []
-                                                            , 'feature_value' : []
-                                                            , 'threshold' : []
-                                                            , 'leq_threshold' : []
-                                                }
-                                    }
-    # usual case
-    else:
-        path_deque = deque(path)
-        ic = -1 # instance_count
-        while len(path_deque) > 0:
-            p = path_deque.popleft()
-            if feature[p] < 0: # leaf node
-                continue
-            pass_test = True
-            if features is None:
-                feature_name = None
-            else:
-                feature_name = features[feature[p]]
-            if p == 0: # root node
-                ic += 1
-                feature_value = instances[ic, [feature[p]]].item(0)
-                leq_threshold = feature_value <= threshold[p]
-                if labels is None:
-                    true_class = None
+    def mine_path_segments(self, support_paths=0.1, alpha_paths=0.5,
+                            disc_path_bins=4, disc_path_eqcounts=False):
+
+        # discretize any numeric features
+        self.ip_container.discretize_paths(self.data_container.var_dict,
+                                bins=disc_path_bins,
+                                equal_counts=disc_path_eqcounts)
+        # the patterns are found but not scored and sorted yet
+        self.ip_container.mine_patterns(support=support_paths)
+
+    def score_sort_path_segments(self, sample_instances, sample_labels,
+                                    alpha_paths=0.5, weighting='chisq'):
+        # best at -1 < alpha < 1
+        # the patterns will be weighted by chi**2 for independence test, p-values
+        if weighting == 'chisq':
+            weights = [] * len(self.ip_container.patterns)
+            for wp in self.ip_container.patterns:
+
+                idx = self.apply_rule(rule=wp, instances=sample_instances, features=self.data_container.features_enc)
+                covered = p_count_corrected(sample_labels[idx], [i for i in range(len(self.data_container.class_names))])['counts']
+                not_covered = p_count_corrected(sample_labels[~idx], [i for i in range(len(self.data_container.class_names))])['counts']
+                observed = np.array((covered, not_covered))
+
+                # this is the chisq based weighting. can add other options
+                if covered.sum() > 0 and not_covered.sum() > 0: # previous_counts.sum() == 0 is impossible
+                    weights.append(math.sqrt(chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)[0]))
                 else:
-                    true_class = labels.values[ic]
-                instance_paths[ic] = {'instance_id' : instance_ids[ic]
-                                        , 'pred_class' : tree_pred[ic].astype(np.int64)
-                                        , 'pred_class_label' : tree_pred_labels[ic]
-                                        , 'pred_proba' : tree_pred_proba[ic].tolist()
-                                        , 'true_class' : true_class
-                                        , 'tree_correct' : tree_correct[ic]
-                                        , 'path' : {'feature_idx' : [feature[p]]
-                                                                , 'feature_name' : [feature_name]
-                                                                , 'feature_value' : [feature_value]
-                                                                , 'threshold' : [threshold[p]]
-                                                                , 'leq_threshold' : [leq_threshold]
-                                                    }
-                                        }
-            else:
-                feature_value = instances[ic, [feature[p]]].item(0)
-                leq_threshold = feature_value <= threshold[p]
-                instance_paths[ic]['path']['feature_idx'].append(feature[p])
-                instance_paths[ic]['path']['feature_name'].append(feature_name)
-                instance_paths[ic]['path']['feature_value'].append(feature_value)
-                instance_paths[ic]['path']['threshold'].append(threshold[p])
-                instance_paths[ic]['path']['leq_threshold'].append(leq_threshold)
+                    weights.append(max(weights))
 
-    return(tree_idx, instance_paths)
+            # now the patterns are scored and sorted. alpha > 0 favours longer patterns. 0 neutral. < 0 shorter.
+            self.ip_container.sort_patterns(alpha=alpha_paths, weights=weights) # with chi2 and support sorting
+        else:
+            self.ip_container.sort_patterns(alpha=alpha_paths) # with only support/alpha sorting
 
-def mine_path_segments(ip_container, data_container,
-                        support_paths=0.1, alpha_paths=0.5,
-                        disc_path_bins=4, disc_path_eqcounts=False,
-                        which_trees='majority'):
+    def get_rule(self, rule_acc, sample_instances, sample_labels, forest,
+                            algorithm='greedy_prec', precis_threshold=0.95):
 
-    # discretize any numeric features
-    ip_container.discretize_paths(data_container.var_dict,
-                            bins=disc_path_bins,
-                            equal_counts=disc_path_eqcounts)
-    # the patterns are found but not scored and sorted yet
-    ip_container.mine_patterns(support=support_paths)
-    return(ip_container)
+            # run the rule accumulator with greedy precis
+            rule_acc.merge_rule(sample_instances=sample_instances,
+                        sample_labels=sample_labels,
+                        forest=forest,
+                        algorithm=algorithm,
+                        precis_threshold=precis_threshold)
+            rule_acc.prune_rule()
+            CHIRPS_cont = rule_acc.get_CHIRPS_container()
 
-def apply_rule(rule, sample_instances, features):
-    # try to find a rule, or return []
-    if rule is None:
-        rule = []
-    lt_gt = lambda x, y, z : x <= y if z else x > y # if z is True, x <= y else x > y
-    idx = np.full(sample_instances.shape[0], 1, dtype='bool')
-    for r in rule:
-        idx = np.logical_and(idx, lt_gt(sample_instances.getcol(features.index(r[0])).toarray().flatten(), r[2], r[1]))
-    return(idx)
-
-def score_sort_path_segments(ip_container, data_container,
-                                sample_instances, sample_labels,
-                                alpha_paths=0.5, weighting='chisq'):
-    # best at -1 < alpha < 1
-    # the patterns will be weighted by chi**2 for independence test, p-values
-    if weighting == 'chisq':
-        weights = [] * len(ip_container.patterns)
-        for wp in ip_container.patterns:
-
-            idx = apply_rule(rule=wp, sample_instances=sample_instances, features=data_container.features_enc)
-            covered = p_count_corrected(sample_labels[idx], [i for i in range(len(data_container.class_names))])['counts']
-            not_covered = p_count_corrected(sample_labels[~idx], [i for i in range(len(data_container.class_names))])['counts']
-            observed = np.array((covered, not_covered))
-
-            # this is the chisq based weighting. can add other options
-            if covered.sum() > 0 and not_covered.sum() > 0: # previous_counts.sum() == 0 is impossible
-                weights.append(math.sqrt(chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)[0]))
-            else:
-                weights.append(max(weights))
-
-        # now the patterns are scored and sorted. alpha > 0 favours longer patterns. 0 neutral. < 0 shorter.
-        ip_container.sort_patterns(alpha=alpha_paths, weights=weights) # with chi2 and support sorting
-    else:
-        ip_container.sort_patterns(alpha=alpha_paths) # with only support/alpha sorting
-    return(ip_container)
-
-def get_rule(rule_acc, sample_instances, sample_labels, forest,
-                        algorithm='greedy_prec', precis_threshold=0.95):
-
-        # run the rule accumulator with greedy precis
-        rule_acc.build_rule(sample_instances=sample_instances,
-                    sample_labels=sample_labels,
-                    forest=forest,
-                    algorithm=algorithm,
-                    precis_threshold=precis_threshold)
-        rule_acc.prune_rule()
-        CHIRPS_cont = rule_acc.get_CHIRPS_container()
-
-        # collect completed rule accumulator
-        return(CHIRPS_cont)
+            # collect completed rule accumulator
+            return(CHIRPS_cont)
 
 def as_chirps(ip_container, data_container,
                         sample_instances, sample_labels, forest,
                         support_paths=0.1, alpha_paths=0.5,
                         disc_path_bins=4, disc_path_eqcounts=False,
-                        which_trees='majority', weighting='chisq',
-                        algorithm='greedy_prec', precis_threshold=0.95,
-                        batch_idx=None):
+                        weighting='chisq', algorithm='greedy_prec',
+                        precis_threshold=0.95, batch_idx=None):
     # these steps make up the CHIRPS process:
     # mine paths for freq patts
-    ip_container = mine_path_segments(ip_container, data_container,
-                            support_paths, alpha_paths,
-                            disc_path_bins, disc_path_eqcounts,
-                            which_trees)
+
+    cr = CHIRPS_runner(ip_container, data_container)
+    # fp growth mining
+    cr.mine_path_segments(support_paths, alpha_paths,
+                            disc_path_bins, disc_path_eqcounts)
+
     # score and sort
-    ip_container = score_sort_path_segments(ip_container, data_container,
-                                    sample_instances, sample_labels,
+    cr.score_sort_path_segments(sample_instances, sample_labels,
                                     alpha_paths, weighting)
+
+    ip_container = cr.ip_container
     # greedily add terms to create rule
-    rule_acc = rule_accumulator(data_container=data_container, paths_container=ip_container)
-    CHIRPS_cont = get_rule(rule_acc, sample_instances, sample_labels, forest,
+    rule_acc = rule_accumulator(data_container=data_container, instance_paths_container=ip_container)
+    CHIRPS_cont = cr.get_rule(rule_acc, sample_instances, sample_labels, forest,
     algorithm, precis_threshold)
 
     return(batch_idx, CHIRPS_cont)

@@ -6,8 +6,7 @@ import multiprocessing as mp
 from pandas import DataFrame, Series
 from CHIRPS import p_count, p_count_corrected, if_nexists_make_dir
 from CHIRPS.plotting import plot_confusion_matrix
-from CHIRPS.structures import rule_accumulator, forest_walker
-# from CHIRPS.async_routines import as_chirps
+from CHIRPS.structures import  forest_walker
 
 from scipy.stats import chi2_contingency
 from math import sqrt
@@ -119,17 +118,6 @@ def evaluate_model(X, y, prediction_model, class_names=None, plot_cm=True, plot_
                               title='Normalized confusion matrix')
     return(cm, acc, coka, prfs)
 
-# def encode_pred(instances, enc_model):
-#     return(Series(enc_model.predict(instances), index=instances.index))
-
-# def forest_survey(f_walker, X, y):
-#
-#     if f_walker.encoder is not None:
-#         X = f_walker.encoder.transform(X)
-#
-#     f_walker.full_survey(X, y)
-#     return(f_walker.forest_stats(np.unique(y)))
-
 def CHIRPS_explain(bp_container, # batch_paths_container
                     data_container, encoder, pred_model,
                     sample_instances, sample_labels,
@@ -218,7 +206,7 @@ def CHIRPS_explanation(f_walker, getter,
                 walked.instance_id = instance_id
 
                 # run the chirps process on each instance paths
-                _, completed_rule_acc = \
+                _, completed_CHIRPS_cont = \
                     as_chirps(walked, data_container,
                     sample_instances, sample_labels,
                     encoder, pred_model,
@@ -229,7 +217,7 @@ def CHIRPS_explanation(f_walker, getter,
                     batch_idx)
 
                 # add the finished rule accumulator to the results
-                explainers[b * batch_size + batch_idx] = [completed_rule_acc]
+                explainers[b * batch_size + batch_idx] = [completed_CHIRPS_cont]
             ce_end_time = timeit.default_timer()
             ce_elapsed_time = ce_end_time - ce_start_time
 

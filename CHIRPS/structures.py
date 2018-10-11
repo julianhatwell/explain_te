@@ -780,9 +780,7 @@ class batch_CHIRPS_container:
                     self.forest,
                     support_paths, alpha_paths,
                     disc_path_bins, disc_path_eqcounts,
-                    which_trees, weighting,
-                    algorithm, precis_threshold,
-                    i)
+                    weighting, algorithm, precis_threshold, i)
                 ))
 
             # block and collect the pool
@@ -808,9 +806,7 @@ class batch_CHIRPS_container:
                     self.forest,
                     support_paths, alpha_paths,
                     disc_path_bins, disc_path_eqcounts,
-                    which_trees, weighting,
-                    algorithm, precis_threshold,
-                    i)
+                    weighting, algorithm, precis_threshold, i)
 
                 # add the finished rule accumulator to the results
                 instance_CHIRPS_containers[i] = CHIRPS_cont
