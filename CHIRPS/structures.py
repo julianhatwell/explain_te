@@ -301,6 +301,21 @@ class data_container(non_deterministic):
 
         return(tt)
 
+    def get_meta(self):
+        return({'class_col' : self.class_col,
+                'class_names' : self.class_names,
+                'var_names' : self.var_names,
+                'var_types' : self.var_types,
+                'features' : self.features,
+                'features_enc' : self.features_enc,
+                'var_dict' : self.var_dict,
+                'var_dict_enc' : self.var_dict_enc,
+                'categorical_features' : self.categorical_features,
+                'continuous_features' : self.continuous_features,
+                'le_dict' : self.le_dict,
+                'get_label' : self.get_label
+                })
+
 class instance_paths_container:
     def __init__(self
     , paths
@@ -460,16 +475,21 @@ class forest_walker:
 
     def __init__(self
     , forest
-    , data_container):
+    , **kwargs):
         self.forest = forest
-        self.features = data_container.features_enc
+        self.features = kwargs.pop('features_enc')
         self.n_features = len(self.features)
-        if data_container.class_col in data_container.le_dict.keys():
-            self.class_names = data_container.get_label(data_container.class_col, [i for i in range(len(data_container.class_names))])
-            self.get_label = data_container.get_label
-            self.class_col = data_container.class_col
+        self.class_col = kwargs.pop('class_col')
+
+        kw_le_dict = kwargs.pop('le_dict')
+        kw_get_label = kwargs.pop('get_label')
+        kw_class_names = kwargs.pop('class_names')
+
+        if self.class_col in kw_le_dict.keys():
+            self.class_names = kw_get_label(self.class_col, [i for i in range(len(kw_class_names))])
+            self.get_label = kw_get_label
         else:
-            self.class_names = data_container.class_names
+            self.class_names = kw_class_names
             self.get_label = None
 
         # base counts for all trees
