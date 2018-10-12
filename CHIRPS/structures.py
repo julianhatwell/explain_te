@@ -483,13 +483,10 @@ class forest_walker:
 
         kw_le_dict = kwargs.pop('le_dict')
         kw_get_label = kwargs.pop('get_label')
-        kw_class_names = kwargs.pop('class_names')
-
+        
         if self.class_col in kw_le_dict.keys():
-            self.class_names = kw_get_label(self.class_col, [i for i in range(len(kw_class_names))])
             self.get_label = kw_get_label
         else:
-            self.class_names = kw_class_names
             self.get_label = None
 
         # base counts for all trees

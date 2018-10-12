@@ -151,6 +151,7 @@ class rule_evaluator:
     def evaluate_rule(self, rule=None, features=None, class_names=None,
                         instances=None, labels=None):
 
+
         rule, features, class_names, instances, labels = \
                 self.init_values(rule=rule, features=features, class_names=class_names,
                                 instances=instances, labels=labels)
@@ -220,7 +221,8 @@ class CHIRPS_container(rule_evaluator):
                 counts,
                 recall,
                 f1,
-                lift):
+                lift,
+                algorithm):
         self.features = features
         self.features_enc = features_enc
         self.class_names = class_names
@@ -245,6 +247,7 @@ class CHIRPS_container(rule_evaluator):
         self.recall = recall
         self.f1 = f1
         self.lift = lift
+        self.algorithm = algorithm
 
     def prettify_rule(self, rule=None, var_dict=None):
 
@@ -287,7 +290,8 @@ class CHIRPS_container(rule_evaluator):
         'counts' : self.counts,
         'recall' : self.recall,
         'f1' : self.f1,
-        'lift' : self.lift})
+        'lift' : self.lift,
+        'algorithm' : algorithm})
 
 # this class runs all steps of the CHIRPS algorithm
 class rule_accumulator(non_deterministic, rule_evaluator):
@@ -660,7 +664,8 @@ class rule_accumulator(non_deterministic, rule_evaluator):
         self.counts,
         self.recall,
         self.f1,
-        self.lift))
+        self.lift,
+        self.algorithm))
 
 class CHIRPS_runner(rule_evaluator):
 
