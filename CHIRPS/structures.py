@@ -43,14 +43,14 @@ class data_split_container:
 
         to_mat = lambda x : x.todense() if isinstance(x, sparse.csr.csr_matrix) else x
         self.X_train_enc_matrix = to_mat(X_train_enc)
-        self.X_train_enc_matrix = to_mat(X_train_enc)
+        self.X_test_enc_matrix = to_mat(X_test_enc)
 
         if train_index is None:
-            self.train_index = X_train.index
+            self.train_index = y_train.index
         else:
             self.train_index = train_index
         if test_index is None:
-            self.test_index = X_test.index
+            self.test_index = y_test.index
         else:
             self.test_index = test_index
         self.current_row_train = 0
@@ -66,7 +66,7 @@ class data_split_container:
         else:
             instances = self.X_test[self.current_row_test:self.current_row_test + batch_size]
             instances_enc = self.X_test_enc[self.current_row_test:self.current_row_test + batch_size]
-            instances_enc_matrix = self.X_test_enc[self.current_row_test:self.current_row_test + batch_size]
+            instances_enc_matrix = self.X_test_enc_matrix[self.current_row_test:self.current_row_test + batch_size]
             labels = self.y_test[self.current_row_test:self.current_row_test + batch_size]
             self.current_row_test += batch_size
         return(instances, instances_enc, instances_enc_matrix, labels)
@@ -88,11 +88,12 @@ class data_split_container:
     def to_dict(self):
         return({'X_train': self.X_train,
             'X_train_enc' : self.X_train_enc,
+            'X_train_enc_matrix' : self.X_train_enc_matrix,
             'X_test' : self.X_test,
             'X_test_enc' : self.X_test_enc,
+            'X_test_enc_matrix' : self.X_test_enc_matrix,
             'y_train' : self.y_train,
             'y_test' : self.y_test,
-            'encoder' : self.encoder,
             'train_priors' : self.train_priors,
             'test_priors' : self.test_priors,
             'train_index' : self.train_index,
@@ -431,7 +432,7 @@ class batch_paths_container:
         if self.by_tree:
             n_paths = len(self.path_detail)
             if which_trees == 'correct':
-                paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths) if self.path_detail[pd][batch_idx]['tree_correct']]
+                paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths) if self.path_detail[pd][batch_idx]['tree_agree_maj_vote']]
             elif which_trees == 'majority':
                 major_class = self.major_class_from_paths(batch_idx, return_counts=False)
                 paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths) if self.path_detail[pd][batch_idx]['pred_class'] == major_class]
@@ -443,7 +444,7 @@ class batch_paths_container:
         else:
             n_paths = len(self.path_detail[batch_idx])
             if which_trees == 'correct':
-                paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths) if self.path_detail[batch_idx][pd]['tree_correct']]
+                paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths) if self.path_detail[batch_idx][pd]['tree_agree_maj_vote']]
             elif which_trees == 'majority':
                 major_class = self.major_class_from_paths(batch_idx, return_counts=False)
                 paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == major_class]
@@ -483,7 +484,7 @@ class forest_walker:
 
         kw_le_dict = kwargs.pop('le_dict')
         kw_get_label = kwargs.pop('get_label')
-        
+
         if self.class_col in kw_le_dict.keys():
             self.get_label = kw_get_label
         else:
@@ -684,22 +685,21 @@ class forest_walker:
         tree_pred_proba = tree.predict_proba(instances)
 
         if labels is None:
-            tree_correct = [None] * n_instances
+            tree_agree_maj_vote = [None] * n_instances
         else:
-            tree_correct = tree_pred == labels.values
+            tree_agree_maj_vote = tree_pred == labels
 
         if labels is not None:
             tree_pred_labels = self.get_label(self.class_col, tree_pred.astype(int))
         else:
             tree_pred_labels = tree_pred
 
-        return(tree_pred, tree_pred_labels, tree_pred_proba, tree_correct, feature, threshold, path)
+        return(tree_pred, tree_pred_labels, tree_pred_proba, tree_agree_maj_vote, feature, threshold, path)
 
     def forest_walk(self, instances, labels = None, forest_walk_async=False):
 
         features = self.features
         n_instances = instances.shape[0]
-        instance_ids = labels.index.tolist()
 
         if forest_walk_async:
             async_out = []
@@ -710,14 +710,13 @@ class forest_walker:
 
                 # process the tree
                 tree_pred, tree_pred_labels, \
-                tree_pred_proba, tree_correct, \
+                tree_pred_proba, tree_agree_maj_vote, \
                 feature, threshold, path = self.tree_structures(t, instances, labels, n_instances)
                 # walk the tree
                 async_out.append(pool.apply_async(as_tree_walk,
-                                                (i, instances, labels,
-                                                instance_ids, n_instances,
+                                                (i, instances, labels, n_instances,
                                                 tree_pred, tree_pred_labels,
-                                                tree_pred_proba, tree_correct,
+                                                tree_pred_proba, tree_agree_maj_vote,
                                                 feature, threshold, path, features)
                                                 ))
 
@@ -736,13 +735,12 @@ class forest_walker:
 
                 # process the tree
                 tree_pred, tree_pred_labels, \
-                tree_pred_proba, tree_correct, \
+                tree_pred_proba, tree_agree_maj_vote, \
                 feature, threshold, path = self.tree_structures(t, instances, labels, n_instances)
                 # walk the tree
-                _, tree_paths[i] = as_tree_walk(i, instances, labels,
-                                                instance_ids, n_instances,
+                _, tree_paths[i] = as_tree_walk(i, instances, labels, n_instances,
                                                 tree_pred, tree_pred_labels,
-                                                tree_pred_proba, tree_correct,
+                                                tree_pred_proba, tree_agree_maj_vote,
                                                 feature, threshold, path, features)
 
         return(batch_paths_container(tree_paths, by_tree=True))

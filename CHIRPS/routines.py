@@ -118,6 +118,18 @@ def evaluate_model(X, y, prediction_model, class_names=None, plot_cm=True, plot_
                               title='Normalized confusion matrix')
     return(cm, acc, coka, prfs)
 
+def batch_instance_ceiling(data_split, n_instances=None, batch_size=None):
+    dataset_size = len(data_split.y_test)
+    if batch_size is None:
+        batch_size = dataset_size
+    if n_instances is None:
+        n_instances = dataset_size
+    n_instances = min(n_instances, dataset_size)
+    batch_size = min(batch_size, dataset_size)
+    n_batches = int(batch_size / n_instances)
+    return(n_instances, n_batches)
+
+
 def CHIRPS_explain(bp_container, # batch_paths_container
                     data_container, encoder, pred_model,
                     sample_instances, sample_labels,

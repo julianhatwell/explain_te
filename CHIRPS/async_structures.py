@@ -10,8 +10,7 @@ from scipy.stats import chi2_contingency, entropy
 from CHIRPS import p_count, p_count_corrected
 
 # parallelisable function for the forest_walker class
-def as_tree_walk(tree_idx, instances, labels,
-                instance_ids, n_instances,
+def as_tree_walk(tree_idx, instances, labels, n_instances,
                 tree_pred, tree_pred_labels,
                 tree_pred_proba, tree_correct,
                 feature, threshold, path, features):
@@ -23,14 +22,13 @@ def as_tree_walk(tree_idx, instances, labels,
     if len(feature) == 1:
         for ic in range(n_instances):
             if labels is None:
-                true_class = None
+                pred_class = None
             else:
-                true_class = labels.values[ic]
-            instance_paths[ic] = {'instance_id' : instance_ids[ic]
-                                    , 'pred_class' : tree_pred[ic].astype(np.int64)
+                pred_class = labels[ic]
+            instance_paths[ic] = {'pred_class' : tree_pred[ic].astype(np.int64)
                                     , 'pred_class_label' : tree_pred_labels[ic]
                                     , 'pred_proba' : tree_pred_proba[ic].tolist()
-                                    , 'true_class' : true_class
+                                    , 'pred_class' : pred_class
                                     , 'tree_correct' : tree_correct[ic]
                                     , 'path' : {'feature_idx' : []
                                                             , 'feature_name' : []
@@ -57,14 +55,13 @@ def as_tree_walk(tree_idx, instances, labels,
                 feature_value = instances[ic, [feature[p]]].item(0)
                 leq_threshold = feature_value <= threshold[p]
                 if labels is None:
-                    true_class = None
+                    pred_class = None
                 else:
-                    true_class = labels.values[ic]
-                instance_paths[ic] = {'instance_id' : instance_ids[ic]
-                                        , 'pred_class' : tree_pred[ic].astype(np.int64)
+                    pred_class = labels[ic]
+                instance_paths[ic] = {'pred_class' : tree_pred[ic].astype(np.int64)
                                         , 'pred_class_label' : tree_pred_labels[ic]
                                         , 'pred_proba' : tree_pred_proba[ic].tolist()
-                                        , 'true_class' : true_class
+                                        , 'pred_class' : pred_class
                                         , 'tree_correct' : tree_correct[ic]
                                         , 'path' : {'feature_idx' : [feature[p]]
                                                                 , 'feature_name' : [feature_name]
