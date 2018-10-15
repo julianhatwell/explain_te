@@ -61,7 +61,8 @@ class data_split_container:
         self.X_train_matrix = np.matrix(X_train)
         self.X_test_matrix = np.matrix(X_test)
 
-        to_mat = lambda x : x.todense() if isinstance(x, sparse.csr.csr_matrix) else x
+        to_mat = lambda x : x.todense() if isinstance(x, sparse.csr.csr_matrix) \
+                                        else x
         self.X_train_enc_matrix = to_mat(X_train_enc)
         self.X_test_enc_matrix = to_mat(X_test_enc)
 
@@ -311,6 +312,12 @@ class data_container(non_deterministic):
         # create an encoded copy
         X_train_enc = self.encoder.transform(X_train)
         X_test_enc = self.encoder.transform(X_test)
+
+        # coo format needs to be converted as it has limited properties
+        to_csr = lambda x : x.tocsr() if isinstance(x, sparse.coo.coo_matrix) \
+                                        else x
+        X_train_enc = to_csr(X_train_enc)
+        X_test_enc = to_csr(X_test_enc)
 
         tt = data_split_container(X_train = X_train,
         X_train_enc = X_train_enc,
@@ -878,7 +885,7 @@ class CHIRPS_explainer(rule_evaluator):
     def __init__(self, features, features_enc, class_names,
                 var_dict, var_dict_enc,
                 paths, patterns,
-                rule, pruned_rule, conjunction_rule,
+                rule, pruned_rule,
                 target_class, target_class_label,
                 major_class, major_class_label,
                 model_votes, model_posterior,
@@ -898,7 +905,6 @@ class CHIRPS_explainer(rule_evaluator):
         self.patterns = patterns
         self.rule = rule
         self.pruned_rule = pruned_rule
-        self.conjunction_rule = conjunction_rule
         self.target_class = target_class
         self.target_class_label = target_class_label
         self.major_class = major_class
@@ -942,7 +948,6 @@ class CHIRPS_explainer(rule_evaluator):
         'patterns' : self.patterns,
         'rule' : self.rule,
         'pruned_rule' : self.pruned_rule,
-        'conjunction_rule' : self.conjunction_rule,
         'target_class' :self.target_class,
         'target_class_label' :self.target_class_label,
         'major_class' : self.major_class,
@@ -1000,7 +1005,6 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
                 self.var_dict[item]['lower_bound'] = [-math.inf] * n_labs
         self.rule = []
         self.pruned_rule = []
-        self.conjunction_rule = []
         self.__previous_rule = []
         self.__reverted = []
         self.total_points = None
@@ -1037,17 +1041,42 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         self.__previous_rule = deepcopy(self.rule)
         next_rule = self.patterns[self.unapplied_rules[0]]
         for item in next_rule[0]:
+            # list of already used features
+            # to be created each item iteration
+            # as the order is important can be rarranged by inserts
+            feature_appears = [f for (f, _, _) in self.rule]
+
+            # skip duplicates (essential for pruning reasons)
             if item in self.rule:
-                continue # skip duplicates (essential for pruning reasons)
+                continue
+
             if item[0] in self.var_dict_enc: # binary feature
+                # find the parent feature of item
+                parent_feature = self.var_dict_enc[item[0]]
+
                 # update the master list
-                position = self.var_dict[self.var_dict_enc[item[0]]]['onehot_labels'].index(item[0])
+                position = self.var_dict[parent_feature]['onehot_labels'].index(item[0])
                 if item[1]: # leq_threshold True
-                    self.var_dict[self.var_dict_enc[item[0]]]['upper_bound'][position] = item[2]
+                    self.var_dict[parent_feature]['upper_bound'][position] = item[2]
                 else:
-                    self.var_dict[self.var_dict_enc[item[0]]]['lower_bound'][position] = item[2]
-                # append or update
-                self.rule.append(item)
+                    self.var_dict[parent_feature]['lower_bound'][position] = item[2]
+
+                # list of already used categorical parent features
+                # to be created each item iteration
+                # as the order is important can be rarranged by inserts
+                categorical_feature_appears = []
+                for f_app in feature_appears:
+                    if f_app in self.var_dict_enc.keys(): # it is an encoded categorical
+                        categorical_feature_appears.append(self.var_dict_enc[f_app])
+                    else: # it is continuous
+                        categorical_feature_appears.append(f_app)
+
+                # insert item after last position in current rule where parent item appears
+                if parent_feature in categorical_feature_appears:
+                    self.rule.insert(max(np.where(np.array(categorical_feature_appears) == parent_feature)[0]) + 1, item)
+                # otherwise just append to current rule
+                else:
+                    self.rule.append(item)
 
             else: # continuous feature
                 append_or_update = False
@@ -1062,8 +1091,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
                         append_or_update = True
 
                 if append_or_update:
-                    feature_appears = [(f, ) for (f, t, _) in self.rule]
-                    if (item[0],) in feature_appears:
+                    if item[0] in feature_appears:
                         # print(item, 'feature appears already')
                         valueless_rule = [(f, t) for (f, t, _) in self.rule]
                         if (item[0], item[1]) in valueless_rule: # it's already there and needs updating
@@ -1141,9 +1169,6 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
                 gt_pruned_rule = lt_pruned_rule.copy()
 
         self.pruned_rule = gt_pruned_rule
-
-        # find a rule with only nominal features are only binary True. Always include numeric
-        self.conjunction_rule = [r for r in self.pruned_rule if not r[1] or self.var_dict[r[0]]['data_type'] == 'continuous']
 
     def __greedy_commit__(self, current, previous):
         if current <= previous:
@@ -1365,7 +1390,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         return(CHIRPS_explainer(self.features, self.features_enc, self.class_names,
         self.var_dict, self.var_dict_enc,
         self.paths, self.patterns,
-        self.rule, self.pruned_rule, self.conjunction_rule,
+        self.rule, self.pruned_rule,
         self.target_class, self.target_class_label,
         self.major_class, self.major_class_label,
         self.model_votes, self.model_posterior,

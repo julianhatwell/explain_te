@@ -37,12 +37,18 @@ def do_tuning(X, y, grid = None, random_state=123, save_path = None):
     best_score = 0
 
     for g in grid:
-        tree_start_time = timeit.default_timer()
+        print('Trying params: ' + str(g))
+        fitting_start_time = timeit.default_timer()
         rf.set_params(oob_score = True, random_state=random_state, **g)
         rf.fit(X, y)
-        tree_end_time = timeit.default_timer()
-        g['fitting_time'] = tree_end_time - tree_start_time
-        g['score'] = rf.oob_score_
+        fitting_end_time = timeit.default_timer()
+        fitting_elapsed_time = fitting_end_time - fitting_start_time
+        oobe = rf.oob_score_
+        print('Training time: ' + str(fitting_elapsed_time))
+        print('Out of Bag Error: ' + str(oobe))
+        print()
+        g['fitting_time'] = fitting_elapsed_time
+        g['score'] = oobe
         params.append(g)
 
     elapsed = timeit.default_timer() - start_time
@@ -65,6 +71,7 @@ def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuni
     # to do - test allowable structure of grid input
     if override_tuning:
         print('Over-riding previous tuning parameters. New grid tuning... (please wait)')
+        print()
         tun_start_time = timeit.default_timer()
         best_params = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
         tun_elapsed_time = timeit.default_timer() - tun_start_time
@@ -76,11 +83,12 @@ def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuni
                 best_params = json.load(infile)
             return(best_params)
         except:
-            print('finding best tuning parameters')
+            print('New grid tuning... (please wait)')
             best_params = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
 
-    print("Best OOB Accuracy Estimate during tuning: " "{:0.4f}".format(best_params['score']))
-    print("Best parameters:", best_params)
+    print('Best OOB Accuracy Estimate during tuning: ' '{:0.4f}'.format(best_params['score']))
+    print('Best parameters:', best_params)
+    print()
 
     return(best_params)
 
