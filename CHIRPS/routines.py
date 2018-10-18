@@ -1,12 +1,10 @@
 import json
 import time
 import timeit
+import pickle
 import numpy as np
 import multiprocessing as mp
 from pandas import DataFrame, Series
-from CHIRPS import p_count, p_count_corrected, if_nexists_make_dir
-from CHIRPS.plotting import plot_confusion_matrix
-from CHIRPS.structures import  forest_walker
 
 from scipy.stats import chi2_contingency
 from math import sqrt
@@ -14,6 +12,9 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import ParameterGrid
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support, accuracy_score
+
+from CHIRPS import p_count, p_count_corrected, if_nexists_make_dir, chisq_indep_test
+from CHIRPS.plotting import plot_confusion_matrix
 
 from anchor import anchor_tabular as anchtab
 from lime import lime_tabular as limtab
@@ -123,7 +124,7 @@ def evaluate_model(X, y, prediction_model, class_names=None, plot_cm=True, plot_
         plot_confusion_matrix(cm
                               , class_names=class_names
                               , normalize=True,
-                              title='Normalized confusion matrix')
+                              title='Confusion matrix normalized on rows (predicted label share)')
     return(cm, acc, coka, prfs)
 
 def batch_instance_ceiling(data_split, n_instances=None, batch_size=None):
@@ -137,116 +138,103 @@ def batch_instance_ceiling(data_split, n_instances=None, batch_size=None):
     n_batches = int(batch_size / n_instances)
     return(n_instances, n_batches)
 
+def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
+                                ds_container, # data_split_container (for the test data and the LOO function
+                                instance_ids, # should match the instances in the batch
+                                print_to_screen=False,
+                                save_results_path=None,
+                                save_results_file=None,
+                                save_CHIRPS=False):
 
-def CHIRPS_explain(bp_container, # batch_paths_container
-                    data_container, encoder, pred_model,
-                    sample_instances, sample_labels,
-                    support_paths=0.1, alpha_paths=0.5,
-                    disc_path_bins=4, disc_path_eqcounts=False,
-                    alpha_scores=0.5, which_trees='majority',
-                    precis_threshold=0.95, weighting='chisq',
-                    algorithm='greedy_prec', chirps_explanation_async=False):
-    print('nothing')
+    output = [[]] * len(b_CHIRPS_exp.CHIRPS_explainers)
 
+    for i, c in enumerate(b_CHIRPS_exp.CHIRPS_explainers):
 
-def CHIRPS_explanation(f_walker, getter,
- data_container, encoder, sample_instances, sample_labels,
- batch_size = 1, n_batches = 1,
- support_paths=0.1, alpha_paths=0.5,
- disc_path_bins=4, disc_path_eqcounts=False,
- alpha_scores=0.5, which_trees='majority',
- precis_threshold=0.95, weighting='chisq', algorithm='greedy_prec',
- forest_walk_async=False, chirps_explanation_async=False):
+        # get test sample by leave-one-out on current instance
+        instance_id = instance_ids[i]
+        _, instances_enc, labels = ds_container.get_loo_instances(instance_id)
 
-    pred_model = f_walker.prediction_model
-    # create a list to collect completed rule accumulators
-    explainers = [[]] * (batch_size * n_batches)
+        # then evaluating rule metrics on the leave-one-out test set
+        eval_rule = c.evaluate_rule(rule=c.pruned_rule, instances=instances_enc, labels=labels)
+        tc = c.target_class
+        tc_lab = c.target_class_label
 
-    for b in range(n_batches):
-        print('Walking forest for batch ' + str(b) + ' of batch size ' + str(batch_size) + '... (please wait)')
-        instances, labels = getter.get_next(batch_size)
-        instance_ids = labels.index.tolist()
-        # get all the tree paths instance by instance
-        forest_walk_start_time = timeit.default_timer()
+        # collect results
+        tt_prior = labels.value_counts()[0] / len(labels)
+        tt_prior_counts = eval_rule['priors']['counts']
+        tt_posterior_counts = eval_rule['counts']
+        tt_chisq = chisq_indep_test(tt_posterior_counts, tt_prior_counts)[1]
+        tt_prec = eval_rule['post'][tc]
+        tt_recall = eval_rule['recall'][tc]
+        tt_f1 = eval_rule['f1'][tc]
+        tt_acc = eval_rule['accuracy'][tc]
+        tt_lift = eval_rule['lift'][tc]
+        tt_coverage = eval_rule['coverage']
 
-        batch_walked = f_walker.forest_walk(instances = instances
-                                , labels = labels
-                                , async = forest_walk_async)
+        output[i] = [instance_id,
+            c.algorithm,
+            c.pretty_rule,
+            c.rule_len,
+            c.major_class,
+            c.major_class_label,
+            c.target_class,
+            c.target_class_label,
+            c.forest_vote_share,
+            c.prior,
+            c.est_prec,
+            c.est_recall,
+            c.est_f1,
+            c.est_acc,
+            c.est_lift,
+            c.est_coverage,
+            tt_prec,
+            tt_recall,
+            tt_f1,
+            tt_acc,
+            tt_lift,
+            tt_coverage]
 
-        forest_walk_end_time = timeit.default_timer()
-        forest_walk_elapsed_time = forest_walk_end_time - forest_walk_start_time
+        if print_to_screen:
+            print('INSTANCE RESULTS')
+            print('instance id: ' + str(instance_id) + ' with target class ' + str(tc) + ' (' + tc_lab + ')')
+            print('target class prior (training data): ' + str(tt_prior))
+            print()
+            c.to_screen()
+            print('Results - Previously Unseen Sample')
+            print('rule excl.coverage (unseen data): ' + str(tt_coverage))
+            print('rule stability (unseen data): ' + str(tt_prec))
+            print('rule recall (unseen data): ' + str(tt_recall))
+            print('rule f1 score (unseen data): ' + str(tt_f1))
+            print('rule lift (unseen data): ' + str(tt_lift))
+            print('prior counts (unseen data): ' + str(tt_prior_counts))
+            print('rule posterior counts (unseen data): ' + str(tt_posterior_counts))
+            print('rule chisq p-value (unseen data): ' + str(tt_chisq))
+            print()
+            print()
 
-        print('Forest Walk time elapsed:', "{:0.4f}".format(forest_walk_elapsed_time), 'seconds')
-        print('Forest Walk with async = ' + str(forest_walk_async))
+    if save_results_path is not None:
+        # create new directory if necessary
+        if_nexists_make_dir(save_results_path)
+        # save the tabular results to a file
+        headers = ['instance_id', 'algorithm',
+                    'pretty rule', 'rule length',
+                    'pred class', 'pred class label',
+                    'target class', 'target class label',
+                    'forest vote share', 'pred prior',
+                    'stability(tr)', 'recall(tr)', 'f1(tr)',
+                    'accuracy(tr)', 'lift(tr)',
+                    'excl.coverage(tr)',
+                    'stability(tt)', 'recall(tt)', 'f1(tt)',
+                    'accuracy(tt)', 'lift(tt)',
+                    'excl.coverage(tt)']
+        output_df = DataFrame(output, columns=headers)
+        output_df.to_csv(save_results_path + save_results_file + '.csv')
 
-        ce_start_time = timeit.default_timer()
-        if chirps_explanation_async:
-            print('Running CHIRPS on batch... (please wait)')
-            chp_start_time = timeit.default_timer()
-            async_out = []
-            n_cores = mp.cpu_count()-1
-            pool = mp.Pool(processes=n_cores)
-            for batch_idx in range(batch_size):
-                instance_id = instance_ids[batch_idx]
-
-                # extract the current instance paths for freq patt mining, filter by majority trees only
-                walked = batch_walked.get_instance_paths(batch_idx, which_trees=which_trees)
-                walked.instance_id = instance_id
-
-                # run the chirps process on each instance paths
-                async_out.append(pool.apply_async(as_chirps,
-                    (walked, data_container,
-                    sample_instances, sample_labels,
-                    encoder, pred_model,
-                    support_paths, alpha_paths,
-                    disc_path_bins, disc_path_eqcounts,
-                    which_trees, weighting,
-                    greedy, precis_threshold,
-                    batch_idx)
-                ))
-
-            # block and collect the pool
-            pool.close()
-            pool.join()
-
-            # get the async results and sort to ensure original batch index order and remove batch index
-            ce = [async_out[j].get() for j in range(len(async_out))]
-            ce.sort()
-            for batch_idx in range(batch_size):
-                explainers[b * batch_size + batch_idx] = [ce[batch_idx][1]] # embed object in list
-
-            ce_end_time = timeit.default_timer()
-            ce_elapsed_time = ce_end_time - ce_start_time
-
-        else:
-            for batch_idx in range(batch_size):
-                instance_id = instance_ids[batch_idx]
-                # extract the current instance paths for freq patt mining, filter by majority trees only
-                walked = batch_walked.get_instance_paths(batch_idx, which_trees=which_trees)
-                walked.instance_id = instance_id
-
-                # run the chirps process on each instance paths
-                _, completed_CHIRPS_cont = \
-                    as_chirps(walked, data_container,
-                    sample_instances, sample_labels,
-                    encoder, pred_model,
-                    support_paths, alpha_paths,
-                    disc_path_bins, disc_path_eqcounts,
-                    which_trees, weighting,
-                    greedy, precis_threshold,
-                    batch_idx)
-
-                # add the finished rule accumulator to the results
-                explainers[b * batch_size + batch_idx] = [completed_CHIRPS_cont]
-            ce_end_time = timeit.default_timer()
-            ce_elapsed_time = ce_end_time - ce_start_time
-
-        print('CHIRPS time elapsed:', "{:0.4f}".format(ce_elapsed_time), 'seconds')
-        print('CHIRPS with async = ' + str(chirps_explanation_async))
-
-
-    algorithm = [algorithm] # this method proved to be the best. For alternatives, go to the github and see older versions
-    return(explainers, algorithm)
+        if save_CHIRPS:
+            # save the batch_CHIRPS_explainer object
+            CHIRPS_explainers_store = open(save_results_path + save_results_file + '.pickle', "wb")
+            pickle.dump(b_CHIRPS_exp.CHIRPS_explainers, CHIRPS_explainers_store)
+            CHIRPS_explainers_store.close()
 
 def anchors_preproc(dataset, random_state, iv_low, iv_high):
     mydata = dataset(random_state)

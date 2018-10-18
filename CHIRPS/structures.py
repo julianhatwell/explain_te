@@ -2,7 +2,7 @@ import sys
 import math
 import multiprocessing as mp
 import numpy as np
-from CHIRPS import p_count, p_count_corrected, if_nexists_make_dir
+from CHIRPS import p_count, p_count_corrected, if_nexists_make_dir, chisq_indep_test
 from pandas import DataFrame, Series
 from pyfpgrowth import find_frequent_patterns
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
@@ -11,7 +11,6 @@ from scipy import sparse
 from scipy.stats import sem
 from operator import itemgetter
 from itertools import chain
-from scipy.stats import chi2_contingency
 from CHIRPS import config as cfg
 from CHIRPS.async_structures import *
 
@@ -240,7 +239,7 @@ class data_container(non_deterministic):
             self.encoder = default_encoder
 
     # helper function for pickling files
-    def make_save_path(self, filename = ''):
+    def get_save_path(self, filename = ''):
         if len(self.project_dir) > 0:
             return(self.project_dir + cfg.path_sep + self.save_dir + cfg.path_sep + filename)
         else:
@@ -841,13 +840,9 @@ class rule_evaluator:
         counts = p_counts['counts']
         labels = p_counts['labels']
 
-        observed = np.array((counts, priors['counts']))
-        if counts.sum() > 0: # previous_counts.sum() == 0 is impossible
-            chisq = chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)
-        else:
-            chisq = None
+        chisq = chisq_indep_test(counts, priors['counts'])[1] # p-value
 
-        # class coverage, TPR (recall) TP / (TP + FN)
+        # TPR (recall) TP / (TP + FN)
         recall = counts / priors['counts']
         r_corrected = np.array([r if r > 0.0 else 1.0 for r in recall]) # to avoid div by zeros
         f1 = [2] * ((post * recall) / (p_corrected + r_corrected))
@@ -878,7 +873,8 @@ class rule_evaluator:
                 'f1' : f1,
                 'accuracy' : accu,
                 'lift' : lift,
-                'chisq' : chisq})
+                'chisq' : chisq
+                })
 
 class CHIRPS_explainer(rule_evaluator):
 
@@ -889,12 +885,14 @@ class CHIRPS_explainer(rule_evaluator):
                 target_class, target_class_label,
                 major_class, major_class_label,
                 model_votes, model_posterior,
-                coverage, precision, posterior,
+                isolation_pos,
+                posterior,
                 accuracy,
                 counts,
                 recall,
                 f1,
                 lift,
+                chisq,
                 algorithm):
         self.features = features
         self.features_enc = features_enc
@@ -911,15 +909,31 @@ class CHIRPS_explainer(rule_evaluator):
         self.major_class_label = major_class_label
         self.model_votes = model_votes
         self.model_posterior = model_posterior
-        self.coverage = coverage
-        self.precision = precision
+        self.isolation_pos = isolation_pos
         self.posterior = posterior
         self.accuracy = accuracy
         self.counts = counts
         self.recall = recall
         self.f1 = f1
         self.lift = lift
+        self.chisq = chisq
         self.algorithm = algorithm
+
+        # instance meta data
+        self.prior = self.posterior[0][self.target_class]
+        self.forest_vote_share = self.model_posterior[self.target_class]
+        self.pretty_rule = self.prettify_rule()
+        self.rule_len = len(self.pruned_rule)
+
+        # final metrics from rule merge step (usually based on training set)
+        self.est_prec = list(reversed(self.posterior))[0][self.target_class]
+        self.est_recall = list(reversed(self.recall))[0][self.target_class]
+        self.est_f1 = list(reversed(self.f1))[0][self.target_class]
+        self.est_acc = list(reversed(self.accuracy))[0][self.target_class]
+        self.est_lift = list(reversed(self.lift))[0][self.target_class]
+        self.est_coverage = list(reversed(self.counts))[0].sum() / self.counts[0].sum()
+        self.posterior_counts = list(reversed(self.counts))[0]
+        self.prior_counts = self.counts[0]
 
     def prettify_rule(self, rule=None, var_dict=None):
 
@@ -938,6 +952,25 @@ class CHIRPS_explainer(rule_evaluator):
                 return(lt_gt(x,y,z))
         return(' AND '.join([bin_or_cont(f, t, v) for f, t, v in rule]))
 
+    def to_screen(self):
+
+        print('Estimated Results - Rule Training Sample')
+        print('target class prior (training data): ' + str(self.prior))
+        print('forest vote share (unseen instance): ' + str(self.forest_vote_share))
+        print('forest vote margin (unseen instance): ' + str(self.forest_vote_share - (1 - self.forest_vote_share)))
+        print('rule: ' + self.pretty_rule)
+        print('rule cardinality: ' + str(self.rule_len))
+        print()
+        print('rule excl.coverage (training data): ' + str(self.est_coverage))
+        print('rule stability (training data): ' + str(self.est_prec))
+        print('rule recall (training data): ' + str(self.est_recall))
+        print('rule f1 score (training data): ' + str(self.est_f1))
+        print('rule lift (training data): ' + str(self.est_lift))
+        print('prior counts (training data): ' + str(self.prior_counts))
+        print('posterior counts (training data): ' + str(self.posterior_counts))
+        print('rule chisq p-value (training data): ' + str(chisq_indep_test(self.posterior_counts, self.prior_counts)[1]))
+        print()
+
     def to_dict(self):
         return({'features' : self.features,
         'features_enc' : self.features_enc,
@@ -954,14 +987,13 @@ class CHIRPS_explainer(rule_evaluator):
         'major_class_label' :self.major_class_label,
         'model_votes' : self.model_votes,
         'model_posterior' : self.model_posterior,
-        'coverage' : self.coverage,
-        'precision' : self.precision,
         'posterior' : self.posterior,
         'accuracy' : self.accuracy,
         'counts' : self.counts,
         'recall' : self.recall,
         'f1' : self.f1,
         'lift' : self.lift,
+        'chisq' : self.chisq,
         'algorithm' : algorithm})
 
 # this class runs all steps of the CHIRPS algorithm
@@ -1016,15 +1048,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         self.target_class = None
         self.target_class_label = None
         self.major_class = None
-        self.model_entropy = None
-        self.model_info_gain = None
         self.model_posterior = None
-        self.max_ent = None
-        self.coverage = None
-        self.precision = None
-        self.cum_info_gain = None
-        self.information_gain = None
-        self.prior_entropy = None
         self.prior_info = None
         self.posterior = None
         self.accuracy = None
@@ -1032,6 +1056,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         self.recall = None
         self.f1 = None
         self.lift = None
+        self.chisq = []
         self.isolation_pos = None
         self.stopping_param = None
         self.merge_rule_iter = None
@@ -1213,9 +1238,6 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         # model votes collected in constructor
         self.model_posterior = self.model_votes['p_counts']
 
-        # model final entropy
-        self.model_entropy = entropy(self.model_posterior)
-
         # model predicted class
         self.major_class = np.argmax(self.model_posterior)
         if self.get_label is None:
@@ -1223,7 +1245,6 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         else:
             self.major_class_label = self.get_label(self.class_col, self.major_class)
 
-        # this analysis
         # target class
         if target_class is None:
             self.target_class = self.major_class
@@ -1243,40 +1264,21 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         self.f1 =  [2] * ( ( self.posterior * self.recall ) / ( self.posterior + self.recall ) ) # 2 * (precis * recall/(precis + recall) )
         self.accuracy = np.array([p_counts['p_counts'].tolist()])
         self.lift = [np.full(self.n_classes, 1.0)] # precis / (total_cover * prior)
-        self.prior_entropy = entropy(self.counts[0])
-
-        # info gain
-        self.max_ent = entropy([1 / self.n_classes] * self.n_classes)
-        self.model_info_gain = self.max_ent - self.model_entropy
-        self.prior_info = self.max_ent - self.prior_entropy
 
         # pre-loop set up
         # rule based measures - prior/empty rule
         current_precision = p_counts['p_counts'][np.where(p_counts['labels'] == self.target_class)][0] # based on priors
 
-        self.coverage = [1.0]
-        self.precision = [current_precision]
-
-        # rule posteriors
-        previous_entropy = self.max_ent # start at max possible
-        current_entropy = self.prior_entropy # entropy of prior distribution
-        self.information_gain = [previous_entropy - current_entropy] # information baseline (gain of priors over maximum)
-        self.cum_info_gain = self.information_gain.copy()
-
         # accumulate rule terms
-        cum_points = 0
+        rule_length_counter = 0
         self.merge_rule_iter = 0
 
-        while current_precision != 1.0 and current_precision != 0.0 and current_precision < precis_threshold and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or len(self.cum_info_gain) < max(1, fixed_length) + 1):
+        while current_precision != 1.0 and current_precision != 0.0 and current_precision < precis_threshold and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or rule_length_counter < max(1, fixed_length)):
             self.merge_rule_iter += 1
             self.add_rule_term(p_total = self.stopping_param)
             # you could add a round of bootstrapping here, but what does that do to performance
             eval_rule = self.evaluate_rule(instances=sample_instances,
                                             labels=sample_labels)
-
-            # entropy / information
-            previous_entropy = current_entropy
-            current_entropy = entropy(eval_rule['post'])
 
             # code to confirm rule, or revert to previous
             # choosing from a range of possible metrics and learning improvement
@@ -1305,17 +1307,14 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
             else: should_continue = False
             if should_continue:
                 continue # don't update all the metrics, just go to the next round
+            # otherwise
+            rule_length_counter += 1
 
-            # check for end conditions; no target class coverage
+            # check for end conditions; no target class instances
             if eval_rule['post'][np.where(eval_rule['labels'] == self.target_class)] == 0.0:
                 current_precision = 0.0
             else:
                 current_precision = eval_rule['post'][np.where(eval_rule['labels'] == self.target_class)][0]
-
-            # if we keep the new rule, append the results to the persisted arrays
-            # general coverage and precision
-            self.precision.append(current_precision)
-            self.coverage.append(eval_rule['coverage'])
 
             # per class measures
             self.posterior = np.append(self.posterior, [eval_rule['post']], axis=0)
@@ -1324,10 +1323,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
             self.recall = np.append(self.recall, [eval_rule['recall']], axis=0 )
             self.f1 = np.append(self.f1, [eval_rule['f1']], axis=0 )
             self.lift = np.append(self.lift, [eval_rule['lift']], axis=0 )
-
-            # entropy and info gain
-            self.information_gain.append(previous_entropy - current_entropy)
-            self.cum_info_gain.append(sum(self.information_gain))
+            self.chisq = np.append(self.chisq, [eval_rule['chisq']], axis=0 ) # p-value
 
         # first time major_class is isolated
         if any(np.argmax(self.posterior, axis=1) == self.target_class):
@@ -1394,12 +1390,14 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         self.target_class, self.target_class_label,
         self.major_class, self.major_class_label,
         self.model_votes, self.model_posterior,
-        self.coverage, self.precision, self.posterior,
+        self.isolation_pos,
+        self.posterior,
         self.accuracy,
         self.counts,
         self.recall,
         self.f1,
         self.lift,
+        self.chisq,
         self.algorithm))
 
 class batch_CHIRPS_explainer:
@@ -1412,6 +1410,7 @@ class batch_CHIRPS_explainer:
         self.sample_instances = sample_instances
         self.sample_labels = sample_labels
         self.meta_data = meta_data
+        self.CHIRPS_explainers = None
 
     def batch_run_CHIRPS(self, support_paths=0.1, alpha_paths=0.5,
                         disc_path_bins=4, disc_path_eqcounts=False,

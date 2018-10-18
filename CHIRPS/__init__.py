@@ -1,6 +1,7 @@
 import numpy as np
 from pathlib import Path as pth
 from os import makedirs as mkdir
+from scipy.stats import chi2_contingency
 
 # helper function determines if we're in a jup notebook
 def in_ipynb():
@@ -37,6 +38,14 @@ def p_count_corrected(arr, classes):
     return({'labels' : classes,
     'counts' : c,
     'p_counts' : pc})
+
+def chisq_indep_test(counts, prior_counts):
+    if counts.sum() > 0: # previous_counts.sum() == 0 is impossible
+        observed = np.array((counts, prior_counts))
+        chisq = chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)
+    else:
+        chisq = None
+    return(chisq)
 
 # create a directory if doesn't exist
 def if_nexists_make_dir(save_path):
