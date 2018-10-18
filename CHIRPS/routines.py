@@ -46,9 +46,8 @@ def do_tuning(X, y, grid = None, random_state=123, save_path = None):
         fitting_elapsed_time = fitting_end_time - fitting_start_time
         oobe = rf.oob_score_
         print('Training time: ' + str(fitting_elapsed_time))
-        print('Out of Bag Error: ' + str(oobe))
+        print('Out of Bag Accuracy Score: ' + str(oobe))
         print()
-        g['fitting_time'] = fitting_elapsed_time
         g['score'] = oobe
         params.append(g)
 
@@ -58,14 +57,18 @@ def do_tuning(X, y, grid = None, random_state=123, save_path = None):
                                         ascending=[False, True, True, False])
 
     best_grid = params.loc[params['score'].idxmax()]
-    best_params = {k: int(v) if k not in ('score', 'fitting_time') else v for k, v in best_grid.items()}
+    best_params = {k: int(v) for k, v in best_grid.items() if k != 'score'}
+    forest_performance = {'oobe_score' : best_grid['score'],
+                        'fitting_time' : fitting_elapsed_time}
 
     if save_path is not None:
         if_nexists_make_dir(save_path)
         with open(save_path + 'best_params_rndst_' + str(random_state) + '.json', 'w') as outfile:
             json.dump(best_params, outfile)
+        with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'w') as outfile:
+            json.dump(forest_performance, outfile)
 
-    return(best_params)
+    return(best_params, forest_performance)
 
 def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuning=False):
 
@@ -74,7 +77,7 @@ def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuni
         print('Over-riding previous tuning parameters. New grid tuning... (please wait)')
         print()
         tun_start_time = timeit.default_timer()
-        best_params = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
+        best_params, forest_performance = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
         tun_elapsed_time = timeit.default_timer() - tun_start_time
         print('Tuning time elapsed:', "{:0.4f}".format(tun_elapsed_time), 'seconds')
     else:
@@ -82,12 +85,14 @@ def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuni
             with open(save_path + 'best_params_rndst_' + str(random_state) + '.json', 'r') as infile:
                 print('using previous tuning parameters')
                 best_params = json.load(infile)
-            return(best_params)
+            with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'r') as infile:
+                forest_performance = json.load(infile)
+            return(best_params, forest_performance)
         except:
             print('New grid tuning... (please wait)')
-            best_params = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
+            best_params, forest_performance = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
 
-    print('Best OOB Accuracy Estimate during tuning: ' '{:0.4f}'.format(best_params['score']))
+    print('Best OOB Accuracy Estimate during tuning: ' '{:0.4f}'.format(forest_performance['oobe_score']))
     print('Best parameters:', best_params)
     print()
 

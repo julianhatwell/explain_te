@@ -238,7 +238,7 @@ class data_container(non_deterministic):
         else:
             self.encoder = default_encoder
 
-    # helper function for pickling files
+    # helper function for saving files
     def get_save_path(self, filename = ''):
         if len(self.project_dir) > 0:
             return(self.project_dir + cfg.path_sep + self.save_dir + cfg.path_sep + filename)
@@ -342,7 +342,8 @@ class data_container(non_deterministic):
                 'continuous_features' : self.continuous_features,
                 'le_dict' : self.le_dict,
                 'get_label' : self.get_label,
-                'random_state' : self.random_state
+                'random_state' : self.random_state,
+                'get_save_path' : self.get_save_path
                 })
 
 # classes and functions for the parallelisable tree_walk
