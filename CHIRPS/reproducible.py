@@ -36,7 +36,7 @@ def data_forest_prep(d_constructor, project_dir='', override_tuning=False,
     train_index, test_index = mydata.get_tt_split_idx(random_state=random_state_splits)
     tt = mydata.tt_split(train_index, test_index)
 
-    best_params = rt.tune_rf(
+    best_params, _ = rt.tune_rf(
      X=tt.X_train_enc,
      y=tt.y_train,
      grid=tuning_grid,
@@ -44,11 +44,8 @@ def data_forest_prep(d_constructor, project_dir='', override_tuning=False,
      override_tuning=override_tuning,
      random_state=mydata.random_state)
 
-    rf = rt.train_rf(
-     X=tt.X_train_enc,
-     y=tt.y_train,
-     best_params=best_params,
-     random_state=mydata.random_state)
+    rf = rt.RandomForestClassifier(random_state=random_state, oob_score=True, **best_params)
+    rf.fit(X=tt.X_train_enc, y=tt.y_train)
 
     # the outputs of this function are:
     # cm - confusion matrix as 2d array
@@ -58,20 +55,18 @@ def data_forest_prep(d_constructor, project_dir='', override_tuning=False,
     # 0 <= p, r, f <= 1. s = number of instances for each true class label (row sums of cm)
     cm, acc, coka, prfs = rt.evaluate_model(prediction_model=rf, X=tt.X_test_enc, y=tt.y_test,
                  class_names=meta_data['get_label'](meta_data['class_col']
-                                                    , [i for i in range(len(meta_data['class_names']))]).tolist(),
+                                                    , [i for i in range(len(meta_data['class_names']))]),
                  plot_cm=False, plot_cm_norm=False) # False here will output the metrics and suppress the plots
 
-    with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'r') as infile:
-        forest_performance = json.load(infile)
-    forest_performance.update({'confmat' : cm.tolist(),
+    test_metrics = {'confmat' : cm.tolist(),
                                 'test_accuracy' : acc,
                                 'test_kappa' : coka,
                                 'test_prec' : prfs[0].tolist(),
                                 'test_recall' : prfs[1].tolist(),
                                 'test_f1' : prfs[2].tolist(),
                                 'test_prior' : (prfs[3] / prfs[3].sum()).tolist(),
-                                'test_posterior' : (cm.sum(axis=0) / prfs[3].sum()).tolist() })
-    with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'w') as outfile:
-        json.dump(forest_performance, outfile)
+                                'test_posterior' : (cm.sum(axis=0) / prfs[3].sum()).tolist() }
 
-    return(meta_data, tt, rf)
+    rt.update_model_performance(save_path=save_path, random_state=random_state, test_metrics=test_metrics)
+
+    return(rf, tt, meta_data)

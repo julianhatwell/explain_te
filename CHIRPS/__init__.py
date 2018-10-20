@@ -40,11 +40,14 @@ def p_count_corrected(arr, classes):
     'p_counts' : pc})
 
 def chisq_indep_test(counts, prior_counts):
+    if type(counts) == list:
+        counts = np.array(counts)
+    observed = np.array((counts, prior_counts))
     if counts.sum() > 0: # previous_counts.sum() == 0 is impossible
-        observed = np.array((counts, prior_counts))
-        chisq = chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)
+        chisq = chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)[0:3]
     else:
-        chisq = None
+        r, c = observed.shape
+        chisq = (np.nan, np.nan, (r - 1) * (c - 1))
     return(chisq)
 
 # create a directory if doesn't exist

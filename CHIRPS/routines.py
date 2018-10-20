@@ -96,21 +96,7 @@ def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuni
     print('Best parameters:', best_params)
     print()
 
-    return(best_params)
-
-def train_rf(X, y, best_params = None, random_state = 123):
-
-    # to do - test allowable structure of grid input
-    if best_params is not None:
-        # train a random forest model using given parameters
-        best_params = {k: v for k, v in best_params.items() if k not in ('score', 'fitting_time')}
-        rf = RandomForestClassifier(random_state=random_state, oob_score=True, **best_params)
-    else:
-        # train a random forest model using default parameters
-        rf = RandomForestClassifier(random_state=random_state, oob_score=True)
-
-    rf.fit(X, y)
-    return(rf)
+    return(best_params, forest_performance)
 
 def evaluate_model(X, y, prediction_model, class_names=None, plot_cm=True, plot_cm_norm=True):
     pred = prediction_model.predict(X)
@@ -131,6 +117,13 @@ def evaluate_model(X, y, prediction_model, class_names=None, plot_cm=True, plot_
                               , normalize=True,
                               title='Confusion matrix normalized on rows (predicted label share)')
     return(cm, acc, coka, prfs)
+
+def update_model_performance(save_path, random_state, test_metrics):
+    with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'r') as infile:
+        forest_performance = json.load(infile)
+    forest_performance.update(test_metrics)
+    with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'w') as outfile:
+        json.dump(forest_performance, outfile)
 
 def batch_instance_ceiling(data_split, n_instances=None, batch_size=None):
     dataset_size = len(data_split.y_test)
@@ -160,7 +153,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         _, instances_enc, labels = ds_container.get_loo_instances(instance_id)
 
         # then evaluating rule metrics on the leave-one-out test set
-        eval_rule = c.evaluate_rule(rule=c.pruned_rule, instances=instances_enc, labels=labels)
+        eval_rule = c.evaluate_rule(rule='pruned', instances=instances_enc, labels=labels)
         tc = c.target_class
         tc_lab = c.target_class_label
 

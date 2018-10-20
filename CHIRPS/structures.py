@@ -9,6 +9,7 @@ from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.model_selection import train_test_split
 from scipy import sparse
 from scipy.stats import sem
+from collections import defaultdict
 from operator import itemgetter
 from itertools import chain
 from CHIRPS import config as cfg
@@ -201,7 +202,7 @@ class data_container(non_deterministic):
                 self.data_pre[v] = self.data[v]
 
             self.var_dict[v] = {'labels' : names if t == 'nominal' else None
-                                , 'onehot_labels' : [v + '_' + str(n) for n in names] if t == 'nominal' else None
+                                , 'labels_enc' : [v + '_' + str(n) for n in names] if t == 'nominal' else None
                                 , 'class_col' : True if v == class_col else False
                                 , 'data_type' : t
                                 , 'order_col' : i}
@@ -220,7 +221,7 @@ class data_container(non_deterministic):
             if t == 'continuous':
                 self.continuous_features.append(f)
             else:
-                self.features_enc.append(self.var_dict[f]['onehot_labels'])
+                self.features_enc.append(self.var_dict[f]['labels_enc'])
 
         # They get stuck on the end by encoding
         self.features_enc.append(self.continuous_features)
@@ -782,12 +783,18 @@ class forest_walker:
 # the main point is to have the rule_evaluator function inherited from one place
 class rule_evaluator:
 
+    # allows new values other than those already in self
     def init_values(self, rule=None, features=None, class_names=None,
                     instances=None, labels=None):
 
         # sub-classes must have these three properties
-        if rule is None:
-                rule = self.rule
+        if rule is not None:
+            if rule == 'pruned':
+                rule = self.pruned_rule
+            else:
+                rule = rule
+        else:
+            rule = self.rule
         if features is None:
             features = self.features_enc # default
         if class_names is None:
@@ -824,15 +831,28 @@ class rule_evaluator:
     def evaluate_rule(self, rule=None, features=None, class_names=None,
                         instances=None, labels=None):
 
-
+        # allow new values or get self properties
         rule, features, class_names, instances, labels = \
                 self.init_values(rule=rule, features=features, class_names=class_names,
                                 instances=instances, labels=labels)
 
-        idx = self.apply_rule(rule, instances, features)
-        coverage = idx.sum()/len(idx) # tp + fp / tp + fp + tn + fn
-
         priors = p_count_corrected(labels, [i for i in range(len(class_names))])
+
+        idx = self.apply_rule(rule, instances, features)
+        # if len(idx) == 0: # found no covered points - rule is too specific
+        #     zeros = np.array([0] * len(class_names))
+        #     return({'coverage' : 0,
+        #             'priors' : priors,
+        #             'post' : zeros,
+        #             'counts' : zeros,
+        #             'labels' : labels,
+        #             'recall' : zeros,
+        #             'f1' : zeros,
+        #             'accuracy' : zeros,
+        #             'lift' : zeros,
+        #             'chisq' : np.nan
+        #             })
+        coverage = idx.sum()/len(idx) # tp + fp / tp + fp + tn + fn
 
         p_counts = p_count_corrected(labels.iloc[idx], [i for i in range(len(class_names))]) # true positives
         post = p_counts['p_counts']
@@ -876,6 +896,18 @@ class rule_evaluator:
                 'lift' : lift,
                 'chisq' : chisq
                 })
+
+    def evaluate_not_rule(self, rule=None, features=None, class_names=None,
+                        instances=None, labels=None):
+
+        # allow new values or get self properties
+        rule, features, class_names, instances, labels = \
+                self.init_values(rule=rule, features=features, class_names=class_names,
+                                instances=instances, labels=labels)
+
+
+
+
 
 class CHIRPS_explainer(rule_evaluator):
 
@@ -954,14 +986,14 @@ class CHIRPS_explainer(rule_evaluator):
         return(' AND '.join([bin_or_cont(f, t, v) for f, t, v in rule]))
 
     def to_screen(self):
-
-        print('Estimated Results - Rule Training Sample')
+        print('Model Results for Instance')
         print('target class prior (training data): ' + str(self.prior))
         print('forest vote share (unseen instance): ' + str(self.forest_vote_share))
         print('forest vote margin (unseen instance): ' + str(self.forest_vote_share - (1 - self.forest_vote_share)))
         print('rule: ' + self.pretty_rule)
         print('rule cardinality: ' + str(self.rule_len))
         print()
+        print('Estimated Results - Rule Training Sample')
         print('rule excl.coverage (training data): ' + str(self.est_coverage))
         print('rule stability (training data): ' + str(self.est_prec))
         print('rule recall (training data): ' + str(self.est_recall))
@@ -1066,6 +1098,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
     def add_rule_term(self, p_total = 0.1):
         self.__previous_rule = deepcopy(self.rule)
         next_rule = self.patterns[self.unapplied_rules[0]]
+        candidate = [] # to be output and can be rejected and reverted if no improvement to target function
         for item in next_rule[0]:
             # list of already used features
             # to be created each item iteration
@@ -1080,12 +1113,9 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
                 # find the parent feature of item
                 parent_feature = self.var_dict_enc[item[0]]
 
-                # update the master list
-                position = self.var_dict[parent_feature]['onehot_labels'].index(item[0])
-                if item[1]: # leq_threshold True
-                    self.var_dict[parent_feature]['upper_bound'][position] = item[2]
-                else:
-                    self.var_dict[parent_feature]['lower_bound'][position] = item[2]
+                # check for any known True feature value
+                if any(np.array(self.var_dict[parent_feature]['lower_bound']) > 0):
+                    continue
 
                 # list of already used categorical parent features
                 # to be created each item iteration
@@ -1096,24 +1126,22 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
                         categorical_feature_appears.append(self.var_dict_enc[f_app])
                     else: # it is continuous
                         categorical_feature_appears.append(f_app)
-
                 # insert item after last position in current rule where parent item appears
                 if parent_feature in categorical_feature_appears:
                     self.rule.insert(max(np.where(np.array(categorical_feature_appears) == parent_feature)[0]) + 1, item)
                 # otherwise just append to current rule
                 else:
                     self.rule.append(item)
+                candidate.append(item) # this will output the newly added terms
 
             else: # continuous feature
                 append_or_update = False
                 if item[1]: # leq_threshold True
                     if item[2] <= self.var_dict[item[0]]['upper_bound'][0]:
-                        self.var_dict[item[0]]['upper_bound'][0] = item[2]
                         append_or_update = True
 
                 else:
                     if item[2] > self.var_dict[item[0]]['lower_bound'][0]:
-                        self.var_dict[item[0]]['lower_bound'][0] = item[2]
                         append_or_update = True
 
                 if append_or_update:
@@ -1129,57 +1157,67 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
                     else:
                         # print(item, 'feature first added')
                         self.rule.append(item)
+                    candidate.append(item) # this will output the newly added terms
 
-            # accumlate points from rule and tidy up
-            # remove the first item from unapplied_rules as it's just been applied or ignored for being out of range
-            self.accumulated_points += self.patterns[0][2]
-            del self.unapplied_rules[0]
-            # accumlate all the freq patts that are subsets of the current rules
-            # remove the index from the unapplied rules list (including the current rule just added)
-            to_remove = []
-            for ur in self.unapplied_rules:
-                # check if all items are already part of the rule (i.e. it's a subset)
-                if all([item in self.rule for item in self.patterns[ur][0]]):
-                    self.accumulated_points += self.patterns[ur][2]
-                    # collect up the values to remove. don't want to edit the iterator in progress
-                    to_remove.append(ur)
-            for rmv in reversed(to_remove):
-                self.unapplied_rules.remove(rmv)
+        # accumlate points from rule and tidy up
+        # remove the first item from unapplied_rules as it's just been applied or ignored for being out of range
+        self.accumulated_points += self.patterns[self.unapplied_rules[0]][2]
+        del self.unapplied_rules[0]
+        # accumlate all the freq patts that are subsets of the current rules
+        # remove the index from the unapplied rules list (including the current rule just added)
+        to_remove = []
+        for ur in self.unapplied_rules:
+            # check if all items are already part of the rule (i.e. it's a subset)
+            if all([item in self.rule for item in self.patterns[ur][0]]):
+                self.accumulated_points += self.patterns[ur][2]
+                # collect up the values to remove. don't want to edit the iterator in progress
+                to_remove.append(ur)
+        for rmv in reversed(to_remove):
+            self.unapplied_rules.remove(rmv)
+
+        return(candidate)
 
     def prune_rule(self):
-        # remove all other binary items if one Greater than is found.
-        gt_items = {} # find all the items with the leq_threshold False
-        for item in self.rule:
-            if ~item[1] and item[0] in self.var_dict_enc: # item is greater than thresh and a nominal type
-                gt_items[self.var_dict_enc[item[0]]] = item[0] # capture the parent feature and the feature value
+        # removes all other binary items if one Greater than is found.
 
-        gt_pruned_rule = []
+        # find any nominal binary encoded feature value and its parent if appears as False (greater than)
+        gt_items = {}
         for item in self.rule:
-            if item[0] in self.var_dict_enc: # binary variable
-                if self.var_dict_enc[item[0]] not in gt_items.keys():
+            if ~item[1] and item[0] in self.var_dict_enc: # item is greater than thresh (False valued) and a nominal type
+                gt_items.update({ self.var_dict_enc[item[0]] : item[0] }) # capture the parent feature and the feature value / there can only be one true
+
+        gt_pruned_rule = [] # captures binary encoded variables
+        for item in self.rule:
+            if item[0] in self.var_dict_enc:
+                if self.var_dict_enc[item[0]] not in gt_items.keys(): # item parent not in the thresh False set captured just above
                     gt_pruned_rule.append(item)
-                elif ~item[1]:
+                elif ~item[1]: # any item thresh False valued (it will be in the thresh False set above)
                     gt_pruned_rule.append(item)
-            else: # leave continuous as is
+            else: # continuous
                 gt_pruned_rule.append(item)
 
         # if all but one of a feature set is False, swap them out for the remaining value
         # start by counting all the lt thresholds in each parent feature
         lt_items = defaultdict(lambda: 0)
-        for item in gt_pruned_rule: # find all the items with the leq_threshold True
-            if item[1] and item[0] in self.var_dict_enc: # item is less than thresh and a nominal type
-                lt_items[self.var_dict_enc[item[0]]] += 1 # capture the parent feature and count each
+        for item in gt_pruned_rule:
+            if item[1] and item[0] in self.var_dict_enc: # item is less than thresh (True valued) and a nominal type
+                lt_items[self.var_dict_enc[item[0]]] += 1 # capture the parent feature and count each True valued feature value
 
         # checking if just one other feature value remains unused
         pruned_items = [item[0] for item in gt_pruned_rule]
-        for lt in dict(lt_items).keys():
+        for lt in dict(lt_items).keys(): # convert from defaultdict to dict for counting keys
             n_categories = len([i for i in self.var_dict_enc.values() if i == lt])
             if n_categories - dict(lt_items)[lt] == 1:
                 # get the remaining value for this feature
-                lt_labels = self.var_dict[lt]['onehot_labels']
+                lt_labels = self.var_dict[lt]['labels_enc']
                 to_remove = [label for label in lt_labels if label in pruned_items]
                 remaining_value = [label for label in lt_labels if label not in pruned_items]
 
+                # update the feature dict as the one true result might not have been seen
+                pos = self.var_dict[lt]['labels_enc'].index(remaining_value[0])
+                self.var_dict[lt]['lower_bound'][pos] = 0.5
+
+                # this is to scan the rule and put feature values with the same parent side by side
                 lt_pruned_rule = []
                 pos = -1
                 for rule in gt_pruned_rule:
@@ -1191,6 +1229,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
                         insert_pos = pos
                         pos -= 1
                 lt_pruned_rule.insert(insert_pos, (remaining_value[0], False, 0.5))
+
                 # the main rule is updated for passing through the loop again
                 gt_pruned_rule = lt_pruned_rule.copy()
 
@@ -1276,14 +1315,13 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
 
         while current_precision != 1.0 and current_precision != 0.0 and current_precision < precis_threshold and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or rule_length_counter < max(1, fixed_length)):
             self.merge_rule_iter += 1
-            self.add_rule_term(p_total = self.stopping_param)
+            candidate = self.add_rule_term(p_total = self.stopping_param)
             # you could add a round of bootstrapping here, but what does that do to performance
             eval_rule = self.evaluate_rule(instances=sample_instances,
                                             labels=sample_labels)
 
             # code to confirm rule, or revert to previous
             # choosing from a range of possible metrics and learning improvement
-            # possible to introduce annealing?
             # e.g if there was no change, or an decrease in precis
             if self.algorithm == 'greedy_prec':
                 current = eval_rule['post'][np.where(eval_rule['labels'] == self.target_class)]
@@ -1308,7 +1346,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
             else: should_continue = False
             if should_continue:
                 continue # don't update all the metrics, just go to the next round
-            # otherwise
+            # otherwise update everything
             rule_length_counter += 1
 
             # check for end conditions; no target class instances
@@ -1325,6 +1363,32 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
             self.f1 = np.append(self.f1, [eval_rule['f1']], axis=0 )
             self.lift = np.append(self.lift, [eval_rule['lift']], axis=0 )
             self.chisq = np.append(self.chisq, [eval_rule['chisq']], axis=0 ) # p-value
+
+            # update the var_dict with the rule values
+            for item in candidate:
+                if item[0] in self.var_dict_enc: # binary feature
+                    # find the parent feature of item
+                    parent_feature = self.var_dict_enc[item[0]]
+
+                    # update the var_dict
+                    position = self.var_dict[parent_feature]['labels_enc'].index(item[0])
+                    if item[1]: # leq_threshold True
+                        self.var_dict[parent_feature]['upper_bound'][position] = item[2]
+                    else: # a known True feature value
+                        self.var_dict[parent_feature]['lower_bound'][position] = item[2]
+                        # set all other options to False (less that 0.5 is True i.e. False = 0)
+                        ub = [item[2]] * len(self.var_dict[parent_feature]['upper_bound'])
+                        ub[position] = np.inf
+                        self.var_dict[parent_feature]['upper_bound'] = ub
+
+                else: # continuous
+                    if item[1]: # leq_threshold True
+                        if item[2] <= self.var_dict[item[0]]['upper_bound'][0]:
+                            self.var_dict[item[0]]['upper_bound'][0] = item[2]
+
+                    else:
+                        if item[2] > self.var_dict[item[0]]['lower_bound'][0]:
+                            self.var_dict[item[0]]['lower_bound'][0] = item[2]
 
         # first time major_class is isolated
         if any(np.argmax(self.posterior, axis=1) == self.target_class):
@@ -1440,7 +1504,6 @@ class batch_CHIRPS_explainer:
 
             # loop for each instance
             for i in range(n_instances):
-
                 # extract the current instance paths container for freq patt mining
                 # filtering by the chosen set of trees - default: majority voting
                 ip_container = self.bp_container.get_instance_paths(i, which_trees=which_trees)

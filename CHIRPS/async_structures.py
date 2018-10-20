@@ -5,7 +5,7 @@ import math
 import numpy as np
 from scipy import sparse
 from copy import deepcopy
-from collections import deque, defaultdict
+from collections import deque
 from scipy.stats import chi2_contingency, entropy
 from CHIRPS import p_count, p_count_corrected
 
