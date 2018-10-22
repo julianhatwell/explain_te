@@ -848,9 +848,9 @@ class rule_evaluator:
 
         # allow new values or get self properties
         rule, features, class_names = self.init_values(rule=rule, features=features, class_names=class_names)
-
         instances, labels = self.init_instances(instances=instances, labels=labels)
 
+        # collect metrics
         priors = p_count_corrected(labels, [i for i in range(len(class_names))])
 
         idx = self.apply_rule(rule, instances, features)
@@ -906,69 +906,10 @@ class rule_evaluator:
                 'chisq' : chisq
                 })
 
-    def prune_rule(self):
-        # removes all other binary items if one Greater than is found.
-
-        # find any nominal binary encoded feature value and its parent if appears as False (greater than)
-        gt_items = {}
-        for item in self.rule:
-            if ~item[1] and item[0] in self.var_dict_enc: # item is greater than thresh (False valued) and a nominal type
-                gt_items.update({ self.var_dict_enc[item[0]] : item[0] }) # capture the parent feature and the feature value / there can only be one true
-
-        gt_pruned_rule = [] # captures binary encoded variables
-        for item in self.rule:
-            if item[0] in self.var_dict_enc:
-                if self.var_dict_enc[item[0]] not in gt_items.keys(): # item parent not in the thresh False set captured just above
-                    gt_pruned_rule.append(item)
-                elif ~item[1]: # any item thresh False valued (it will be in the thresh False set above)
-                    gt_pruned_rule.append(item)
-            else: # continuous
-                gt_pruned_rule.append(item)
-
-        # if all but one of a feature set is False, swap them out for the remaining value
-        # start by counting all the lt thresholds in each parent feature
-        lt_items = defaultdict(lambda: 0)
-        for item in gt_pruned_rule:
-            if item[1] and item[0] in self.var_dict_enc: # item is less than thresh (True valued) and a nominal type
-                lt_items[self.var_dict_enc[item[0]]] += 1 # capture the parent feature and count each True valued feature value
-
-        # checking if just one other feature value remains unused
-        pruned_items = [item[0] for item in gt_pruned_rule]
-        for lt in dict(lt_items).keys(): # convert from defaultdict to dict for counting keys
-            n_categories = len([i for i in self.var_dict_enc.values() if i == lt])
-            if n_categories - dict(lt_items)[lt] == 1:
-                # get the remaining value for this feature
-                lt_labels = self.var_dict[lt]['labels_enc']
-                to_remove = [label for label in lt_labels if label in pruned_items]
-                remaining_value = [label for label in lt_labels if label not in pruned_items]
-
-                # update the feature dict as the one true result might not have been seen
-                pos = self.var_dict[lt]['labels_enc'].index(remaining_value[0])
-                self.var_dict[lt]['lower_bound'][pos] = 0.5
-
-                # this is to scan the rule and put feature values with the same parent side by side
-                lt_pruned_rule = []
-                pos = -1
-                for rule in gt_pruned_rule:
-                    pos += 1
-                    if rule[0] not in to_remove:
-                        lt_pruned_rule.append(rule)
-                    else:
-                        # set the position of the last term of the parent feature
-                        insert_pos = pos
-                        pos -= 1
-                lt_pruned_rule.insert(insert_pos, (remaining_value[0], False, 0.5))
-
-                # the main rule is updated for passing through the loop again
-                gt_pruned_rule = lt_pruned_rule.copy()
-
-        return(gt_pruned_rule)
-
     def get_rule_complements(self, rule=None, var_dict=None, var_dict_enc=None):
 
         # allow new values or get self properties
         rule, _, _ = self.init_values(rule=rule)
-
         var_dict, var_dict_enc = self.init_dicts(var_dict=var_dict, var_dict_enc=var_dict_enc)
 
         parent_items = {}
@@ -1040,7 +981,7 @@ class CHIRPS_explainer(rule_evaluator):
     def __init__(self, features, features_enc, class_names,
                 var_dict, var_dict_enc,
                 paths, patterns,
-                rule, pruned_rule, prune_rule,
+                rule, pruned_rule,
                 target_class, target_class_label,
                 major_class, major_class_label,
                 model_votes, model_posterior,
@@ -1063,7 +1004,6 @@ class CHIRPS_explainer(rule_evaluator):
         self.patterns = patterns
         self.rule = rule
         self.pruned_rule = pruned_rule
-        self.prune_rule = prune_rule
         self.target_class = target_class
         self.target_class_label = target_class_label
         self.major_class = major_class
@@ -1312,6 +1252,64 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
 
         return(candidate)
 
+    def prune_rule(self):
+        # removes all other binary items if one Greater than is found.
+
+        # find any nominal binary encoded feature value and its parent if appears as False (greater than)
+        gt_items = {}
+        for item in self.rule:
+            if ~item[1] and item[0] in self.var_dict_enc: # item is greater than thresh (False valued) and a nominal type
+                gt_items.update({ self.var_dict_enc[item[0]] : item[0] }) # capture the parent feature and the feature value / there can only be one true
+
+        gt_pruned_rule = [] # captures binary encoded variables
+        for item in self.rule:
+            if item[0] in self.var_dict_enc:
+                if self.var_dict_enc[item[0]] not in gt_items.keys(): # item parent not in the thresh False set captured just above
+                    gt_pruned_rule.append(item)
+                elif ~item[1]: # any item thresh False valued (it will be in the thresh False set above)
+                    gt_pruned_rule.append(item)
+            else: # continuous
+                gt_pruned_rule.append(item)
+
+        # if all but one of a feature set is False, swap them out for the remaining value
+        # start by counting all the lt thresholds in each parent feature
+        lt_items = defaultdict(lambda: 0)
+        for item in gt_pruned_rule:
+            if item[1] and item[0] in self.var_dict_enc: # item is less than thresh (True valued) and a nominal type
+                lt_items[self.var_dict_enc[item[0]]] += 1 # capture the parent feature and count each True valued feature value
+
+        # checking if just one other feature value remains unused
+        pruned_items = [item[0] for item in gt_pruned_rule]
+        for lt in dict(lt_items).keys(): # convert from defaultdict to dict for counting keys
+            n_categories = len([i for i in self.var_dict_enc.values() if i == lt])
+            if n_categories - dict(lt_items)[lt] == 1:
+                # get the remaining value for this feature
+                lt_labels = self.var_dict[lt]['labels_enc']
+                to_remove = [label for label in lt_labels if label in pruned_items]
+                remaining_value = [label for label in lt_labels if label not in pruned_items]
+
+                # update the feature dict as the one true result might not have been seen
+                pos = self.var_dict[lt]['labels_enc'].index(remaining_value[0])
+                self.var_dict[lt]['lower_bound'][pos] = 0.5
+
+                # this is to scan the rule and put feature values with the same parent side by side
+                lt_pruned_rule = []
+                pos = -1
+                for rule in gt_pruned_rule:
+                    pos += 1
+                    if rule[0] not in to_remove:
+                        lt_pruned_rule.append(rule)
+                    else:
+                        # set the position of the last term of the parent feature
+                        insert_pos = pos
+                        pos -= 1
+                lt_pruned_rule.insert(insert_pos, (remaining_value[0], False, 0.5))
+
+                # the main rule is updated for passing through the loop again
+                gt_pruned_rule = lt_pruned_rule.copy()
+
+        self.pruned_rule = gt_pruned_rule
+
     def __greedy_commit__(self, current, previous):
         if current <= previous:
             self.rule = deepcopy(self.__previous_rule)
@@ -1535,7 +1533,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         return(CHIRPS_explainer(self.features, self.features_enc, self.class_names,
         self.var_dict, self.var_dict_enc,
         self.paths, self.patterns,
-        self.rule, self.pruned_rule, self.prune_rule,
+        self.rule, self.pruned_rule,
         self.target_class, self.target_class_label,
         self.major_class, self.major_class_label,
         self.model_votes, self.model_posterior,
