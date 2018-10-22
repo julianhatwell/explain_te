@@ -12,7 +12,7 @@ datasets = [
             ds.german_data,
             ds.lending_tiny_samp_data,
             ds.nursery_samp_data,
-            ds.rcdv_samp_data
+            # ds.rcdv_samp_data
            ]
 
 def export_data_splits(datasets, project_dir=None, random_state_splits=123):

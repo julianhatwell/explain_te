@@ -18,26 +18,31 @@ def in_ipynb():
         return(False)
 
 # helper function for returning counts and proportions of unique values in an array
+# also returns the stability calculation (numerator / (denominator + 1))
 def p_count(arr):
     labels, counts = np.unique(arr, return_counts = True)
     return(
     {'labels' : labels,
     'counts' : counts,
-    'p_counts' : counts / len(arr)})
+    'p_counts' : counts / len(arr),
+    's_counts' : counts / (len(arr) + 1)})
 
 # insert any zeros for unrepresented classes
 def p_count_corrected(arr, classes):
     n_classes = len(classes)
     p_counts = p_count(arr)
+    sc = np.zeros(n_classes)
     pc = np.zeros(n_classes)
     c = np.zeros(n_classes, dtype=np.int64)
     for i, cn in enumerate(classes):
         if cn in p_counts['labels']:
+            sc[i] = p_counts['s_counts'][np.where(p_counts['labels'] == cn)][0]
             pc[i] = p_counts['p_counts'][np.where(p_counts['labels'] == cn)][0]
             c[i] = p_counts['counts'][np.where(p_counts['labels'] == cn)][0]
     return({'labels' : classes,
     'counts' : c,
-    'p_counts' : pc})
+    'p_counts' : pc,
+    's_counts' : sc})
 
 def chisq_indep_test(counts, prior_counts):
     if type(counts) == list:

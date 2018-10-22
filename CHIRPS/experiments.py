@@ -13,6 +13,11 @@ from scipy.stats import chi2_contingency
 from math import sqrt
 from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support, accuracy_score
 
+
+from anchor import anchor_tabular as anchtab
+from lime import lime_tabular as limtab
+
+
 # bug in sk-learn. Should be fixed in August
 import warnings
 warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)

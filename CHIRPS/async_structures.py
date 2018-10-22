@@ -7,7 +7,6 @@ from scipy import sparse
 from copy import deepcopy
 from collections import deque
 from scipy.stats import chi2_contingency, entropy
-from CHIRPS import p_count, p_count_corrected
 
 # parallelisable function for the forest_walker class
 def as_tree_walk(tree_idx, instances, labels, n_instances,

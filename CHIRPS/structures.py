@@ -2,7 +2,7 @@ import sys
 import math
 import multiprocessing as mp
 import numpy as np
-from CHIRPS import p_count, p_count_corrected, if_nexists_make_dir, chisq_indep_test
+from CHIRPS import p_count_corrected, if_nexists_make_dir, chisq_indep_test
 from pandas import DataFrame, Series
 from pyfpgrowth import find_frequent_patterns
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
@@ -784,8 +784,7 @@ class forest_walker:
 class rule_evaluator:
 
     # allows new values other than those already in self
-    def init_values(self, rule=None, features=None, class_names=None,
-                    instances=None, labels=None):
+    def init_values(self, rule=None, features=None, class_names=None):
 
         # sub-classes must have these three properties
         if rule is not None:
@@ -800,6 +799,9 @@ class rule_evaluator:
         if class_names is None:
             class_names = self.class_names
 
+        return(rule, features, class_names)
+
+    def init_instances(self, instances=None, labels=None):
         # check presence of optional sample datasets:
         # train (or other) for optimisation of rule merge
         # test (or other) for evaluation of rule
@@ -816,7 +818,20 @@ class rule_evaluator:
             else:
                 labels = self.sample_labels
 
-        return(rule, features, class_names, instances, labels)
+        return(instances, labels)
+
+    def init_dicts(self, var_dict=None, var_dict_enc=None):
+
+        if var_dict is None:
+            if self.var_dict is None:
+                print('Feature dictionary (meta data) required for rule evaluation')
+            else:
+                var_dict = self.var_dict
+
+        if var_dict_enc is None:
+            var_dict_enc = self.var_dict_enc # can be None
+
+        return(var_dict, var_dict_enc)
 
     # apply a rule on an instance space, returns covered instance idx
     def apply_rule(self, rule=None, instances=None, features=None):
@@ -829,34 +844,23 @@ class rule_evaluator:
 
     # score a rule on an instance space
     def evaluate_rule(self, rule=None, features=None, class_names=None,
-                        instances=None, labels=None):
+                        instances=None, labels=None, target_class=None):
 
         # allow new values or get self properties
-        rule, features, class_names, instances, labels = \
-                self.init_values(rule=rule, features=features, class_names=class_names,
-                                instances=instances, labels=labels)
+        rule, features, class_names = self.init_values(rule=rule, features=features, class_names=class_names)
+
+        instances, labels = self.init_instances(instances=instances, labels=labels)
 
         priors = p_count_corrected(labels, [i for i in range(len(class_names))])
 
         idx = self.apply_rule(rule, instances, features)
-        # if len(idx) == 0: # found no covered points - rule is too specific
-        #     zeros = np.array([0] * len(class_names))
-        #     return({'coverage' : 0,
-        #             'priors' : priors,
-        #             'post' : zeros,
-        #             'counts' : zeros,
-        #             'labels' : labels,
-        #             'recall' : zeros,
-        #             'f1' : zeros,
-        #             'accuracy' : zeros,
-        #             'lift' : zeros,
-        #             'chisq' : np.nan
-        #             })
+
         coverage = idx.sum()/len(idx) # tp + fp / tp + fp + tn + fn
+        xcoverage = idx.sum()/(len(idx) + 1 ) # tp + fp / tp + fp + tn + fn + current instance
 
         p_counts = p_count_corrected(labels.iloc[idx], [i for i in range(len(class_names))]) # true positives
         post = p_counts['p_counts']
-        p_corrected = np.array([p if p > 0.0 else 1.0 for p in post]) # to avoid div by zeros
+        stability = p_counts['s_counts']
 
         counts = p_counts['counts']
         labels = p_counts['labels']
@@ -865,6 +869,9 @@ class rule_evaluator:
 
         # TPR (recall) TP / (TP + FN)
         recall = counts / priors['counts']
+
+        # F1
+        p_corrected = np.array([p if p > 0.0 else 1.0 for p in post]) # to avoid div by zeros
         r_corrected = np.array([r if r > 0.0 else 1.0 for r in recall]) # to avoid div by zeros
         f1 = [2] * ((post * recall) / (p_corrected + r_corrected))
 
@@ -883,9 +890,11 @@ class rule_evaluator:
             cov_corrected = np.array([counts.sum() / priors['counts'].sum()])
 
         # lift = precis / (total_cover * prior)
-        lift = pos_corrected / ( ( cov_corrected ) * pri_corrected )
+        lift = pos_corrected / ( cov_corrected * pri_corrected )
 
         return({'coverage' : coverage,
+                'xcoverage' : xcoverage,
+                'stability' : stability,
                 'priors' : priors,
                 'post' : post,
                 'counts' : counts,
@@ -897,11 +906,128 @@ class rule_evaluator:
                 'chisq' : chisq
                 })
 
-    def evaluate_not_rule(self, rule=None, features=None, class_names=None,
+    def prune_rule(self):
+        # removes all other binary items if one Greater than is found.
+
+        # find any nominal binary encoded feature value and its parent if appears as False (greater than)
+        gt_items = {}
+        for item in self.rule:
+            if ~item[1] and item[0] in self.var_dict_enc: # item is greater than thresh (False valued) and a nominal type
+                gt_items.update({ self.var_dict_enc[item[0]] : item[0] }) # capture the parent feature and the feature value / there can only be one true
+
+        gt_pruned_rule = [] # captures binary encoded variables
+        for item in self.rule:
+            if item[0] in self.var_dict_enc:
+                if self.var_dict_enc[item[0]] not in gt_items.keys(): # item parent not in the thresh False set captured just above
+                    gt_pruned_rule.append(item)
+                elif ~item[1]: # any item thresh False valued (it will be in the thresh False set above)
+                    gt_pruned_rule.append(item)
+            else: # continuous
+                gt_pruned_rule.append(item)
+
+        # if all but one of a feature set is False, swap them out for the remaining value
+        # start by counting all the lt thresholds in each parent feature
+        lt_items = defaultdict(lambda: 0)
+        for item in gt_pruned_rule:
+            if item[1] and item[0] in self.var_dict_enc: # item is less than thresh (True valued) and a nominal type
+                lt_items[self.var_dict_enc[item[0]]] += 1 # capture the parent feature and count each True valued feature value
+
+        # checking if just one other feature value remains unused
+        pruned_items = [item[0] for item in gt_pruned_rule]
+        for lt in dict(lt_items).keys(): # convert from defaultdict to dict for counting keys
+            n_categories = len([i for i in self.var_dict_enc.values() if i == lt])
+            if n_categories - dict(lt_items)[lt] == 1:
+                # get the remaining value for this feature
+                lt_labels = self.var_dict[lt]['labels_enc']
+                to_remove = [label for label in lt_labels if label in pruned_items]
+                remaining_value = [label for label in lt_labels if label not in pruned_items]
+
+                # update the feature dict as the one true result might not have been seen
+                pos = self.var_dict[lt]['labels_enc'].index(remaining_value[0])
+                self.var_dict[lt]['lower_bound'][pos] = 0.5
+
+                # this is to scan the rule and put feature values with the same parent side by side
+                lt_pruned_rule = []
+                pos = -1
+                for rule in gt_pruned_rule:
+                    pos += 1
+                    if rule[0] not in to_remove:
+                        lt_pruned_rule.append(rule)
+                    else:
+                        # set the position of the last term of the parent feature
+                        insert_pos = pos
+                        pos -= 1
+                lt_pruned_rule.insert(insert_pos, (remaining_value[0], False, 0.5))
+
+                # the main rule is updated for passing through the loop again
+                gt_pruned_rule = lt_pruned_rule.copy()
+
+        return(gt_pruned_rule)
+
+    def get_rule_complements(self, rule=None, var_dict=None, var_dict_enc=None):
+
+        # allow new values or get self properties
+        rule, _, _ = self.init_values(rule=rule)
+
+        var_dict, var_dict_enc = self.init_dicts(var_dict=var_dict, var_dict_enc=var_dict_enc)
+
+        parent_items = {}
+        rule_complements = []
+
+        for i, item in enumerate(rule):
+            # nominal vars
+            if item[0] in var_dict_enc:
+                parent_item = var_dict_enc[item[0]]
+                # with a single True value
+                if item[1]: # True (less than thresh); is a disjoint set or one or more
+                    if parent_item not in parent_items.keys():
+                        parent_items.update({ parent_item : 'disjoint'}) # capture the parent feature
+                # nominal vars with one or more False values (a disjoint rule);
+                else: # False (greater than thresh); there can be only one for each parent
+                    parent_items.update({ parent_item : item[0]}) # capture the parent feature and the child
+                    rule_complement = rule.copy()
+                    rule_complement[i] = (item[0], True, item[2])
+                    rule_complements.append(rule_complement)
+            else: # continuous
+                parent_items.update({item[0] : 'continuous'}) # capture the type of bound
+
+        for prnt in parent_items:
+            if parent_items[prnt] == 'disjoint':
+                where_false = np.where(np.array(var_dict[prnt]['upper_bound']) < 1)[0] # upper bound less than 1 is True
+                if len(where_false) == 1: # one value can just be flipped to true
+                    rule_complement = rule.copy()
+                    for i, item in enumerate(rule):
+                        if item[0] in var_dict[prnt]['labels_enc']:
+                            rule_complement[i] = (item[0], False, item[2])
+                            rule_complements.append(rule_complement)
+                else: # need to flip the disjoint set
+                    rule_complement = []
+                    for item in rule:
+                        # keep only the other items
+                        if item[0] in var_dict[prnt]['labels_enc']:
+                            continue
+                        else:
+                            rule_complement.append(item)
+                    # add the flipped disjoint set
+                    for i, ub in enumerate(var_dict[prnt]['upper_bound']):
+                        if ub >= 1:
+                            rule_complement.append((var_dict[prnt]['labels_enc'][i], True, 0.5))
+                    rule_complements.append(rule_complement)
+            elif parent_items[prnt] == 'continuous':
+                rule_complement = rule.copy()
+                for i, item in enumerate(rule):
+                        if item[0] == prnt: # basic flip - won't work for both because rule eval is logical AND
+                            rule_complement[i] = (item[0], not item[1], item[2])
+                            rule_complements.append(rule_complement)
+            else: continue
+
+        return(rule_complements)
+
+    def evaluate_rule_complement(self, rule=None, features=None, class_names=None,
                         instances=None, labels=None):
 
         # allow new values or get self properties
-        rule, features, class_names, instances, labels = \
+        rule, features, class_names, instances, labels, _, _ = \
                 self.init_values(rule=rule, features=features, class_names=class_names,
                                 instances=instances, labels=labels)
 
@@ -914,12 +1040,13 @@ class CHIRPS_explainer(rule_evaluator):
     def __init__(self, features, features_enc, class_names,
                 var_dict, var_dict_enc,
                 paths, patterns,
-                rule, pruned_rule,
+                rule, pruned_rule, prune_rule,
                 target_class, target_class_label,
                 major_class, major_class_label,
                 model_votes, model_posterior,
                 isolation_pos,
                 posterior,
+                stability,
                 accuracy,
                 counts,
                 recall,
@@ -936,6 +1063,7 @@ class CHIRPS_explainer(rule_evaluator):
         self.patterns = patterns
         self.rule = rule
         self.pruned_rule = pruned_rule
+        self.prune_rule = prune_rule
         self.target_class = target_class
         self.target_class_label = target_class_label
         self.major_class = major_class
@@ -944,6 +1072,7 @@ class CHIRPS_explainer(rule_evaluator):
         self.model_posterior = model_posterior
         self.isolation_pos = isolation_pos
         self.posterior = posterior
+        self.stability = stability
         self.accuracy = accuracy
         self.counts = counts
         self.recall = recall
@@ -960,11 +1089,13 @@ class CHIRPS_explainer(rule_evaluator):
 
         # final metrics from rule merge step (usually based on training set)
         self.est_prec = list(reversed(self.posterior))[0][self.target_class]
+        self.est_stab = list(reversed(self.stability))[0][self.target_class]
         self.est_recall = list(reversed(self.recall))[0][self.target_class]
         self.est_f1 = list(reversed(self.f1))[0][self.target_class]
         self.est_acc = list(reversed(self.accuracy))[0][self.target_class]
         self.est_lift = list(reversed(self.lift))[0][self.target_class]
         self.est_coverage = list(reversed(self.counts))[0].sum() / self.counts[0].sum()
+        self.est_xcoverage = list(reversed(self.counts))[0].sum() / (self.counts[0].sum() + 1)
         self.posterior_counts = list(reversed(self.counts))[0]
         self.prior_counts = self.counts[0]
 
@@ -976,7 +1107,7 @@ class CHIRPS_explainer(rule_evaluator):
         if var_dict is None: # default - match prediction model
             var_dict = self.var_dict_enc
 
-        Tr_Fa = lambda x, y, z : x + ' True' if ~y else x + ' False'
+        Tr_Fa = lambda x, y, z : x + ' False' if y else x + ' True'
         lt_gt = lambda x, y, z : x + ' <= ' + str(z) if y else x + ' > ' + str(z)
         def bin_or_cont(x, y, z):
             if x in var_dict:
@@ -994,8 +1125,10 @@ class CHIRPS_explainer(rule_evaluator):
         print('rule cardinality: ' + str(self.rule_len))
         print()
         print('Estimated Results - Rule Training Sample')
-        print('rule excl.coverage (training data): ' + str(self.est_coverage))
-        print('rule stability (training data): ' + str(self.est_prec))
+        print('rule coverage (training data): ' + str(self.est_coverage))
+        print('rule xcoverage (training data): ' + str(self.est_xcoverage))
+        print('rule precision (training data): ' + str(self.est_prec))
+        print('rule stability (training data): ' + str(self.est_stab))
         print('rule recall (training data): ' + str(self.est_recall))
         print('rule f1 score (training data): ' + str(self.est_f1))
         print('rule lift (training data): ' + str(self.est_lift))
@@ -1021,6 +1154,7 @@ class CHIRPS_explainer(rule_evaluator):
         'model_votes' : self.model_votes,
         'model_posterior' : self.model_posterior,
         'posterior' : self.posterior,
+        'stability' : self.stability,
         'accuracy' : self.accuracy,
         'counts' : self.counts,
         'recall' : self.recall,
@@ -1084,6 +1218,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         self.model_posterior = None
         self.prior_info = None
         self.posterior = None
+        self.stability = None
         self.accuracy = None
         self.counts = None
         self.recall = None
@@ -1153,7 +1288,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
                             self.rule[valueless_rule.index((item[0], item[1]))] = item
                         else: # feature has been used at the opposite end (either lower or upper bound) and needs inserting
                             # print(item, 'feature values with new discontinuity')
-                            self.rule.insert(feature_appears.index((item[0],)) + 1, item)
+                            self.rule.insert(feature_appears.index(item[0]) + 1, item)
                     else:
                         # print(item, 'feature first added')
                         self.rule.append(item)
@@ -1176,64 +1311,6 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
             self.unapplied_rules.remove(rmv)
 
         return(candidate)
-
-    def prune_rule(self):
-        # removes all other binary items if one Greater than is found.
-
-        # find any nominal binary encoded feature value and its parent if appears as False (greater than)
-        gt_items = {}
-        for item in self.rule:
-            if ~item[1] and item[0] in self.var_dict_enc: # item is greater than thresh (False valued) and a nominal type
-                gt_items.update({ self.var_dict_enc[item[0]] : item[0] }) # capture the parent feature and the feature value / there can only be one true
-
-        gt_pruned_rule = [] # captures binary encoded variables
-        for item in self.rule:
-            if item[0] in self.var_dict_enc:
-                if self.var_dict_enc[item[0]] not in gt_items.keys(): # item parent not in the thresh False set captured just above
-                    gt_pruned_rule.append(item)
-                elif ~item[1]: # any item thresh False valued (it will be in the thresh False set above)
-                    gt_pruned_rule.append(item)
-            else: # continuous
-                gt_pruned_rule.append(item)
-
-        # if all but one of a feature set is False, swap them out for the remaining value
-        # start by counting all the lt thresholds in each parent feature
-        lt_items = defaultdict(lambda: 0)
-        for item in gt_pruned_rule:
-            if item[1] and item[0] in self.var_dict_enc: # item is less than thresh (True valued) and a nominal type
-                lt_items[self.var_dict_enc[item[0]]] += 1 # capture the parent feature and count each True valued feature value
-
-        # checking if just one other feature value remains unused
-        pruned_items = [item[0] for item in gt_pruned_rule]
-        for lt in dict(lt_items).keys(): # convert from defaultdict to dict for counting keys
-            n_categories = len([i for i in self.var_dict_enc.values() if i == lt])
-            if n_categories - dict(lt_items)[lt] == 1:
-                # get the remaining value for this feature
-                lt_labels = self.var_dict[lt]['labels_enc']
-                to_remove = [label for label in lt_labels if label in pruned_items]
-                remaining_value = [label for label in lt_labels if label not in pruned_items]
-
-                # update the feature dict as the one true result might not have been seen
-                pos = self.var_dict[lt]['labels_enc'].index(remaining_value[0])
-                self.var_dict[lt]['lower_bound'][pos] = 0.5
-
-                # this is to scan the rule and put feature values with the same parent side by side
-                lt_pruned_rule = []
-                pos = -1
-                for rule in gt_pruned_rule:
-                    pos += 1
-                    if rule[0] not in to_remove:
-                        lt_pruned_rule.append(rule)
-                    else:
-                        # set the position of the last term of the parent feature
-                        insert_pos = pos
-                        pos -= 1
-                lt_pruned_rule.insert(insert_pos, (remaining_value[0], False, 0.5))
-
-                # the main rule is updated for passing through the loop again
-                gt_pruned_rule = lt_pruned_rule.copy()
-
-        self.pruned_rule = gt_pruned_rule
 
     def __greedy_commit__(self, current, previous):
         if current <= previous:
@@ -1299,6 +1376,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         # prior - empty rule
         p_counts = p_count_corrected(sample_labels.values, [i for i in range(len(self.class_names))])
         self.posterior = np.array([p_counts['p_counts'].tolist()])
+        self.stability = np.array([p_counts['s_counts'].tolist()])
         self.counts = np.array([p_counts['counts'].tolist()])
         self.recall = [np.full(self.n_classes, 1.0)] # counts / prior counts
         self.f1 =  [2] * ( ( self.posterior * self.recall ) / ( self.posterior + self.recall ) ) # 2 * (precis * recall/(precis + recall) )
@@ -1326,6 +1404,10 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
             if self.algorithm == 'greedy_prec':
                 current = eval_rule['post'][np.where(eval_rule['labels'] == self.target_class)]
                 previous = list(reversed(self.posterior))[0][np.where(eval_rule['labels'] == self.target_class)]
+                should_continue = self.__greedy_commit__(current, previous)
+            elif self.algorithm == 'greedy_stab':
+                current = eval_rule['stability'][np.where(eval_rule['labels'] == self.target_class)]
+                previous = list(reversed(self.stability))[0][np.where(eval_rule['labels'] == self.target_class)]
                 should_continue = self.__greedy_commit__(current, previous)
             elif self.algorithm == 'greedy_f1':
                 current = eval_rule['f1'][np.where(eval_rule['labels'] == self.target_class)]
@@ -1357,6 +1439,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
 
             # per class measures
             self.posterior = np.append(self.posterior, [eval_rule['post']], axis=0)
+            self.stability = np.append(self.stability, [eval_rule['stability']], axis=0)
             self.counts = np.append(self.counts, [eval_rule['counts']], axis=0)
             self.accuracy = np.append(self.accuracy, [eval_rule['accuracy']], axis=0)
             self.recall = np.append(self.recall, [eval_rule['recall']], axis=0 )
@@ -1397,10 +1480,11 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
 
     def score_rule(self, alpha=0.5):
         target_precision = [p[self.target_class] for p in self.posterior]
+        target_stability = [s[self.target_class] for s in self.posterior]
         target_recall = [r[self.target_class] for r in self.recall]
         target_f1 = [f[self.target_class] for f in self.f1]
         target_accuracy = [a[self.target_class] for a in self.accuracy]
-        target_prf = [[p, r, f, a] for p, r, f, a in zip(target_precision, target_recall, target_f1, target_accuracy)]
+        target_prf = [[p, s, r, f, a] for p, s, r, f, a in zip(target_precision, target_stability, target_recall, target_f1, target_accuracy)]
 
         target_cardinality = [i for i in range(len(target_precision))]
 
@@ -1451,12 +1535,13 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         return(CHIRPS_explainer(self.features, self.features_enc, self.class_names,
         self.var_dict, self.var_dict_enc,
         self.paths, self.patterns,
-        self.rule, self.pruned_rule,
+        self.rule, self.pruned_rule, self.prune_rule,
         self.target_class, self.target_class_label,
         self.major_class, self.major_class_label,
         self.model_votes, self.model_posterior,
         self.isolation_pos,
         self.posterior,
+        self.stability,
         self.accuracy,
         self.counts,
         self.recall,

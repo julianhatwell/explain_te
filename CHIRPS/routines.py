@@ -13,11 +13,8 @@ from sklearn.model_selection import ParameterGrid
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support, accuracy_score
 
-from CHIRPS import p_count, p_count_corrected, if_nexists_make_dir, chisq_indep_test
+from CHIRPS import if_nexists_make_dir, chisq_indep_test
 from CHIRPS.plotting import plot_confusion_matrix
-
-from anchor import anchor_tabular as anchtab
-from lime import lime_tabular as limtab
 
 # bug in sk-learn. Should be fixed in August
 import warnings
@@ -163,11 +160,13 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         tt_posterior_counts = eval_rule['counts']
         tt_chisq = chisq_indep_test(tt_posterior_counts, tt_prior_counts)[1]
         tt_prec = eval_rule['post'][tc]
+        tt_stab = eval_rule['stability'][tc]
         tt_recall = eval_rule['recall'][tc]
         tt_f1 = eval_rule['f1'][tc]
         tt_acc = eval_rule['accuracy'][tc]
         tt_lift = eval_rule['lift'][tc]
         tt_coverage = eval_rule['coverage']
+        tt_xcoverage = eval_rule['xcoverage']
 
         output[i] = [instance_id,
             c.algorithm,
@@ -180,17 +179,21 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             c.forest_vote_share,
             c.prior,
             c.est_prec,
+            c.est_stab,
             c.est_recall,
             c.est_f1,
             c.est_acc,
             c.est_lift,
             c.est_coverage,
+            c.est_xcoverage,
             tt_prec,
+            tt_stab,
             tt_recall,
             tt_f1,
             tt_acc,
             tt_lift,
-            tt_coverage]
+            tt_coverage,
+            tt_xcoverage]
 
         if print_to_screen:
             print('INSTANCE RESULTS')
@@ -199,8 +202,10 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             print()
             c.to_screen()
             print('Results - Previously Unseen Sample')
-            print('rule excl.coverage (unseen data): ' + str(tt_coverage))
-            print('rule stability (unseen data): ' + str(tt_prec))
+            print('rule coverage (unseen data): ' + str(tt_coverage))
+            print('rule xcoverage (unseen data): ' + str(tt_xcoverage))
+            print('rule precision (unseen data): ' + str(tt_prec))
+            print('rule stability (unseen data): ' + str(tt_stab))
             print('rule recall (unseen data): ' + str(tt_recall))
             print('rule f1 score (unseen data): ' + str(tt_f1))
             print('rule lift (unseen data): ' + str(tt_lift))
@@ -219,12 +224,12 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                     'pred class', 'pred class label',
                     'target class', 'target class label',
                     'forest vote share', 'pred prior',
-                    'stability(tr)', 'recall(tr)', 'f1(tr)',
-                    'accuracy(tr)', 'lift(tr)',
-                    'excl.coverage(tr)',
-                    'stability(tt)', 'recall(tt)', 'f1(tt)',
-                    'accuracy(tt)', 'lift(tt)',
-                    'excl.coverage(tt)']
+                    'precision(tr)', 'stability(tr)', 'recall(tr)',
+                    'f1(tr)', 'accuracy(tr)', 'lift(tr)',
+                    'coverage(tr)', 'xcoverage(tr)',
+                    'precision(tt)', 'stability(tt)', 'recall(tt)',
+                    'f1(tt)', 'accuracy(tt)', 'lift(tt)',
+                    'coverage(tt)', 'xcoverage(tt)']
         output_df = DataFrame(output, columns=headers)
         output_df.to_csv(save_results_path + save_results_file + '.csv')
 
