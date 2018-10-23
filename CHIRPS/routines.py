@@ -136,6 +136,8 @@ def batch_instance_ceiling(data_split, n_instances=None, batch_size=None):
 def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                 ds_container, # data_split_container (for the test data and the LOO function
                                 instance_ids, # should match the instances in the batch
+                                eval_alt_labelings=False,
+                                eval_rule_complements=False,
                                 print_to_screen=False,
                                 save_results_path=None,
                                 save_results_file=None,
@@ -167,6 +169,21 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         tt_lift = eval_rule['lift'][tc]
         tt_coverage = eval_rule['coverage']
         tt_xcoverage = eval_rule['xcoverage']
+
+        rule_complements = c.get_rule_complements() # get them anyway as they can be used in two optional places
+        if evaluate_rule_complements:
+            rule_complement_results = []
+            for rc in rule_complements:
+                rule_complement_results.append({'rule' : rc,
+                                                'pretty_rule' : c.prettify_rule(rc),
+                                                'eval' : c.evaluate_rule(rule=rc, instances=instances_enc, labels=labels)})
+
+            print(rule_complement_results)
+
+        if eval_alt_labelings:
+            # for each rc, create a dataset of the same size as what we are testing
+            # the set is the instance that we are testing identical in every way
+            # we will then replace one column with what the not rule says and see what happens
 
         output[i] = [instance_id,
             c.algorithm,
