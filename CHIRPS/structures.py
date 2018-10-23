@@ -94,16 +94,24 @@ class data_split_container:
 
     # leave one out by instance_id and encode the rest
     def get_loo_instances(self, instance_id, encoded=False, which_split='test'):
-        if which_split == 'train':
-            instances = self.X_train.drop(instance_id)
-            loc_index = self.y_train.index == instance_id
-            instances_enc = self.X_train_enc[~loc_index,:]
-            labels = self.y_train.drop(instance_id)
+
+        if which_split == 'test':
+            instances = self.X_test
+            instances_enc = self.X_test_enc
+            labels = self.y_test
         else:
-            instances = self.X_test.drop(instance_id)
-            loc_index = self.y_test.index == instance_id
-            instances_enc = self.X_test_enc[~loc_index,:]
-            labels = self.y_test.drop(instance_id)
+            instances = self.X_train
+            instances_enc = self.X_train_enc
+            labels = self.y_train
+
+        if instance_id in instances.index:
+            instances = instances.drop(instance_id)
+            loc_index = labels.index == instance_id
+            instances_enc = instances_enc[~loc_index,:]
+            labels = labels.drop(instance_id)
+        else:
+            print('Instance not found in this data partition')
+
         return(instances, instances_enc, labels)
 
     def to_dict(self):
@@ -1258,7 +1266,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
         # find any nominal binary encoded feature value and its parent if appears as False (greater than)
         gt_items = {}
         for item in self.rule:
-            if ~item[1] and item[0] in self.var_dict_enc: # item is greater than thresh (False valued) and a nominal type
+            if not item[1] and item[0] in self.var_dict_enc: # item is greater than thresh (False valued) and a nominal type
                 gt_items.update({ self.var_dict_enc[item[0]] : item[0] }) # capture the parent feature and the feature value / there can only be one true
 
         gt_pruned_rule = [] # captures binary encoded variables
@@ -1266,7 +1274,7 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
             if item[0] in self.var_dict_enc:
                 if self.var_dict_enc[item[0]] not in gt_items.keys(): # item parent not in the thresh False set captured just above
                     gt_pruned_rule.append(item)
-                elif ~item[1]: # any item thresh False valued (it will be in the thresh False set above)
+                elif not item[1]: # any item thresh False valued (it will be in the thresh False set above)
                     gt_pruned_rule.append(item)
             else: # continuous
                 gt_pruned_rule.append(item)
@@ -1590,7 +1598,7 @@ class batch_CHIRPS_explainer:
                 # extract the current instance paths container for freq patt mining
                 # filtering by the chosen set of trees - default: majority voting
                 ip_container = self.bp_container.get_instance_paths(i, which_trees=which_trees)
-                c_runner = CHIRPS_runner(ip_container, self.meta_data)
+                c_runner = CHIRPS_runner(ip_container, deepcopy(self.meta_data))
 
                 # run the chirps process on each instance paths
                 async_out.append(pool.apply_async(as_CHIRPS,
@@ -1617,7 +1625,7 @@ class batch_CHIRPS_explainer:
                 # get the current individual_paths_container
                 # filtering by the chosen set of trees - default: majority voting
                 ip_container = self.bp_container.get_instance_paths(i, which_trees=which_trees)
-                c_runner = CHIRPS_runner(ip_container, self.meta_data)
+                c_runner = CHIRPS_runner(ip_container, deepcopy(self.meta_data))
 
                 # run the chirps process on each instance paths
                 _, CHIRPS_exp = \
