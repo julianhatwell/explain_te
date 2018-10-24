@@ -135,7 +135,7 @@ def batch_instance_ceiling(data_split, n_instances=None, batch_size=None):
 
 def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                 ds_container, # data_split_container (for the test data and the LOO function
-                                instance_ids, # should match the instances in the batch
+                                instance_idx, # should match the instances in the batch
                                 eval_alt_labelings=False,
                                 eval_rule_complements=False,
                                 print_to_screen=False,
@@ -148,8 +148,8 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
     for i, c in enumerate(b_CHIRPS_exp.CHIRPS_explainers):
 
         # get test sample by leave-one-out on current instance
-        instance_id = instance_ids[i]
-        _, instances_enc, labels = ds_container.get_loo_instances(instance_id)
+        instance_id = instance_idx[i]
+        _, instances_enc, _, labels = ds_container.get_loo_instances(instance_id)
 
         # then evaluating rule metrics on the leave-one-out test set
         eval_rule = c.evaluate_rule(rule='pruned', instances=instances_enc, labels=labels)
@@ -171,7 +171,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         tt_xcoverage = eval_rule['xcoverage']
 
         rule_complements = c.get_rule_complements() # get them anyway as they can be used in two optional places
-        if evaluate_rule_complements:
+        if eval_rule_complements:
             rule_complement_results = []
             for rc in rule_complements:
                 rule_complement_results.append({'rule' : rc,
@@ -179,8 +179,12 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                                 'eval' : c.evaluate_rule(rule=rc, instances=instances_enc, labels=labels)})
 
             print(rule_complement_results)
+            print()
 
         if eval_alt_labelings:
+            # get the current instance being explained
+            # get_by_id takes a list of instance ids. Here we have just a single integer
+            _, instances_enc, _, _ = ds_container.get_by_id([instance_id], which_split='test')
             # for each rc, create a dataset of the same size as what we are testing
             # the set is the instance that we are testing identical in every way
             # we will then replace one column with what the not rule says and see what happens

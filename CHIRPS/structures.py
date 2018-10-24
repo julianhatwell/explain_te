@@ -77,42 +77,78 @@ class data_split_container:
         self.current_row_train = 0
         self.current_row_test = 0
 
-    def get_next(self, batch_size = 1, encoded=False, which_split='train'):
-        if which_split == 'train':
-            instances = self.X_train[self.current_row_train:self.current_row_train + batch_size]
-            instances_enc = self.X_train_enc[self.current_row_train:self.current_row_train + batch_size]
-            instances_enc_matrix = self.X_train_enc_matrix[self.current_row_train:self.current_row_train + batch_size]
-            labels = self.y_train[self.current_row_train:self.current_row_train + batch_size]
-            self.current_row_train += batch_size
-        else:
-            instances = self.X_test[self.current_row_test:self.current_row_test + batch_size]
-            instances_enc = self.X_test_enc[self.current_row_test:self.current_row_test + batch_size]
-            instances_enc_matrix = self.X_test_enc_matrix[self.current_row_test:self.current_row_test + batch_size]
-            labels = self.y_test[self.current_row_test:self.current_row_test + batch_size]
-            self.current_row_test += batch_size
-        return(instances, instances_enc, instances_enc_matrix, labels)
-
-    # leave one out by instance_id and encode the rest
-    def get_loo_instances(self, instance_id, encoded=False, which_split='test'):
-
+    def get_which_split(self, which_split):
+        # general getter for code re-use
         if which_split == 'test':
             instances = self.X_test
             instances_enc = self.X_test_enc
+            instances_enc_matrix = self.X_test_enc_matrix
             labels = self.y_test
         else:
             instances = self.X_train
             instances_enc = self.X_train_enc
+            instances_enc_matrix = self.X_train_enc_matrix
             labels = self.y_train
+        return(instances, instances_enc, instances_enc_matrix, labels)
+
+    def get_by_id(self, instance_idx, which_split=None):
+
+        if which_split is None:
+            if all([True if i in self.y_test.index else False for i in instance_idx]):
+                which_split = 'test'
+            elif all([True if i in self.y_train.index else False for i in instance_idx]):
+                which_split = 'train'
+            else:
+                print('ids found in neither or both partitions. Must be from a single partition.')
+                return(None, None, None, None)
+
+        instances, instances_enc, instances_enc_matrix, labels = \
+                                            self.get_which_split(which_split)
+
+        # filter by the list of indices given
+        instances = instances.loc[instance_idx]
+        loc_index = [True if iid in instance_idx else False for iid in labels.index]
+        instances_enc = instances_enc[loc_index,:]
+        instances_enc_matrix = instances_enc_matrix[loc_index,:]
+        labels = labels[instance_idx]
+
+        return(instances, instances_enc, instances_enc_matrix, labels)
+
+    def get_next(self, batch_size = 1, which_split='train'):
+
+        instances, instances_enc, instances_enc_matrix, labels = \
+                                            self.get_which_split(which_split)
+
+        if which_split == 'test':
+            current_row = self.current_row_test
+            self.current_row_test += batch_size
+        else:
+            current_row = self.current_row_train
+            self.current_row_train += batch_size
+
+        instances = instances[current_row:current_row + batch_size]
+        instances_enc = instances_enc[current_row:current_row + batch_size]
+        instances_enc_matrix = instances_enc_matrix[current_row:current_row + batch_size]
+        labels = labels[current_row:current_row + batch_size]
+
+        return(instances, instances_enc, instances_enc_matrix, labels)
+
+    # leave one out by instance_id and encode the rest
+    def get_loo_instances(self, instance_id, which_split='test'):
+
+        instances, instances_enc, instances_enc_matrix, labels = \
+                                            self.get_which_split(which_split)
 
         if instance_id in instances.index:
             instances = instances.drop(instance_id)
             loc_index = labels.index == instance_id
             instances_enc = instances_enc[~loc_index,:]
+            instances_enc_matrix = instances_enc_matrix[~loc_index,:]
             labels = labels.drop(instance_id)
+            return(instances, instances_enc, instances_enc_matrix, labels)
         else:
             print('Instance not found in this data partition')
-
-        return(instances, instances_enc, labels)
+            return(None, None, None, None)
 
     def to_dict(self):
         return({'X_train': self.X_train,
@@ -276,13 +312,13 @@ class data_container(non_deterministic):
     def get_tt_split_idx(self, test_size=0.3, random_state=None, shuffle=True):
         # common default setting: see class non_deterministic
         random_state = self.default_if_none_random_state(random_state)
-        nrows = self.data.shape[0]
+        n_instances = self.data.shape[0]
         np.random.seed(random_state)
-        test_idx = np.random.choice(nrows - 1, # zero base
-                                    size = round(test_size * nrows),
+        test_idx = np.random.choice(n_instances - 1, # zero base
+                                    size = round(test_size * n_instances),
                                     replace=False)
         # this method avoids scanning the array for each test_idx to find all the others
-        train_pos = Series([True] * nrows)
+        train_pos = Series([True] * n_instances)
         train_pos.loc[test_idx] = False
         train_idx = np.array(train_pos.index[train_pos], dtype=np.int32)
         # train are currently in given order, the test are not
@@ -789,7 +825,7 @@ class forest_walker:
 
 # this is inherited by CHIRPS_explainer and CHIRPS_runner
 # the main point is to have the rule_evaluator function inherited from one place
-class rule_evaluator:
+class rule_evaluator(non_deterministic):
 
     # allows new values other than those already in self
     def init_values(self, rule=None, features=None, class_names=None):
@@ -802,6 +838,7 @@ class rule_evaluator:
                 rule = rule
         else:
             rule = self.rule
+
         if features is None:
             features = self.features_enc # default
         if class_names is None:
@@ -814,30 +851,34 @@ class rule_evaluator:
         # train (or other) for optimisation of rule merge
         # test (or other) for evaluation of rule
         if instances is None:
-            if self.sample_instances is None:
-                print('Sample intances (e.g. X_train_enc) are required for rule evaluation')
-                return()
-            else:
+            try:
                 instances = self.sample_instances
+            except AttributeError:
+                print('Sample intances (e.g. X_train_enc) are required for rule evaluation')
+                return(None, None)
         if labels is None:
-            if self.sample_labels is None:
-                print('Sample labels (e.g. y_train) are required for rule evaluation')
-                return()
-            else:
+            try:
                 labels = self.sample_labels
+            except AttributeError:
+                print('No sample labels (e.g. y_train) were given. Do you plan to predict some new ones?')
+                return(instances, None)
 
         return(instances, labels)
 
     def init_dicts(self, var_dict=None, var_dict_enc=None):
 
         if var_dict is None:
-            if self.var_dict is None:
-                print('Feature dictionary (meta data) required for rule evaluation')
-            else:
+            try:
                 var_dict = self.var_dict
+            except AttributeError:
+                print('Feature dictionary (meta data) required for rule evaluation')
+                return(None, None)
 
         if var_dict_enc is None:
-            var_dict_enc = self.var_dict_enc # can be None
+            try:
+                var_dict_enc = self.var_dict_enc # can be None
+            except AttributeError:
+                return(instances, None)
 
         return(var_dict, var_dict_enc)
 
@@ -914,79 +955,10 @@ class rule_evaluator:
                 'chisq' : chisq
                 })
 
-    def get_rule_complements(self, rule=None, var_dict=None, var_dict_enc=None):
-
-        # allow new values or get self properties
-        rule, _, _ = self.init_values(rule=rule)
-        var_dict, var_dict_enc = self.init_dicts(var_dict=var_dict, var_dict_enc=var_dict_enc)
-
-        parent_items = {}
-        rule_complements = []
-
-        for i, item in enumerate(rule):
-            # nominal vars
-            if item[0] in var_dict_enc:
-                parent_item = var_dict_enc[item[0]]
-                # with a single True value
-                if item[1]: # True (less than thresh); is a disjoint set or one or more
-                    if parent_item not in parent_items.keys():
-                        parent_items.update({ parent_item : 'disjoint'}) # capture the parent feature
-                # nominal vars with one or more False values (a disjoint rule);
-                else: # False (greater than thresh); there can be only one for each parent
-                    parent_items.update({ parent_item : item[0]}) # capture the parent feature and the child
-                    rule_complement = rule.copy()
-                    rule_complement[i] = (item[0], True, item[2])
-                    rule_complements.append(rule_complement)
-            else: # continuous
-                parent_items.update({item[0] : 'continuous'}) # capture the type of bound
-
-        for prnt in parent_items:
-            if parent_items[prnt] == 'disjoint':
-                where_false = np.where(np.array(var_dict[prnt]['upper_bound']) < 1)[0] # upper bound less than 1 is True
-                if len(where_false) == 1: # one value can just be flipped to true
-                    rule_complement = rule.copy()
-                    for i, item in enumerate(rule):
-                        if item[0] in var_dict[prnt]['labels_enc']:
-                            rule_complement[i] = (item[0], False, item[2])
-                            rule_complements.append(rule_complement)
-                else: # need to flip the disjoint set
-                    rule_complement = []
-                    for item in rule:
-                        # keep only the other items
-                        if item[0] in var_dict[prnt]['labels_enc']:
-                            continue
-                        else:
-                            rule_complement.append(item)
-                    # add the flipped disjoint set
-                    for i, ub in enumerate(var_dict[prnt]['upper_bound']):
-                        if ub >= 1:
-                            rule_complement.append((var_dict[prnt]['labels_enc'][i], True, 0.5))
-                    rule_complements.append(rule_complement)
-            elif parent_items[prnt] == 'continuous':
-                rule_complement = rule.copy()
-                for i, item in enumerate(rule):
-                        if item[0] == prnt: # basic flip - won't work for both because rule eval is logical AND
-                            rule_complement[i] = (item[0], not item[1], item[2])
-                            rule_complements.append(rule_complement)
-            else: continue
-
-        return(rule_complements)
-
-    def evaluate_rule_complement(self, rule=None, features=None, class_names=None,
-                        instances=None, labels=None):
-
-        # allow new values or get self properties
-        rule, features, class_names, instances, labels, _, _ = \
-                self.init_values(rule=rule, features=features, class_names=class_names,
-                                instances=instances, labels=labels)
-
-
-
-
-
 class CHIRPS_explainer(rule_evaluator):
 
-    def __init__(self, features, features_enc, class_names,
+    def __init__(self, random_state,
+                features, features_enc, class_names,
                 var_dict, var_dict_enc,
                 paths, patterns,
                 rule, pruned_rule,
@@ -1003,6 +975,7 @@ class CHIRPS_explainer(rule_evaluator):
                 lift,
                 chisq,
                 algorithm):
+        self.random_state = random_state
         self.features = features
         self.features_enc = features_enc
         self.class_names = class_names
@@ -1064,6 +1037,142 @@ class CHIRPS_explainer(rule_evaluator):
                 return(lt_gt(x,y,z))
         return(' AND '.join([bin_or_cont(f, t, v) for f, t, v in rule]))
 
+    def categorise_rule_features(self, rule=None, var_dict=None, var_dict_enc=None):
+
+        # allow new values or get self properties
+        rule, _, _ = self.init_values(rule=rule)
+        var_dict, var_dict_enc = self.init_dicts(var_dict=var_dict, var_dict_enc=var_dict_enc)
+
+        # sort out features in a rule belonging to parent groups
+        parent_features = {}
+        for i, item in enumerate(rule):
+            # nominal vars
+            if item[0] in var_dict_enc:
+                parent_item = var_dict_enc[item[0]]
+                # with a single True value
+                if item[1]: # True (less than thresh); is a disjoint set or one or more
+                    if parent_item not in parent_features.keys():
+                        parent_features.update({ parent_item : 'disjoint'}) # capture the parent feature
+                # nominal vars with one or more False values (a disjoint rule);
+                else: # False (greater than thresh); there can be only one for each parent
+                    parent_features.update({ parent_item : item[0]}) # capture the parent feature and the child
+            else: # continuous
+                parent_features.update({item[0] : 'continuous'}) # capture the type of bound
+        return(parent_features)
+
+    def get_rule_complements(self, rule='pruned', var_dict=None, var_dict_enc=None):
+
+        # allow new values or get self properties
+        rule, _, _ = self.init_values(rule=rule)
+        var_dict, var_dict_enc = self.init_dicts(var_dict=var_dict, var_dict_enc=var_dict_enc)
+
+        parent_features = self.categorise_rule_features(rule=rule, var_dict=var_dict, var_dict_enc=var_dict_enc)
+        rule_complements = []
+
+        for prnt in parent_features:
+            if parent_features[prnt] == 'disjoint':
+                where_false = np.where(np.array(var_dict[prnt]['upper_bound']) < 1)[0] # upper bound less than 1 is True
+                if len(where_false) == 1: # one value can just be flipped to true
+                    rule_complement = rule.copy()
+                    for i, item in enumerate(rule):
+                        if item[0] in var_dict[prnt]['labels_enc']:
+                            rule_complement[i] = (item[0], False, item[2])
+                            rule_complements.append(rule_complement)
+                else: # need to flip the disjoint set
+                    rule_complement = []
+                    for item in rule:
+                        # keep only the other items
+                        if item[0] in var_dict[prnt]['labels_enc']:
+                            continue
+                        else:
+                            rule_complement.append(item)
+                    # add the flipped disjoint set
+                    for i, ub in enumerate(var_dict[prnt]['upper_bound']):
+                        if ub >= 1:
+                            rule_complement.append((var_dict[prnt]['labels_enc'][i], True, 0.5))
+                    rule_complements.append(rule_complement)
+            elif parent_features[prnt] == 'continuous':
+                rule_complement = rule.copy()
+                for i, item in enumerate(rule):
+                        if item[0] == prnt: # basic flip - won't work for both because rule eval is logical AND
+                            rule_complement[i] = (item[0], not item[1], item[2])
+                            rule_complements.append(rule_complement)
+            else: # its a single False (greater than thresh) - simple flip
+                rule_complement = rule.copy()
+                for i, item in enumerate(rule):
+                    if item[0] == parent_features[prnt]:
+                        rule_complement[i] = (item[0], True, item[2])
+                        rule_complements.append(rule_complement)
+
+        return(rule_complements)
+
+    def evaluate_rule_complement(self, rule=None, features=None, class_names=None,
+                        instances=None, labels=None):
+        # this is still TO DO
+        # allow new values or get self properties
+        print()
+
+    def get_distribution_by_rule(self, sample_instances,
+                                    rule='pruned', features=None,
+                                    n_samples=1, random_state=None):
+        # take an instance and a sample instance set
+        # return a distribution to match the sample set
+        # mask any features not involved in the rule with the original instance
+
+        # should usually get the feature list internally from init_values
+        rule, features, _ = self.init_values(rule=rule, features=features)
+        size = sample_instances.shape[0]
+
+        # get instances covered by rule
+        idx = self.apply_rule(rule=rule, instances=sample_instances, features=features)
+        sample_instances = sample_instances[idx]
+        n_instances = sample_instances.shape[0]
+
+        # reproducibility
+        random_state = self.default_if_none_random_state(random_state)
+        np.random.seed(random_state)
+
+        # get a distribution for those instances covered by rule as many times as required
+        distributions = [[]] * n_samples
+        for i in range(n_samples):
+            idx = np.random.choice(n_instances - 1, # zero base
+                                        size = size,
+                                        replace=True)
+            distributions[i] = sample_instances[idx]
+
+        return(distributions)
+
+    def mask_by_instance(self, instance, sample_instances, rule,
+                            features=None, var_dict=None, var_dict_enc=None):
+
+        # should usually get the feature list internally from init_values
+        rule, features, _ = self.init_values(rule=rule, features=features)
+        var_dict, var_dict_enc = self.init_dicts(var_dict=var_dict, var_dict_enc=var_dict_enc)
+        parent_features = self.categorise_rule_features(rule=rule, var_dict=var_dict, var_dict_enc=var_dict_enc)
+
+        n_instances = sample_instances.shape[0]
+        # create a non-sparse matrix to optimise columnwise ops
+        mask_matrix = np.repeat(instance.todense(), n_instances, axis=0)
+
+        # note: this is comparing a rule complement to the base pruned rule
+        # mask features where the rules differ
+
+        # we want any features that weren't included in the rule to get masked
+        # beware of binary encoded features - use the parent_features
+        for i, feature in enumerate(features):
+            if feature in [item[0] for item in self.pruned_rule]: # feature is used in the base rule
+                if feature in var_dict_enc: # binary encoded feature
+                    prnt = var_dict_enc[feature]
+                        if parent_features[prnt]
+                else:
+                    prnt = feature
+
+                if prnt in parent_features: # feature or its parent is part of the rule - open the mask
+                    mask_matrix[:, i] = sample_instances[:, i].todense()
+
+        return(mask_matrix)
+
+
     def to_screen(self):
         print('Model Results for Instance')
         print('target class prior (training data): ' + str(self.prior))
@@ -1112,7 +1221,7 @@ class CHIRPS_explainer(rule_evaluator):
         'algorithm' : algorithm})
 
 # this class runs all steps of the CHIRPS algorithm
-class CHIRPS_runner(non_deterministic, rule_evaluator):
+class CHIRPS_runner(rule_evaluator):
 
     def __init__(self, instance_paths_container, meta_data):
 
@@ -1538,7 +1647,8 @@ class CHIRPS_runner(non_deterministic, rule_evaluator):
             self.ip_container.sort_patterns(alpha=alpha_paths) # with only support/alpha sorting
 
     def get_CHIRPS_explainer(self):
-        return(CHIRPS_explainer(self.features, self.features_enc, self.class_names,
+        return(CHIRPS_explainer(self.random_state,
+        self.features, self.features_enc, self.class_names,
         self.var_dict, self.var_dict_enc,
         self.paths, self.patterns,
         self.rule, self.pruned_rule,
