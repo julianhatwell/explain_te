@@ -107,7 +107,7 @@ class data_split_container:
 
         # filter by the list of indices given
         instances = instances.loc[instance_idx]
-        loc_index = [True if iid in instance_idx else False for iid in labels.index]
+        loc_index = [i for i, idx in enumerate(labels.index) if idx in instance_idx]
         instances_enc = instances_enc[loc_index,:]
         instances_enc_matrix = instances_enc_matrix[loc_index,:]
         labels = labels[instance_idx]
@@ -1067,7 +1067,7 @@ class CHIRPS_explainer(rule_evaluator):
         var_dict, var_dict_enc = self.init_dicts(var_dict=var_dict, var_dict_enc=var_dict_enc)
 
         parent_features = self.categorise_rule_features(rule=rule, var_dict=var_dict, var_dict_enc=var_dict_enc)
-        rule_complements = []
+        rule_complements = {}
 
         for prnt in parent_features:
             if parent_features[prnt] == 'disjoint':
@@ -1077,7 +1077,7 @@ class CHIRPS_explainer(rule_evaluator):
                     for i, item in enumerate(rule):
                         if item[0] in var_dict[prnt]['labels_enc']:
                             rule_complement[i] = (item[0], False, item[2])
-                            rule_complements.append(rule_complement)
+                            rule_complements.update({ prnt : rule_complement})
                 else: # need to flip the disjoint set
                     rule_complement = []
                     for item in rule:
@@ -1090,29 +1090,40 @@ class CHIRPS_explainer(rule_evaluator):
                     for i, ub in enumerate(var_dict[prnt]['upper_bound']):
                         if ub >= 1:
                             rule_complement.append((var_dict[prnt]['labels_enc'][i], True, 0.5))
-                    rule_complements.append(rule_complement)
+                    rule_complements.update({ prnt : rule_complement})
             elif parent_features[prnt] == 'continuous':
                 rule_complement = rule.copy()
                 for i, item in enumerate(rule):
                         if item[0] == prnt: # basic flip - won't work for both because rule eval is logical AND
                             rule_complement[i] = (item[0], not item[1], item[2])
-                            rule_complements.append(rule_complement)
+                            rule_complements.update({ prnt : rule_complement})
             else: # its a single False (greater than thresh) - simple flip
                 rule_complement = rule.copy()
                 for i, item in enumerate(rule):
                     if item[0] == parent_features[prnt]:
                         rule_complement[i] = (item[0], True, item[2])
-                        rule_complements.append(rule_complement)
+                        rule_complements.update({ prnt : rule_complement})
 
         return(rule_complements)
 
-    def evaluate_rule_complement(self, rule=None, features=None, class_names=None,
-                        instances=None, labels=None):
-        # this is still TO DO
-        # allow new values or get self properties
-        print()
+    def eval_rule_complements(self, sample_instances, sample_labels, rule_complements=None):
 
-    def get_distribution_by_rule(self, sample_instances,
+        # general setup
+        instances, labels = self.init_instances(instances=sample_instances, labels=sample_labels)
+        if rule_complements is None:
+            rule_complements = self.get_rule_complements()
+
+        rule_complement_results = []
+        for feature in rule_complements:
+            rc = rule_complements[feature]
+            rule_complement_results.append( { 'feature' : feature,
+                                            'rule' : rc,
+                                            'pretty_rule' : self.prettify_rule(rc),
+                                            'eval' : self.evaluate_rule(rule=rc, instances=instances, labels=labels) } )
+
+        return(rule_complement_results)
+
+    def get_distribution_by_rule(self, sample_instances, size=None,
                                     rule='pruned', features=None,
                                     n_samples=1, random_state=None):
         # take an instance and a sample instance set
@@ -1121,7 +1132,8 @@ class CHIRPS_explainer(rule_evaluator):
 
         # should usually get the feature list internally from init_values
         rule, features, _ = self.init_values(rule=rule, features=features)
-        size = sample_instances.shape[0]
+        if size is None:
+            size = sample_instances.shape[0]
 
         # get instances covered by rule
         idx = self.apply_rule(rule=rule, instances=sample_instances, features=features)
@@ -1142,35 +1154,107 @@ class CHIRPS_explainer(rule_evaluator):
 
         return(distributions)
 
-    def mask_by_instance(self, instance, sample_instances, rule,
-                            features=None, var_dict=None, var_dict_enc=None):
+    def mask_by_instance(self, instance, sample_instances, rule, feature,
+                            features=None, var_dict=None, var_dict_enc=None,
+                            n_samples=1, size=None,
+                            instance_specific=True,
+                            random_state=None):
 
         # should usually get the feature list internally from init_values
-        rule, features, _ = self.init_values(rule=rule, features=features)
+        _, features, _ = self.init_values(rule=rule, features=features)
         var_dict, var_dict_enc = self.init_dicts(var_dict=var_dict, var_dict_enc=var_dict_enc)
-        parent_features = self.categorise_rule_features(rule=rule, var_dict=var_dict, var_dict_enc=var_dict_enc)
+        if size is None:
+            size = sample_instances.shape[0]
+        # create a matrix of identical instances, non-sparse to optimise columnwise ops
+        mask_matrix = np.repeat(instance.todense(), size, axis=0)
 
-        n_instances = sample_instances.shape[0]
-        # create a non-sparse matrix to optimise columnwise ops
-        mask_matrix = np.repeat(instance.todense(), n_instances, axis=0)
+        # get a distribution given rule
+        rule_covered_dists = self.get_distribution_by_rule(sample_instances,
+                                                    size=size,
+                                                    rule=rule, features=None,
+                                                    n_samples=n_samples,
+                                                    random_state=random_state)
 
-        # note: this is comparing a rule complement to the base pruned rule
-        # mask features where the rules differ
+        # we want the feature that was changed in the rule complement to be unmasked
+        # beware of binary encoded features
+        if var_dict[feature]['data_type'] == 'continuous':
+            to_unmask = [feature]
+        else:
+            to_unmask = var_dict[feature]['labels_enc']
 
-        # we want any features that weren't included in the rule to get masked
-        # beware of binary encoded features - use the parent_features
-        for i, feature in enumerate(features):
-            if feature in [item[0] for item in self.pruned_rule]: # feature is used in the base rule
-                if feature in var_dict_enc: # binary encoded feature
-                    prnt = var_dict_enc[feature]
-                        if parent_features[prnt]
+        mask_matrices = [deepcopy(mask_matrix)] * n_samples
+        for j, d in enumerate(rule_covered_dists):
+            for i, f in enumerate(features):
+                if f in to_unmask: # binary encoded feature
+                    mask_matrices[j][:, i] = d[:, i].todense()
+
+        if not instance_specific: # the mask matrix will have a distribution in the columns covered by the original (pruned rule)
+            # get a distribution given rule
+            pruned_rule_covered_dists = self.get_distribution_by_rule(sample_instances,
+                                                        size=size,
+                                                        rule='pruned', features=None,
+                                                        n_samples=n_samples,
+                                                        random_state=random_state)
+
+            # prepare additional set of columns to unmask
+            parent_features = self.categorise_rule_features(rule=rule,
+                                                            var_dict=var_dict,
+                                                            var_dict_enc=var_dict_enc)
+            del parent_features[feature]
+            to_unmask = []
+            for prnt in parent_features:
+                if var_dict[prnt]['data_type'] == 'continuous':
+                    to_unmask.append(prnt)
                 else:
-                    prnt = feature
+                    to_unmask = to_unmask + var_dict[prnt]['labels_enc'] # simple concatenation to avoid nesting
 
-                if prnt in parent_features: # feature or its parent is part of the rule - open the mask
-                    mask_matrix[:, i] = sample_instances[:, i].todense()
+            # update the output
+            for j, d in enumerate(pruned_rule_covered_dists):
+                for i, f in enumerate(features):
+                    if f in to_unmask: # binary encoded feature
+                        mask_matrices[j][:, i] = d[:, i].todense()
 
-        return(mask_matrix)
+        return(mask_matrices)
+
+    def get_alt_labelings(self, forest, instance, sample_instances, sample_labels=None, rule_complements=None, n_samples=1):
+        # TO DO - probabilistic version when n_samples > 1
+        # general setup
+        # instances, labels = self.init_instances(instances=sample_instances, labels=sample_labels)
+        if rule_complements is None:
+            rule_complements = self.get_rule_complements()
+        # for each rule comp, create datasets of the same size as the leave-one-out test set
+        # first will contain a distribution of values for the feature that is reversed in the rule complement
+        # the remaining features will be masked by the current instance
+        alt_labelings_results = []
+        for feature in rule_complements:
+            rc = rule_complements[feature]
+            instance_specific_mask = self.mask_by_instance(instance=instance,
+                                                        sample_instances=sample_instances,
+                                                        rule=rc, feature=feature,
+                                                        size=sample_instances.shape[0],
+                                                        n_samples=n_samples, # defaults to 1 time. use n_samples to produce a probabilistic result
+                                                        instance_specific=True)
+            ism_preds = forest.predict(instance_specific_mask[0])
+            ism_post = p_count_corrected(ism_preds, [i for i in range(len(self.class_names))])
+
+
+            # second will contain a distribution of values for the feature that is reversed in the rule complement
+            # the other features covered under the rule will contain a suitable distribution from the rule coverage
+            # the remaining features will be masked by the current instance
+            allowed_values_mask = self.mask_by_instance(instance=instance,
+                                                        sample_instances=sample_instances,
+                                                        rule=rc, feature=feature,
+                                                        size=sample_instances.shape[0],
+                                                        n_samples=n_samples,
+                                                        instance_specific=False)
+            avm_preds = forest.predict(allowed_values_mask[0])
+            avm_post = p_count_corrected(avm_preds, [i for i in range(len(self.class_names))])
+
+            alt_labelings_results.append({'feature' : feature,
+                                            'is_mask' : ism_post,
+                                            'av_mask' : avm_post})
+
+        return(alt_labelings_results)
 
 
     def to_screen(self):

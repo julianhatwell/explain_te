@@ -13,7 +13,7 @@ from sklearn.model_selection import ParameterGrid
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support, accuracy_score
 
-from CHIRPS import if_nexists_make_dir, chisq_indep_test
+from CHIRPS import if_nexists_make_dir, chisq_indep_test, p_count_corrected
 from CHIRPS.plotting import plot_confusion_matrix
 
 # bug in sk-learn. Should be fixed in August
@@ -136,6 +136,7 @@ def batch_instance_ceiling(data_split, n_instances=None, batch_size=None):
 def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                 ds_container, # data_split_container (for the test data and the LOO function
                                 instance_idx, # should match the instances in the batch
+                                forest=None,
                                 eval_alt_labelings=False,
                                 eval_rule_complements=False,
                                 print_to_screen=False,
@@ -170,24 +171,16 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         tt_coverage = eval_rule['coverage']
         tt_xcoverage = eval_rule['xcoverage']
 
-        rule_complements = c.get_rule_complements() # get them anyway as they can be used in two optional places
         if eval_rule_complements:
-            rule_complement_results = []
-            for rc in rule_complements:
-                rule_complement_results.append({'rule' : rc,
-                                                'pretty_rule' : c.prettify_rule(rc),
-                                                'eval' : c.evaluate_rule(rule=rc, instances=instances_enc, labels=labels)})
+            rule_complement_results = c.eval_rule_complements(sample_instances=instances_enc, sample_labels=labels)
 
-            print(rule_complement_results)
-            print()
-
-        if eval_alt_labelings:
+        if eval_alt_labelings and forest is not None:
             # get the current instance being explained
             # get_by_id takes a list of instance ids. Here we have just a single integer
-            _, instances_enc, _, _ = ds_container.get_by_id([instance_id], which_split='test')
-            # for each rc, create a dataset of the same size as what we are testing
-            # the set is the instance that we are testing identical in every way
-            # we will then replace one column with what the not rule says and see what happens
+            _, current_instance_enc, _, _ = ds_container.get_by_id([instance_id], which_split='test')
+            alt_labelings_results = c.get_alt_labelings(instance=current_instance_enc,
+                                                        sample_instances=instances_enc,
+                                                        forest=forest)
 
         output[i] = [instance_id,
             c.algorithm,
@@ -234,7 +227,42 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             print('rule posterior counts (unseen data): ' + str(tt_posterior_counts))
             print('rule chisq p-value (unseen data): ' + str(tt_chisq))
             print()
-            print()
+            if eval_rule_complements:
+                print('RULE COMPLEMENT RESULTS')
+                for rcr in rule_complement_results:
+                    eval_rule = rcr['eval']
+                    tt_posterior_counts = eval_rule['counts']
+                    tt_chisq = chisq_indep_test(tt_posterior_counts, tt_prior_counts)[1]
+                    tt_prec = eval_rule['post'][tc]
+                    tt_stab = eval_rule['stability'][tc]
+                    tt_recall = eval_rule['recall'][tc]
+                    tt_f1 = eval_rule['f1'][tc]
+                    tt_acc = eval_rule['accuracy'][tc]
+                    tt_lift = eval_rule['lift'][tc]
+                    tt_coverage = eval_rule['coverage']
+                    tt_xcoverage = eval_rule['xcoverage']
+                    print('Feature Reversed: ' + rcr['feature'])
+                    print('rule: ' + rcr['pretty_rule'])
+                    print('rule coverage (unseen data): ' + str(tt_coverage))
+                    print('rule xcoverage (unseen data): ' + str(tt_xcoverage))
+                    print('rule precision (unseen data): ' + str(tt_prec))
+                    print('rule stability (unseen data): ' + str(tt_stab))
+                    print('rule recall (unseen data): ' + str(tt_recall))
+                    print('rule f1 score (unseen data): ' + str(tt_f1))
+                    print('rule lift (unseen data): ' + str(tt_lift))
+                    print('prior counts (unseen data): ' + str(tt_prior_counts))
+                    print('rule posterior counts (unseen data): ' + str(tt_posterior_counts))
+                    print('rule chisq p-value (unseen data): ' + str(tt_chisq))
+                    print()
+                    if eval_alt_labelings:
+                        for alt_labels in alt_labelings_results:
+                            if alt_labels['feature'] == rcr['feature']:
+                                print()
+                                print('predictions for this rule complement')
+                                print('instance specific: ' + str(alt_labels['is_mask']))
+                                print('allowed values: ' + str(alt_labels['av_mask']))
+                                print()
+        print()
 
     if save_results_path is not None:
         # create new directory if necessary
