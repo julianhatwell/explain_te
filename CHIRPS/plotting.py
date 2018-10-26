@@ -268,6 +268,27 @@ def plot_coverage_precision(rule_accumulator, class_names):
 
     plt.show()
 
+# used to be part of rule acc, now CHIRPS_runner. will need updating
+def score_rule(self, alpha=0.5):
+    target_precision = [p[self.target_class] for p in self.posterior]
+    target_stability = [s[self.target_class] for s in self.posterior]
+    target_recall = [r[self.target_class] for r in self.recall]
+    target_f1 = [f[self.target_class] for f in self.f1]
+    target_accuracy = [a[self.target_class] for a in self.accuracy]
+    target_prf = [[p, s, r, f, a] for p, s, r, f, a in zip(target_precision, target_stability, target_recall, target_f1, target_accuracy)]
+
+    target_cardinality = [i for i in range(len(target_precision))]
+
+    lf = lambda x: math.log2(x + 1)
+    score_fun1 = lambda f, crd, alp: lf(f * crd * alp / (1.0 + ((1 - alp) * crd**2)))
+    score_fun2 = lambda a, crd, alp: lf(a * crd * alp / (1.0 + ((1 - alp) * crd**2)))
+
+    score1 = [s for s in map(score_fun1, target_f1, target_cardinality, [alpha] * len(target_cardinality))]
+    score2 = [s for s in map(score_fun2, target_accuracy, target_cardinality, [alpha] * len(target_cardinality))]
+
+    return(target_prf, score1, score2)
+
+
 # plot the rule trace based on entropy and posteriors
 def plot_rule_scores(rule_accumulator, class_names, alpha_scores=0.5):
 

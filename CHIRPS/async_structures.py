@@ -80,12 +80,12 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
 
     return(tree_idx, tree_paths)
 
-def as_CHIRPS(ip_container, c_runner,
-                        sample_instances, sample_labels, forest,
-                        support_paths=0.1, alpha_paths=0.0,
-                        disc_path_bins=4, disc_path_eqcounts=False,
-                        weighting='chisq', algorithm='greedy_stab',
-                        precis_threshold=0.95, batch_idx=None):
+def as_CHIRPS(c_runner,
+                sample_instances, sample_labels, forest,
+                support_paths=0.1, alpha_paths=0.0,
+                disc_path_bins=4, disc_path_eqcounts=False,
+                weighting='chisq', algorithm='greedy_stab',
+                precis_threshold=0.95, batch_idx=None):
     # these steps make up the CHIRPS process:
     # mine paths for freq patts
 

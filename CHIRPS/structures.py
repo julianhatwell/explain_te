@@ -392,84 +392,6 @@ class data_container(non_deterministic):
                 })
 
 # classes and functions for the parallelisable tree_walk
-
-class instance_paths_container:
-    def __init__(self
-    , paths
-    , tree_preds
-    , patterns=None):
-        self.paths = paths
-        self.tree_preds = tree_preds
-        self.patterns = patterns
-
-    def discretize_paths(self, var_dict, bins=4, equal_counts=False):
-        # check if bins is not numeric or can't be cast, then force equal width (equal_counts = False)
-        if equal_counts:
-            def hist_func(x, bins):
-                npt = len(x)
-                return np.interp(np.linspace(0, npt, bins + 1),
-                                 np.arange(npt),
-                                 np.sort(x))
-        else:
-            def hist_func(x, bins):
-                return(np.histogram(x, bins))
-
-        cont_vars = [vn for vn in var_dict if var_dict[vn]['data_type'] == 'continuous' and var_dict[vn]['class_col'] == False]
-        for feature in cont_vars:
-        # nan warnings OK, it just means the less than or greater than test was never used
-            # lower bound, greater than
-            lowers = [item[2] for nodes in self.paths for item in nodes if item[0] == feature and item[1] == False]
-
-            # upper bound, less than
-            uppers = [item[2] for nodes in self.paths for item in nodes if item[0] == feature and item[1] == True]
-
-            upper_bins = np.histogram(uppers, bins=bins)[1]
-            lower_bins = np.histogram(lowers, bins=bins)[1]
-
-            # upper_bin_midpoints = pd.Series(upper_bins).rolling(window=2, center=False).mean().values[1:]
-            upper_bin_means = (np.histogram(uppers, upper_bins, weights=uppers)[0] /
-                                np.histogram(uppers, upper_bins)[0]).round(5)
-
-            # lower_bin_midpoints = pd.Series(lower_bins).rolling(window=2, center=False).mean().values[1:]
-            lower_bin_means = (np.histogram(lowers, lower_bins, weights=lowers)[0] /
-                                np.histogram(lowers, lower_bins)[0]).round(5)
-
-            # discretize functions from histogram means
-            upper_discretize = lambda x: upper_bin_means[np.max([np.min([np.digitize(x, upper_bins), len(upper_bin_means)]), 1]) - 1]
-            lower_discretize = lambda x: lower_bin_means[np.max([np.min([np.digitize(x, lower_bins, right= True), len(upper_bin_means)]), 1]) - 1]
-
-            paths_discretized = []
-            for nodes in self.paths:
-                nodes_discretized = []
-                for f, t, v in nodes:
-                    if f == feature:
-                        if t == False: # greater than, lower bound
-                            v = lower_discretize(v)
-                        else:
-                            v = upper_discretize(v)
-                    nodes_discretized.append((f, t, v))
-                paths_discretized.append(nodes_discretized)
-            # at the end of each loop, update the instance variable
-            self.paths = paths_discretized
-
-    def mine_patterns(self, support=0.1):
-        # convert to an absolute number of instances rather than a fraction
-        if support < 1:
-            support = round(support * len(self.paths))
-        self.patterns = find_frequent_patterns(self.paths, support)
-
-    def sort_patterns(self, alpha=0.0, weights=None):
-        alpha = float(alpha)
-        if weights is None:
-            weights = [1] * len(self.patterns)
-        fp_scope = self.patterns.copy()
-        # to shrink the support of shorter freq_patterns
-        # formula is sqrt(weight) * log(sup * (len - alpha) / len)
-        score_function = lambda x, w: (x[0], x[1], math.sqrt(w) * math.log(x[1]) * (len(x[0]) - alpha) / len(x[0]))
-        fp_scope = [fp for fp in map(score_function, fp_scope.items(), weights)]
-        # score is now at position 2 of tuple
-        self.patterns = sorted(fp_scope, key=itemgetter(2), reverse = True)
-
 class batch_paths_container:
     def __init__(self
     , path_detail
@@ -497,9 +419,7 @@ class batch_paths_container:
             return(unique[np.argmax(counts)], dict(zip(unique, counts)))
         else: return(unique[np.argmax(counts)])
 
-    def get_instance_paths(self, batch_idx, which_trees='all', feature_values=True):
-        # It is a sequence number in the batch of instance_paths that have been walked
-        # Each path is the route of one instance down one tree
+    def get_CHIRPS_runner(self, batch_idx, meta_data, which_trees='all', feature_values=True):
 
         batch_idx = math.floor(batch_idx) # make sure it's an integer
         true_to_lt = lambda x: '<' if x == True else '>'
@@ -545,8 +465,8 @@ class batch_paths_container:
             tree_preds = [self.path_detail[batch_idx][t]['pred_class_label'] for t in range(n_paths)]
 
         # return an object for requested instance
-        instance_paths = instance_paths_container(paths, tree_preds)
-        return(instance_paths)
+        c_runner = CHIRPS_runner(meta_data, paths, tree_preds)
+        return(c_runner)
 
 class forest_walker:
 
@@ -1311,13 +1231,16 @@ class CHIRPS_explainer(rule_evaluator):
 # this class runs all steps of the CHIRPS algorithm
 class CHIRPS_runner(rule_evaluator):
 
-    def __init__(self, instance_paths_container, meta_data):
+    def __init__(self, meta_data,
+                paths, tree_preds, patterns=None):
 
         meta_random_state = meta_data.get('random_state')
         if meta_random_state is not None:
             self.random_state = meta_random_state # otherwise there is a default
 
-        self.ip_container = instance_paths_container
+        self.paths = paths
+        self.tree_preds = tree_preds
+        self.patterns = patterns
 
         self.features = meta_data['features']
         self.features_enc = meta_data['features_enc']
@@ -1335,7 +1258,7 @@ class CHIRPS_runner(rule_evaluator):
             self.get_label = None
             self.class_names = meta_class_names
 
-        self.model_votes = p_count_corrected(self.ip_container.tree_preds, self.class_names)
+        self.model_votes = p_count_corrected(self.tree_preds, self.class_names)
 
         for item in self.var_dict:
             if self.var_dict[item]['class_col']:
@@ -1374,6 +1297,109 @@ class CHIRPS_runner(rule_evaluator):
         self.stopping_param = None
         self.merge_rule_iter = None
         self.algorithm = None
+
+    def discretize_paths(self, bins=4, equal_counts=False, var_dict=None):
+        # check if bins is not numeric or can't be cast, then force equal width (equal_counts = False)
+        var_dict, _ = self.init_dicts(var_dict=var_dict)
+
+        if equal_counts:
+            def hist_func(x, bins):
+                npt = len(x)
+                return np.interp(np.linspace(0, npt, bins + 1),
+                                 np.arange(npt),
+                                 np.sort(x))
+        else:
+            def hist_func(x, bins):
+                return(np.histogram(x, bins))
+
+        cont_vars = [vn for vn in var_dict if var_dict[vn]['data_type'] == 'continuous' and var_dict[vn]['class_col'] == False]
+        for feature in cont_vars:
+        # nan warnings OK, it just means the less than or greater than test was never used
+            # lower bound, greater than
+            lowers = [item[2] for nodes in self.paths for item in nodes if item[0] == feature and item[1] == False]
+
+            # upper bound, less than
+            uppers = [item[2] for nodes in self.paths for item in nodes if item[0] == feature and item[1] == True]
+
+            upper_bins = np.histogram(uppers, bins=bins)[1]
+            lower_bins = np.histogram(lowers, bins=bins)[1]
+
+            # upper_bin_midpoints = pd.Series(upper_bins).rolling(window=2, center=False).mean().values[1:]
+            upper_bin_means = (np.histogram(uppers, upper_bins, weights=uppers)[0] /
+                                np.histogram(uppers, upper_bins)[0]).round(5)
+
+            # lower_bin_midpoints = pd.Series(lower_bins).rolling(window=2, center=False).mean().values[1:]
+            lower_bin_means = (np.histogram(lowers, lower_bins, weights=lowers)[0] /
+                                np.histogram(lowers, lower_bins)[0]).round(5)
+
+            # discretize functions from histogram means
+            upper_discretize = lambda x: upper_bin_means[np.max([np.min([np.digitize(x, upper_bins), len(upper_bin_means)]), 1]) - 1]
+            lower_discretize = lambda x: lower_bin_means[np.max([np.min([np.digitize(x, lower_bins, right= True), len(upper_bin_means)]), 1]) - 1]
+
+            paths_discretized = []
+            for nodes in self.paths:
+                nodes_discretized = []
+                for f, t, v in nodes:
+                    if f == feature:
+                        if t == False: # greater than, lower bound
+                            v = lower_discretize(v)
+                        else:
+                            v = upper_discretize(v)
+                    nodes_discretized.append((f, t, v))
+                paths_discretized.append(nodes_discretized)
+            # at the end of each loop, update the instance variable
+            self.paths = paths_discretized
+
+    def mine_patterns(self, support=0.1):
+        # convert to an absolute number of instances rather than a fraction
+        if support < 1:
+            support = round(support * len(self.paths))
+        self.patterns = find_frequent_patterns(self.paths, support)
+
+    def mine_path_segments(self, support_paths=0.1,
+                            disc_path_bins=4, disc_path_eqcounts=False):
+
+        # discretize any numeric features
+        self.discretize_paths(bins=disc_path_bins,
+                                equal_counts=disc_path_eqcounts)
+        # the patterns are found but not scored and sorted yet
+        self.mine_patterns(support=support_paths)
+
+    def sort_patterns(self, alpha=0.0, weights=None):
+        alpha = float(alpha)
+        if weights is None:
+            weights = [1] * len(self.patterns)
+        fp_scope = self.patterns.copy()
+        # to shrink the support of shorter freq_patterns
+        # formula is sqrt(weight) * log(sup * (len - alpha) / len)
+        score_function = lambda x, w: (x[0], x[1], math.sqrt(w) * math.log(x[1]) * (len(x[0]) - alpha) / len(x[0]))
+        fp_scope = [fp for fp in map(score_function, fp_scope.items(), weights)]
+        # score is now at position 2 of tuple
+        self.patterns = sorted(fp_scope, key=itemgetter(2), reverse = True)
+
+    def score_sort_path_segments(self, sample_instances, sample_labels,
+                                    alpha_paths=0.0, weighting='chisq'):
+        # best at -1 < alpha < 1
+        # the patterns will be weighted by chi**2 for independence test, p-values
+        if weighting == 'chisq':
+            weights = [] * len(self.patterns)
+            for wp in self.patterns:
+
+                idx = self.apply_rule(rule=wp, instances=sample_instances, features=self.features_enc)
+                covered = p_count_corrected(sample_labels[idx], [i for i in range(len(self.class_names))])['counts']
+                not_covered = p_count_corrected(sample_labels[~idx], [i for i in range(len(self.class_names))])['counts']
+                observed = np.array((covered, not_covered))
+
+                # this is the chisq based weighting. can add other options
+                if covered.sum() > 0 and not_covered.sum() > 0: # previous_counts.sum() == 0 is impossible
+                    weights.append(math.sqrt(chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)[0]))
+                else:
+                    weights.append(np.nan)
+            weights = [w if not n else max(weights) for w, n in zip(weights, np.isnan(weights))]
+            # now the patterns are scored and sorted. alpha > 0 favours longer patterns. 0 neutral. < 0 shorter.
+            self.sort_patterns(alpha=alpha_paths, weights=weights) # with chi2 and support sorting
+        else:
+            self.sort_patterns(alpha=alpha_paths) # with only support/alpha sorting
 
     def add_rule_term(self, p_total = 0.1):
         self.__previous_rule = deepcopy(self.rule)
@@ -1532,15 +1558,13 @@ class CHIRPS_runner(rule_evaluator):
                         , algorithm='greedy_stab'
                         , random_state=None):
 
-        self.paths = self.ip_container.paths
-        self.patterns = self.ip_container.patterns
         self.unapplied_rules = [i for i in range(len(self.patterns))]
         self.total_points = sum([scrs[2] for scrs in self.patterns])
 
         # basic setup
         # pointless to receive a None for algorithm
         if algorithm is None:
-            self.algorithm = 'greedy_prec'
+            self.algorithm = 'greedy_stab'
         else:
             self.algorithm = algorithm
         # common default setting: see class non_deterministic
@@ -1603,7 +1627,7 @@ class CHIRPS_runner(rule_evaluator):
 
             # code to confirm rule, or revert to previous
             # choosing from a range of possible metrics and learning improvement
-            # e.g if there was no change, or an decrease in precis
+            # e.g if there was no change, or an decrease then reject, roll back and take the next one
             if self.algorithm == 'greedy_prec':
                 current = eval_rule['posterior'][np.where(eval_rule['labels'] == self.target_class)]
                 previous = list(reversed(self.posterior))[0][np.where(eval_rule['labels'] == self.target_class)]
@@ -1620,7 +1644,7 @@ class CHIRPS_runner(rule_evaluator):
                 current = eval_rule['accuracy'][np.where(eval_rule['labels'] == self.target_class)]
                 previous = list(reversed(self.accuracy))[0][np.where(eval_rule['labels'] == self.target_class)]
                 should_continue = self.__greedy_commit__(current, previous)
-            elif self.algorithm == 'chi2':
+            elif self.algorithm == 'greedy_chisq':
                 previous_counts = list(reversed(self.counts))[0]
                 observed = np.array((eval_rule['counts'], previous_counts))
                 if eval_rule['counts'].sum() == 0: # previous_counts.sum() == 0 is impossible
@@ -1681,59 +1705,6 @@ class CHIRPS_runner(rule_evaluator):
             self.isolation_pos = np.min(np.where(np.argmax(self.posterior, axis=1) == self.target_class))
         else: self.isolation_pos = None
 
-    def score_rule(self, alpha=0.5):
-        target_precision = [p[self.target_class] for p in self.posterior]
-        target_stability = [s[self.target_class] for s in self.posterior]
-        target_recall = [r[self.target_class] for r in self.recall]
-        target_f1 = [f[self.target_class] for f in self.f1]
-        target_accuracy = [a[self.target_class] for a in self.accuracy]
-        target_prf = [[p, s, r, f, a] for p, s, r, f, a in zip(target_precision, target_stability, target_recall, target_f1, target_accuracy)]
-
-        target_cardinality = [i for i in range(len(target_precision))]
-
-        lf = lambda x: math.log2(x + 1)
-        score_fun1 = lambda f, crd, alp: lf(f * crd * alp / (1.0 + ((1 - alp) * crd**2)))
-        score_fun2 = lambda a, crd, alp: lf(a * crd * alp / (1.0 + ((1 - alp) * crd**2)))
-
-        score1 = [s for s in map(score_fun1, target_f1, target_cardinality, [alpha] * len(target_cardinality))]
-        score2 = [s for s in map(score_fun2, target_accuracy, target_cardinality, [alpha] * len(target_cardinality))]
-
-        return(target_prf, score1, score2)
-
-    def mine_path_segments(self, support_paths=0.1,
-                            disc_path_bins=4, disc_path_eqcounts=False):
-
-        # discretize any numeric features
-        self.ip_container.discretize_paths(self.var_dict,
-                                bins=disc_path_bins,
-                                equal_counts=disc_path_eqcounts)
-        # the patterns are found but not scored and sorted yet
-        self.ip_container.mine_patterns(support=support_paths)
-
-    def score_sort_path_segments(self, sample_instances, sample_labels,
-                                    alpha_paths=0.0, weighting='chisq'):
-        # best at -1 < alpha < 1
-        # the patterns will be weighted by chi**2 for independence test, p-values
-        if weighting == 'chisq':
-            weights = [] * len(self.ip_container.patterns)
-            for wp in self.ip_container.patterns:
-
-                idx = self.apply_rule(rule=wp, instances=sample_instances, features=self.features_enc)
-                covered = p_count_corrected(sample_labels[idx], [i for i in range(len(self.class_names))])['counts']
-                not_covered = p_count_corrected(sample_labels[~idx], [i for i in range(len(self.class_names))])['counts']
-                observed = np.array((covered, not_covered))
-
-                # this is the chisq based weighting. can add other options
-                if covered.sum() > 0 and not_covered.sum() > 0: # previous_counts.sum() == 0 is impossible
-                    weights.append(math.sqrt(chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)[0]))
-                else:
-                    weights.append(np.nan)
-            weights = [w if not n else max(weights) for w, n in zip(weights, np.isnan(weights))]
-            # now the patterns are scored and sorted. alpha > 0 favours longer patterns. 0 neutral. < 0 shorter.
-            self.ip_container.sort_patterns(alpha=alpha_paths, weights=weights) # with chi2 and support sorting
-        else:
-            self.ip_container.sort_patterns(alpha=alpha_paths) # with only support/alpha sorting
-
     def get_CHIRPS_explainer(self):
         return(CHIRPS_explainer(self.random_state,
         self.features, self.features_enc, self.class_names, self.get_label,
@@ -1792,15 +1763,14 @@ class batch_CHIRPS_explainer:
 
             # loop for each instance
             for i in range(n_instances):
-                # extract the current instance paths container for freq patt mining
+                # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
-                ip_container = self.bp_container.get_instance_paths(i, which_trees=which_trees)
                 # use deepcopy to ensure by_value, not by_reference instantiation
-                c_runner = CHIRPS_runner(ip_container, deepcopy(self.meta_data))
+                c_runner = self.bp_container.get_CHIRPS_runner(i, deepcopy(self.meta_data), which_trees=which_trees)
 
                 # run the chirps process on each instance paths
                 async_out.append(pool.apply_async(as_CHIRPS,
-                    (ip_container, c_runner,
+                    (c_runner,
                     self.sample_instances, self.sample_labels,
                     self.forest,
                     support_paths, alpha_paths,
@@ -1820,14 +1790,14 @@ class batch_CHIRPS_explainer:
 
         else:
             for i in range(n_instances):
-                # get the current individual_paths_container
+                # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
-                ip_container = self.bp_container.get_instance_paths(i, which_trees=which_trees)
-                c_runner = CHIRPS_runner(ip_container, deepcopy(self.meta_data))
+                # use deepcopy to ensure by_value, not by_reference instantiation
+                c_runner = self.bp_container.get_CHIRPS_runner(i, deepcopy(self.meta_data), which_trees=which_trees)
 
                 # run the chirps process on each instance paths
                 _, CHIRPS_exp = \
-                    as_CHIRPS(ip_container, c_runner,
+                    as_CHIRPS(c_runner,
                     self.sample_instances, self.sample_labels,
                     self.forest,
                     support_paths, alpha_paths,
