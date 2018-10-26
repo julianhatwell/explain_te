@@ -151,6 +151,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         # get test sample by leave-one-out on current instance
         instance_id = instance_idx[i]
         _, instances_enc, _, labels = ds_container.get_loo_instances(instance_id)
+        _, current_instance_enc, _, current_instance_label = ds_container.get_by_id([instance_id], which_split='test')
 
         # then evaluating rule metrics on the leave-one-out test set
         eval_rule = c.evaluate_rule(rule='pruned', instances=instances_enc, labels=labels)
@@ -158,11 +159,12 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         tc_lab = c.target_class_label
 
         # collect results
-        tt_prior = labels.value_counts()[0] / len(labels)
-        tt_prior_counts = eval_rule['priors']['counts']
+        tt_prior = (labels.value_counts() / len(labels)).values
+        tt_prior_counts = eval_rule['prior']['counts']
+        tt_posterior = eval_rule['posterior']
         tt_posterior_counts = eval_rule['counts']
         tt_chisq = chisq_indep_test(tt_posterior_counts, tt_prior_counts)[1]
-        tt_prec = eval_rule['post'][tc]
+        tt_prec = eval_rule['posterior'][tc]
         tt_stab = eval_rule['stability'][tc]
         tt_recall = eval_rule['recall'][tc]
         tt_f1 = eval_rule['f1'][tc]
@@ -177,7 +179,6 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         if eval_alt_labelings and forest is not None:
             # get the current instance being explained
             # get_by_id takes a list of instance ids. Here we have just a single integer
-            _, current_instance_enc, _, _ = ds_container.get_by_id([instance_id], which_split='test')
             alt_labelings_results = c.get_alt_labelings(instance=current_instance_enc,
                                                         sample_instances=instances_enc,
                                                         forest=forest)
@@ -211,11 +212,11 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
 
         if print_to_screen:
             print('INSTANCE RESULTS')
-            print('instance id: ' + str(instance_id) + ' with target class ' + str(tc) + ' (' + tc_lab + ')')
-            print('target class prior (training data): ' + str(tt_prior))
+            print('instance id: ' + str(instance_id) + ' with true class label: ' + str(current_instance_label.values[0]))
             print()
             c.to_screen()
             print('Results - Previously Unseen Sample')
+            print('target class prior (unseen data): ' + str(tt_prior[tc]))
             print('rule coverage (unseen data): ' + str(tt_coverage))
             print('rule xcoverage (unseen data): ' + str(tt_xcoverage))
             print('rule precision (unseen data): ' + str(tt_prec))
@@ -223,7 +224,9 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             print('rule recall (unseen data): ' + str(tt_recall))
             print('rule f1 score (unseen data): ' + str(tt_f1))
             print('rule lift (unseen data): ' + str(tt_lift))
+            print('prior (unseen data): ' + str(tt_prior))
             print('prior counts (unseen data): ' + str(tt_prior_counts))
+            print('rule posterior (unseen data): ' + str(tt_posterior))
             print('rule posterior counts (unseen data): ' + str(tt_posterior_counts))
             print('rule chisq p-value (unseen data): ' + str(tt_chisq))
             print()
@@ -231,9 +234,10 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                 print('RULE COMPLEMENT RESULTS')
                 for rcr in rule_complement_results:
                     eval_rule = rcr['eval']
+                    tt_posterior = eval_rule['posterior']
                     tt_posterior_counts = eval_rule['counts']
                     tt_chisq = chisq_indep_test(tt_posterior_counts, tt_prior_counts)[1]
-                    tt_prec = eval_rule['post'][tc]
+                    tt_prec = eval_rule['posterior'][tc]
                     tt_stab = eval_rule['stability'][tc]
                     tt_recall = eval_rule['recall'][tc]
                     tt_f1 = eval_rule['f1'][tc]
@@ -250,17 +254,24 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                     print('rule recall (unseen data): ' + str(tt_recall))
                     print('rule f1 score (unseen data): ' + str(tt_f1))
                     print('rule lift (unseen data): ' + str(tt_lift))
+                    print('prior (unseen data): ' + str(tt_prior))
                     print('prior counts (unseen data): ' + str(tt_prior_counts))
+                    print('rule posterior (unseen data): ' + str(tt_posterior))
                     print('rule posterior counts (unseen data): ' + str(tt_posterior_counts))
                     print('rule chisq p-value (unseen data): ' + str(tt_chisq))
                     print()
                     if eval_alt_labelings:
                         for alt_labels in alt_labelings_results:
                             if alt_labels['feature'] == rcr['feature']:
-                                print()
                                 print('predictions for this rule complement')
-                                print('instance specific: ' + str(alt_labels['is_mask']))
-                                print('allowed values: ' + str(alt_labels['av_mask']))
+                                print('instance specific. expected class: ' + str(np.argmax(alt_labels['is_mask']['p_counts'])))
+                                print('classes: ' + str(alt_labels['is_mask']['labels']))
+                                print('counts: ' + str(alt_labels['is_mask']['counts']))
+                                print('proba: ' + str(alt_labels['is_mask']['p_counts']))
+                                print('allowed values. expected class: ' + str(np.argmax(alt_labels['av_mask']['p_counts'])))
+                                print('classes: ' + str(alt_labels['av_mask']['labels']))
+                                print('counts: ' + str(alt_labels['av_mask']['counts']))
+                                print('proba: ' + str(alt_labels['av_mask']['p_counts']))
                                 print()
         print()
 

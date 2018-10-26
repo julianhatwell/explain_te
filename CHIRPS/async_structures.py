@@ -11,11 +11,11 @@ from scipy.stats import chi2_contingency, entropy
 # parallelisable function for the forest_walker class
 def as_tree_walk(tree_idx, instances, labels, n_instances,
                 tree_pred, tree_pred_labels,
-                tree_pred_proba, tree_correct,
+                tree_pred_proba, tree_agree_maj_vote,
                 feature, threshold, path, features):
 
     # object for the results
-    instance_paths = [{}] * n_instances
+    tree_paths = [{}] * n_instances
 
     # rare case that tree is a single node stub
     if len(feature) == 1:
@@ -24,11 +24,11 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
                 pred_class = None
             else:
                 pred_class = labels[ic]
-            instance_paths[ic] = {'pred_class' : tree_pred[ic].astype(np.int64)
+            tree_paths[ic] = {'pred_class' : tree_pred[ic].astype(np.int64)
                                     , 'pred_class_label' : tree_pred_labels[ic]
                                     , 'pred_proba' : tree_pred_proba[ic].tolist()
-                                    , 'pred_class' : pred_class
-                                    , 'tree_correct' : tree_correct[ic]
+                                    , 'forest_pred_class' : pred_class
+                                    , 'agree_maj_vote' : tree_agree_maj_vote[ic]
                                     , 'path' : {'feature_idx' : []
                                                             , 'feature_name' : []
                                                             , 'feature_value' : []
@@ -57,11 +57,11 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
                     pred_class = None
                 else:
                     pred_class = labels[ic]
-                instance_paths[ic] = {'pred_class' : tree_pred[ic].astype(np.int64)
+                tree_paths[ic] = {'pred_class' : tree_pred[ic].astype(np.int64)
                                         , 'pred_class_label' : tree_pred_labels[ic]
                                         , 'pred_proba' : tree_pred_proba[ic].tolist()
-                                        , 'pred_class' : pred_class
-                                        , 'tree_correct' : tree_correct[ic]
+                                        , 'forest_pred_class' : pred_class
+                                        , 'agree_maj_vote' : tree_agree_maj_vote[ic]
                                         , 'path' : {'feature_idx' : [feature[p]]
                                                                 , 'feature_name' : [feature_name]
                                                                 , 'feature_value' : [feature_value]
@@ -72,25 +72,25 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
             else:
                 feature_value = instances[ic, [feature[p]]].item(0)
                 leq_threshold = feature_value <= threshold[p]
-                instance_paths[ic]['path']['feature_idx'].append(feature[p])
-                instance_paths[ic]['path']['feature_name'].append(feature_name)
-                instance_paths[ic]['path']['feature_value'].append(feature_value)
-                instance_paths[ic]['path']['threshold'].append(threshold[p])
-                instance_paths[ic]['path']['leq_threshold'].append(leq_threshold)
+                tree_paths[ic]['path']['feature_idx'].append(feature[p])
+                tree_paths[ic]['path']['feature_name'].append(feature_name)
+                tree_paths[ic]['path']['feature_value'].append(feature_value)
+                tree_paths[ic]['path']['threshold'].append(threshold[p])
+                tree_paths[ic]['path']['leq_threshold'].append(leq_threshold)
 
-    return(tree_idx, instance_paths)
+    return(tree_idx, tree_paths)
 
 def as_CHIRPS(ip_container, c_runner,
                         sample_instances, sample_labels, forest,
-                        support_paths=0.1, alpha_paths=0.5,
+                        support_paths=0.1, alpha_paths=0.0,
                         disc_path_bins=4, disc_path_eqcounts=False,
-                        weighting='chisq', algorithm='greedy_prec',
+                        weighting='chisq', algorithm='greedy_stab',
                         precis_threshold=0.95, batch_idx=None):
     # these steps make up the CHIRPS process:
     # mine paths for freq patts
 
     # fp growth mining
-    c_runner.mine_path_segments(support_paths, alpha_paths,
+    c_runner.mine_path_segments(support_paths,
                             disc_path_bins, disc_path_eqcounts)
 
     # score and sort

@@ -47,7 +47,7 @@ class data_split_container:
     def __init__(self, X_train, X_train_enc,
                 X_test, X_test_enc,
                 y_train, y_test,
-                train_priors, test_priors,
+                train_prior, test_prior,
                 train_index=None, test_index=None):
         self.X_train = X_train
         self.X_train_enc = X_train_enc
@@ -55,8 +55,8 @@ class data_split_container:
         self.X_test = X_test
         self.y_train = y_train
         self.y_test = y_test
-        self.train_priors = train_priors
-        self.test_priors = test_priors
+        self.train_prior = train_prior
+        self.test_prior = test_prior
 
         self.X_train_matrix = np.matrix(X_train)
         self.X_test_matrix = np.matrix(X_test)
@@ -159,8 +159,8 @@ class data_split_container:
             'X_test_enc_matrix' : self.X_test_enc_matrix,
             'y_train' : self.y_train,
             'y_test' : self.y_test,
-            'train_priors' : self.train_priors,
-            'test_priors' : self.test_priors,
+            'train_prior' : self.train_prior,
+            'test_prior' : self.test_prior,
             'train_index' : self.train_index,
             'test_index' : self.test_index})
 
@@ -349,9 +349,9 @@ class data_container(non_deterministic):
             X_train = X.loc[train_index]
             y_train = y.loc[train_index]
 
-        # determine the priors for each split
-        train_priors = y_train.value_counts().sort_index()/len(y_train)
-        test_priors = y_test.value_counts().sort_index()/len(y_test)
+        # determine the prior for each split
+        train_prior = y_train.value_counts().sort_index()/len(y_train)
+        test_prior = y_test.value_counts().sort_index()/len(y_test)
 
         # create an encoded copy
         X_train_enc = self.encoder.transform(X_train)
@@ -369,8 +369,8 @@ class data_container(non_deterministic):
         X_test_enc = X_test_enc,
         y_train = y_train,
         y_test = y_test,
-        train_priors = train_priors,
-        test_priors = test_priors)
+        train_prior = train_prior,
+        test_prior = test_prior)
 
         return(tt)
 
@@ -508,7 +508,7 @@ class batch_paths_container:
         if self.by_tree:
             n_paths = len(self.path_detail)
             if which_trees == 'correct':
-                paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths) if self.path_detail[pd][batch_idx]['tree_agree_maj_vote']]
+                paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths) if self.path_detail[pd][batch_idx]['agree_maj_vote']]
             elif which_trees == 'majority':
                 major_class = self.major_class_from_paths(batch_idx, return_counts=False)
                 paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths) if self.path_detail[pd][batch_idx]['pred_class'] == major_class]
@@ -520,7 +520,7 @@ class batch_paths_container:
         else:
             n_paths = len(self.path_detail[batch_idx])
             if which_trees == 'correct':
-                paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths) if self.path_detail[batch_idx][pd]['tree_agree_maj_vote']]
+                paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths) if self.path_detail[batch_idx][pd]['agree_maj_vote']]
             elif which_trees == 'majority':
                 major_class = self.major_class_from_paths(batch_idx, return_counts=False)
                 paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == major_class]
@@ -900,7 +900,7 @@ class rule_evaluator(non_deterministic):
         instances, labels = self.init_instances(instances=instances, labels=labels)
 
         # collect metrics
-        priors = p_count_corrected(labels, [i for i in range(len(class_names))])
+        prior = p_count_corrected(labels, [i for i in range(len(class_names))])
 
         idx = self.apply_rule(rule, instances, features)
 
@@ -908,35 +908,35 @@ class rule_evaluator(non_deterministic):
         xcoverage = idx.sum()/(len(idx) + 1 ) # tp + fp / tp + fp + tn + fn + current instance
 
         p_counts = p_count_corrected(labels.iloc[idx], [i for i in range(len(class_names))]) # true positives
-        post = p_counts['p_counts']
+        posterior = p_counts['p_counts']
         stability = p_counts['s_counts']
 
         counts = p_counts['counts']
         labels = p_counts['labels']
 
-        chisq = chisq_indep_test(counts, priors['counts'])[1] # p-value
+        chisq = chisq_indep_test(counts, prior['counts'])[1] # p-value
 
         # TPR (recall) TP / (TP + FN)
-        recall = counts / priors['counts']
+        recall = counts / prior['counts']
 
         # F1
-        p_corrected = np.array([p if p > 0.0 else 1.0 for p in post]) # to avoid div by zeros
+        p_corrected = np.array([p if p > 0.0 else 1.0 for p in posterior]) # to avoid div by zeros
         r_corrected = np.array([r if r > 0.0 else 1.0 for r in recall]) # to avoid div by zeros
-        f1 = [2] * ((post * recall) / (p_corrected + r_corrected))
+        f1 = [2] * ((posterior * recall) / (p_corrected + r_corrected))
 
-        not_covered_counts = counts + (np.sum(priors['counts']) - priors['counts']) - (np.sum(counts) - counts)
+        not_covered_counts = counts + (np.sum(prior['counts']) - prior['counts']) - (np.sum(counts) - counts)
         # accuracy = (TP + TN) / num_instances formula: https://books.google.co.uk/books?id=ubzZDQAAQBAJ&pg=PR75&lpg=PR75&dq=rule+precision+and+coverage&source=bl&ots=Aa4Gj7fh5g&sig=6OsF3y4Kyk9KlN08OPQfkZCuZOc&hl=en&sa=X&ved=0ahUKEwjM06aW2brZAhWCIsAKHY5sA4kQ6AEIUjAE#v=onepage&q=rule%20precision%20and%20coverage&f=false
-        accu = not_covered_counts/priors['counts'].sum()
+        accu = not_covered_counts/prior['counts'].sum()
 
         # to avoid div by zeros
-        pri_corrected = np.array([pri if pri > 0.0 else 1.0 for pri in priors['p_counts']])
-        pos_corrected = np.array([pos if pri > 0.0 else 0.0 for pri, pos in zip(priors['p_counts'], post)])
+        pri_corrected = np.array([pri if pri > 0.0 else 1.0 for pri in prior['p_counts']])
+        pos_corrected = np.array([pos if pri > 0.0 else 0.0 for pri, pos in zip(prior['p_counts'], posterior)])
         if counts.sum() == 0:
             rec_corrected = np.array([0.0] * len(pos_corrected))
             cov_corrected = np.array([1.0] * len(pos_corrected))
         else:
             rec_corrected = counts / counts.sum()
-            cov_corrected = np.array([counts.sum() / priors['counts'].sum()])
+            cov_corrected = np.array([counts.sum() / prior['counts'].sum()])
 
         # lift = precis / (total_cover * prior)
         lift = pos_corrected / ( cov_corrected * pri_corrected )
@@ -944,8 +944,8 @@ class rule_evaluator(non_deterministic):
         return({'coverage' : coverage,
                 'xcoverage' : xcoverage,
                 'stability' : stability,
-                'priors' : priors,
-                'post' : post,
+                'prior' : prior,
+                'posterior' : posterior,
                 'counts' : counts,
                 'labels' : labels,
                 'recall' : recall,
@@ -958,7 +958,7 @@ class rule_evaluator(non_deterministic):
 class CHIRPS_explainer(rule_evaluator):
 
     def __init__(self, random_state,
-                features, features_enc, class_names,
+                features, features_enc, class_names, get_label,
                 var_dict, var_dict_enc,
                 paths, patterns,
                 rule, pruned_rule,
@@ -979,6 +979,7 @@ class CHIRPS_explainer(rule_evaluator):
         self.features = features
         self.features_enc = features_enc
         self.class_names = class_names
+        self.get_label = get_label
         self.var_dict = var_dict
         self.var_dict_enc = var_dict_enc
         self.paths = paths
@@ -1003,7 +1004,7 @@ class CHIRPS_explainer(rule_evaluator):
         self.algorithm = algorithm
 
         # instance meta data
-        self.prior = self.posterior[0][self.target_class]
+        self.prior = self.posterior[0]
         self.forest_vote_share = self.model_posterior[self.target_class]
         self.pretty_rule = self.prettify_rule()
         self.rule_len = len(self.pruned_rule)
@@ -1259,13 +1260,14 @@ class CHIRPS_explainer(rule_evaluator):
 
     def to_screen(self):
         print('Model Results for Instance')
-        print('target class prior (training data): ' + str(self.prior))
+        print('target (predicted) class: ' + str(self.target_class) + ' (' + self.target_class_label + ')')
+        print('target class prior (training data): ' + str(self.prior[self.target_class]))
         print('forest vote share (unseen instance): ' + str(self.forest_vote_share))
         print('forest vote margin (unseen instance): ' + str(self.forest_vote_share - (1 - self.forest_vote_share)))
         print('rule: ' + self.pretty_rule)
         print('rule cardinality: ' + str(self.rule_len))
         print()
-        print('Estimated Results - Rule Training Sample')
+        print('Estimated Results - Rule Training Sample. Algorith: ' + self.algorithm)
         print('rule coverage (training data): ' + str(self.est_coverage))
         print('rule xcoverage (training data): ' + str(self.est_xcoverage))
         print('rule precision (training data): ' + str(self.est_prec))
@@ -1273,8 +1275,10 @@ class CHIRPS_explainer(rule_evaluator):
         print('rule recall (training data): ' + str(self.est_recall))
         print('rule f1 score (training data): ' + str(self.est_f1))
         print('rule lift (training data): ' + str(self.est_lift))
+        print('prior (training data): ' + str(self.prior))
         print('prior counts (training data): ' + str(self.prior_counts))
-        print('posterior counts (training data): ' + str(self.posterior_counts))
+        print('rule posterior (training data): ' + str(list(reversed(self.posterior))[0]))
+        print('rule posterior counts (training data): ' + str(self.posterior_counts))
         print('rule chisq p-value (training data): ' + str(chisq_indep_test(self.posterior_counts, self.prior_counts)[1]))
         print()
 
@@ -1325,11 +1329,11 @@ class CHIRPS_runner(rule_evaluator):
         meta_get_label = meta_data['get_label']
         meta_class_names = meta_data['class_names']
         if self.class_col in meta_le_dict.keys():
-            self.class_names = meta_get_label(self.class_col, [i for i in range(len(meta_class_names))])
             self.get_label = meta_get_label
+            self.class_names = self.get_label(self.class_col, [i for i in range(len(meta_class_names))])
         else:
-            self.class_names = meta_class_names
             self.get_label = None
+            self.class_names = meta_class_names
 
         self.model_votes = p_count_corrected(self.ip_container.tree_preds, self.class_names)
 
@@ -1525,7 +1529,7 @@ class CHIRPS_runner(rule_evaluator):
                         , precis_threshold = 1.0
                         , fixed_length = None
                         , target_class = None
-                        , algorithm='greedy_prec'
+                        , algorithm='greedy_stab'
                         , random_state=None):
 
         self.paths = self.ip_container.paths
@@ -1584,7 +1588,7 @@ class CHIRPS_runner(rule_evaluator):
 
         # pre-loop set up
         # rule based measures - prior/empty rule
-        current_precision = p_counts['p_counts'][np.where(p_counts['labels'] == self.target_class)][0] # based on priors
+        current_precision = p_counts['p_counts'][np.where(p_counts['labels'] == self.target_class)][0] # based on prior
 
         # accumulate rule terms
         rule_length_counter = 0
@@ -1601,7 +1605,7 @@ class CHIRPS_runner(rule_evaluator):
             # choosing from a range of possible metrics and learning improvement
             # e.g if there was no change, or an decrease in precis
             if self.algorithm == 'greedy_prec':
-                current = eval_rule['post'][np.where(eval_rule['labels'] == self.target_class)]
+                current = eval_rule['posterior'][np.where(eval_rule['labels'] == self.target_class)]
                 previous = list(reversed(self.posterior))[0][np.where(eval_rule['labels'] == self.target_class)]
                 should_continue = self.__greedy_commit__(current, previous)
             elif self.algorithm == 'greedy_stab':
@@ -1631,13 +1635,13 @@ class CHIRPS_runner(rule_evaluator):
             rule_length_counter += 1
 
             # check for end conditions; no target class instances
-            if eval_rule['post'][np.where(eval_rule['labels'] == self.target_class)] == 0.0:
+            if eval_rule['posterior'][np.where(eval_rule['labels'] == self.target_class)] == 0.0:
                 current_precision = 0.0
             else:
-                current_precision = eval_rule['post'][np.where(eval_rule['labels'] == self.target_class)][0]
+                current_precision = eval_rule['posterior'][np.where(eval_rule['labels'] == self.target_class)][0]
 
             # per class measures
-            self.posterior = np.append(self.posterior, [eval_rule['post']], axis=0)
+            self.posterior = np.append(self.posterior, [eval_rule['posterior']], axis=0)
             self.stability = np.append(self.stability, [eval_rule['stability']], axis=0)
             self.counts = np.append(self.counts, [eval_rule['counts']], axis=0)
             self.accuracy = np.append(self.accuracy, [eval_rule['accuracy']], axis=0)
@@ -1696,7 +1700,7 @@ class CHIRPS_runner(rule_evaluator):
 
         return(target_prf, score1, score2)
 
-    def mine_path_segments(self, support_paths=0.1, alpha_paths=0.5,
+    def mine_path_segments(self, support_paths=0.1,
                             disc_path_bins=4, disc_path_eqcounts=False):
 
         # discretize any numeric features
@@ -1707,7 +1711,7 @@ class CHIRPS_runner(rule_evaluator):
         self.ip_container.mine_patterns(support=support_paths)
 
     def score_sort_path_segments(self, sample_instances, sample_labels,
-                                    alpha_paths=0.5, weighting='chisq'):
+                                    alpha_paths=0.0, weighting='chisq'):
         # best at -1 < alpha < 1
         # the patterns will be weighted by chi**2 for independence test, p-values
         if weighting == 'chisq':
@@ -1723,8 +1727,8 @@ class CHIRPS_runner(rule_evaluator):
                 if covered.sum() > 0 and not_covered.sum() > 0: # previous_counts.sum() == 0 is impossible
                     weights.append(math.sqrt(chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)[0]))
                 else:
-                    weights.append(max(weights))
-
+                    weights.append(np.nan)
+            weights = [w if not n else max(weights) for w, n in zip(weights, np.isnan(weights))]
             # now the patterns are scored and sorted. alpha > 0 favours longer patterns. 0 neutral. < 0 shorter.
             self.ip_container.sort_patterns(alpha=alpha_paths, weights=weights) # with chi2 and support sorting
         else:
@@ -1732,7 +1736,7 @@ class CHIRPS_runner(rule_evaluator):
 
     def get_CHIRPS_explainer(self):
         return(CHIRPS_explainer(self.random_state,
-        self.features, self.features_enc, self.class_names,
+        self.features, self.features_enc, self.class_names, self.get_label,
         self.var_dict, self.var_dict_enc,
         self.paths, self.patterns,
         self.rule, self.pruned_rule,
@@ -1762,11 +1766,10 @@ class batch_CHIRPS_explainer:
         self.meta_data = meta_data
         self.CHIRPS_explainers = None
 
-    def batch_run_CHIRPS(self, support_paths=0.1, alpha_paths=0.5,
+    def batch_run_CHIRPS(self, support_paths=0.1, alpha_paths=0.0,
                         disc_path_bins=4, disc_path_eqcounts=False,
-                        alpha_scores=0.5, which_trees='majority',
-                        precis_threshold=0.95, weighting='chisq',
-                        algorithm='greedy_prec', chirps_explanation_async=False):
+                        which_trees='majority', precis_threshold=0.95, weighting='chisq',
+                        algorithm='greedy_stab', chirps_explanation_async=False):
 
         # convenience function to orient the top level of bpc
         # a bit like reshaping an array
@@ -1792,6 +1795,7 @@ class batch_CHIRPS_explainer:
                 # extract the current instance paths container for freq patt mining
                 # filtering by the chosen set of trees - default: majority voting
                 ip_container = self.bp_container.get_instance_paths(i, which_trees=which_trees)
+                # use deepcopy to ensure by_value, not by_reference instantiation
                 c_runner = CHIRPS_runner(ip_container, deepcopy(self.meta_data))
 
                 # run the chirps process on each instance paths
