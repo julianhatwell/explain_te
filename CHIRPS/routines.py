@@ -259,11 +259,13 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                     print('rule posterior (unseen data): ' + str(tt_posterior))
                     print('rule posterior counts (unseen data): ' + str(tt_posterior_counts))
                     print('rule chisq p-value (unseen data): ' + str(tt_chisq))
-                    print()
                     if eval_alt_labelings:
                         for alt_labels in alt_labelings_results:
                             if alt_labels['feature'] == rcr['feature']:
                                 print('predictions for this rule complement')
+                                if not alt_labels['mask_cover']:
+                                    print('note: this combination does not exist in the original data \
+                                    \nexercise caution when interpreting the results.')
                                 print('instance specific. expected class: ' + str(np.argmax(alt_labels['is_mask']['p_counts'])))
                                 print('classes: ' + str(alt_labels['is_mask']['labels']))
                                 print('counts: ' + str(alt_labels['is_mask']['counts']))
@@ -273,6 +275,8 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                 print('counts: ' + str(alt_labels['av_mask']['counts']))
                                 print('proba: ' + str(alt_labels['av_mask']['p_counts']))
                                 print()
+                    else:
+                        print()
         print()
 
     if save_results_path is not None:

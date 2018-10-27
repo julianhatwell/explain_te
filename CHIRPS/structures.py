@@ -1068,9 +1068,7 @@ class CHIRPS_explainer(rule_evaluator):
         # get a distribution for those instances covered by rule as many times as required
         distributions = [[]] * n_samples
         for i in range(n_samples):
-            idx = np.random.choice(n_instances - 1, # zero base
-                                        size = size,
-                                        replace=True)
+            idx = np.random.choice(n_instances, size = size, replace=True)
             distributions[i] = sample_instances[idx]
 
         return(distributions)
@@ -1092,7 +1090,8 @@ class CHIRPS_explainer(rule_evaluator):
         # get a distribution given rule
         rule_covered_dists = self.get_distribution_by_rule(sample_instances,
                                                     size=size,
-                                                    rule=rule, features=None,
+                                                    rule=rule,
+                                                    features=None,
                                                     n_samples=n_samples,
                                                     random_state=random_state)
 
@@ -1121,7 +1120,9 @@ class CHIRPS_explainer(rule_evaluator):
             parent_features = self.categorise_rule_features(rule=rule,
                                                             var_dict=var_dict,
                                                             var_dict_enc=var_dict_enc)
-            del parent_features[feature]
+
+            if feature in parent_features.keys(): # it won't be there in the case of a non-covered rule
+                del parent_features[feature]
             to_unmask = []
             for prnt in parent_features:
                 if var_dict[prnt]['data_type'] == 'continuous':
@@ -1137,43 +1138,72 @@ class CHIRPS_explainer(rule_evaluator):
 
         return(mask_matrices)
 
-    def get_alt_labelings(self, forest, instance, sample_instances, sample_labels=None, rule_complements=None, n_samples=1):
+    def get_alt_labelings(self, forest, instance, sample_instances,
+                            rule_complements=None, n_samples=1,
+                            var_dict=None, sample_labels=None):
         # TO DO - probabilistic version when n_samples > 1
         # general setup
-        # instances, labels = self.init_instances(instances=sample_instances, labels=sample_labels)
+        var_dict, _ = self.init_dicts(var_dict=var_dict)
         if rule_complements is None:
             rule_complements = self.get_rule_complements()
-        # for each rule comp, create datasets of the same size as the leave-one-out test set
-        # first will contain a distribution of values for the feature that is reversed in the rule complement
-        # the remaining features will be masked by the current instance
+
+        size = sample_instances.shape[0]
         alt_labelings_results = []
+        # for each rule comp, create datasets of the same size as the leave-one-out test set
         for feature in rule_complements:
             rc = rule_complements[feature]
-            instance_specific_mask = self.mask_by_instance(instance=instance,
-                                                        sample_instances=sample_instances,
-                                                        rule=rc, feature=feature,
-                                                        size=sample_instances.shape[0],
-                                                        n_samples=n_samples, # defaults to 1 time. use n_samples to produce a probabilistic result
-                                                        instance_specific=True)
+            try:
+                # first will contain a distribution of values for the feature that is reversed in the rule complement
+                # the remaining features will be masked by the current instance
+                instance_specific_mask = self.mask_by_instance(instance=instance,
+                                                            sample_instances=sample_instances,
+                                                            rule=rc, feature=feature,
+                                                            size=size,
+                                                            n_samples=n_samples, # defaults to 1 time. use n_samples to produce a probabilistic result
+                                                            instance_specific=True)
+                # second will contain a distribution of values for the feature that is reversed in the rule complement
+                # the other features covered under the rule will contain a suitable distribution from the rule coverage
+                # the remaining features will be masked by the current instance
+                allowed_values_mask = self.mask_by_instance(instance=instance,
+                                                            sample_instances=sample_instances,
+                                                            rule=rc, feature=feature,
+                                                            size=size,
+                                                            n_samples=n_samples,
+                                                            instance_specific=False)
+
+                mask_cover = True
+            except ValueError: # no coverage for rule comp - need to fall back to a distribution that doesn't respect covariance
+                # first will contain a distribution of values for the feature that is reversed in the rule complement
+                # using the distribution from only the flipped term
+                flipped_rule_term = [item for item in rc if item[0] in var_dict[feature]['labels_enc']]
+                instance_specific_mask = self.mask_by_instance(instance=instance,
+                                                            sample_instances=sample_instances,
+                                                            rule=flipped_rule_term, feature=feature,
+                                                            size=size,
+                                                            n_samples=n_samples, # defaults to 1 time. use n_samples to produce a probabilistic result
+                                                            instance_specific=True)
+
+                # second will contain a distribution of values for the feature that is reversed in the rule complement
+                # using the distribution from only the remaining terms
+                remaining_rule_terms = [item for item in rc if item[0] not in var_dict[feature]['labels_enc']]
+                allowed_values_mask = self.mask_by_instance(instance=instance,
+                                                            sample_instances=sample_instances,
+                                                            rule=remaining_rule_terms, feature=feature,
+                                                            size=size,
+                                                            n_samples=n_samples,
+                                                            instance_specific=False)
+
+                mask_cover = False
             ism_preds = forest.predict(instance_specific_mask[0])
             ism_post = p_count_corrected(ism_preds, [i for i in range(len(self.class_names))])
 
-
-            # second will contain a distribution of values for the feature that is reversed in the rule complement
-            # the other features covered under the rule will contain a suitable distribution from the rule coverage
-            # the remaining features will be masked by the current instance
-            allowed_values_mask = self.mask_by_instance(instance=instance,
-                                                        sample_instances=sample_instances,
-                                                        rule=rc, feature=feature,
-                                                        size=sample_instances.shape[0],
-                                                        n_samples=n_samples,
-                                                        instance_specific=False)
             avm_preds = forest.predict(allowed_values_mask[0])
             avm_post = p_count_corrected(avm_preds, [i for i in range(len(self.class_names))])
 
             alt_labelings_results.append({'feature' : feature,
                                             'is_mask' : ism_post,
-                                            'av_mask' : avm_post})
+                                            'av_mask' : avm_post,
+                                            'mask_cover' : mask_cover})
 
         return(alt_labelings_results)
 
