@@ -136,7 +136,7 @@ def batch_instance_ceiling(data_split, n_instances=None, batch_size=None):
 def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                 ds_container, # data_split_container (for the test data and the LOO function
                                 instance_idx, # should match the instances in the batch
-                                forest=None,
+                                forest,
                                 eval_alt_labelings=False,
                                 eval_rule_complements=False,
                                 print_to_screen=False,
@@ -150,7 +150,11 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
 
         # get test sample by leave-one-out on current instance
         instance_id = instance_idx[i]
-        _, instances_enc, _, labels = ds_container.get_loo_instances(instance_id)
+        _, instances_enc, _, true_labels = ds_container.get_loo_instances(instance_id)
+        # get the model predicted labels
+        labels = Series(forest.predict(instances_enc), index = true_labels.index)
+
+        # get the detail of the current index
         _, current_instance_enc, _, current_instance_label = ds_container.get_by_id([instance_id], which_split='test')
 
         # then evaluating rule metrics on the leave-one-out test set
@@ -176,7 +180,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         if eval_rule_complements:
             rule_complement_results = c.eval_rule_complements(sample_instances=instances_enc, sample_labels=labels)
 
-        if eval_alt_labelings and forest is not None:
+        if eval_alt_labelings:
             # get the current instance being explained
             # get_by_id takes a list of instance ids. Here we have just a single integer
             alt_labelings_results = c.get_alt_labelings(instance=current_instance_enc,
@@ -212,7 +216,8 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
 
         if print_to_screen:
             print('INSTANCE RESULTS')
-            print('instance id: ' + str(instance_id) + ' with true class label: ' + str(current_instance_label.values[0]))
+            print('instance id: ' + str(instance_id) + ' with true class label: ' + str(current_instance_label.values[0]) + \
+                    ' (' + c.get_label(c.class_col, current_instance_label.values[0]) + ')')
             print()
             c.to_screen()
             print('Results - Previously Unseen Sample')
@@ -266,11 +271,13 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                 if not alt_labels['mask_cover']:
                                     print('note: this combination does not exist in the original data \
                                     \nexercise caution when interpreting the results.')
-                                print('instance specific. expected class: ' + str(np.argmax(alt_labels['is_mask']['p_counts'])))
+                                print('instance specific. expected class: ' + str(np.argmax(alt_labels['is_mask']['p_counts'])) + \
+                                        ' (' + c.get_label(c.class_col, np.argmax(alt_labels['is_mask']['p_counts'])) + ')')
                                 print('classes: ' + str(alt_labels['is_mask']['labels']))
                                 print('counts: ' + str(alt_labels['is_mask']['counts']))
                                 print('proba: ' + str(alt_labels['is_mask']['p_counts']))
-                                print('allowed values. expected class: ' + str(np.argmax(alt_labels['av_mask']['p_counts'])))
+                                print('allowed values. expected class: ' + str(np.argmax(alt_labels['av_mask']['p_counts'])) + \
+                                        ' (' + c.get_label(c.class_col, np.argmax(alt_labels['is_mask']['p_counts'])) + ')')
                                 print('classes: ' + str(alt_labels['av_mask']['labels']))
                                 print('counts: ' + str(alt_labels['av_mask']['counts']))
                                 print('proba: ' + str(alt_labels['av_mask']['p_counts']))

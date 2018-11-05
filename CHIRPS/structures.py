@@ -878,7 +878,8 @@ class rule_evaluator(non_deterministic):
 class CHIRPS_explainer(rule_evaluator):
 
     def __init__(self, random_state,
-                features, features_enc, class_names, get_label,
+                features, features_enc, class_names,
+                class_col, get_label,
                 var_dict, var_dict_enc,
                 paths, patterns,
                 rule, pruned_rule,
@@ -899,6 +900,7 @@ class CHIRPS_explainer(rule_evaluator):
         self.features = features
         self.features_enc = features_enc
         self.class_names = class_names
+        self.class_col = class_col
         self.get_label = get_label
         self.var_dict = var_dict
         self.var_dict_enc = var_dict_enc
@@ -1737,7 +1739,8 @@ class CHIRPS_runner(rule_evaluator):
 
     def get_CHIRPS_explainer(self):
         return(CHIRPS_explainer(self.random_state,
-        self.features, self.features_enc, self.class_names, self.get_label,
+        self.features, self.features_enc, self.class_names,
+        self.class_col, self.get_label,
         self.var_dict, self.var_dict_enc,
         self.paths, self.patterns,
         self.rule, self.pruned_rule,
