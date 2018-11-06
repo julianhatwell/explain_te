@@ -13,7 +13,7 @@ from sklearn.model_selection import ParameterGrid
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support, accuracy_score
 
-from CHIRPS import if_nexists_make_dir, chisq_indep_test, p_count_corrected
+from CHIRPS import if_nexists_make_dir, if_nexists_make_file, chisq_indep_test, p_count_corrected
 from CHIRPS.plotting import plot_confusion_matrix
 
 # bug in sk-learn. Should be fixed in August
@@ -95,7 +95,16 @@ def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuni
 
     return(best_params, forest_performance)
 
-def evaluate_model(X, y, prediction_model, class_names=None, plot_cm=True, plot_cm_norm=True):
+def update_model_performance(save_path, test_metrics, identifier, random_state):
+    with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'r') as infile:
+        forest_performance = json.load(infile)
+    forest_performance.update({identifier : test_metrics})
+    with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'w') as outfile:
+        json.dump(forest_performance, outfile)
+
+def evaluate_model(X, y, prediction_model, class_names=None,
+                    print_metrics=False, plot_cm=True, plot_cm_norm=True,
+                    save_path=None, identifier = 'main', random_state=123):
     pred = prediction_model.predict(X)
 
     # view the confusion matrix
@@ -103,6 +112,21 @@ def evaluate_model(X, y, prediction_model, class_names=None, plot_cm=True, plot_
     prfs = precision_recall_fscore_support(y, pred)
     acc = accuracy_score(y, pred)
     coka = cohen_kappa_score(y, pred)
+
+    test_metrics = {'confmat' : cm.tolist(),
+                            'test_accuracy' : acc,
+                            'test_kappa' : coka,
+                            'test_prec' : prfs[0].tolist(),
+                            'test_recall' : prfs[1].tolist(),
+                            'test_f1' : prfs[2].tolist(),
+                            'test_prior' : (prfs[3] / prfs[3].sum()).tolist(), # true labels. confmat rowsums
+                            'test_posterior' : (cm.sum(axis=0) / prfs[3].sum()).tolist() } # pred labels. confmat colsums
+    if print_metrics:
+        print(test_metrics)
+
+    if save_path is not None:
+        update_model_performance(save_path, test_metrics, identifier, random_state)
+
 
     if plot_cm:
         plot_confusion_matrix(cm, class_names=class_names,
@@ -113,17 +137,11 @@ def evaluate_model(X, y, prediction_model, class_names=None, plot_cm=True, plot_
                               , class_names=class_names
                               , normalize=True,
                               title='Confusion matrix normalized on rows (predicted label share)')
-    return(cm, acc, coka, prfs)
 
-def update_model_performance(save_path, random_state, test_metrics):
-    with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'r') as infile:
-        forest_performance = json.load(infile)
-    forest_performance.update(test_metrics)
-    with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'w') as outfile:
-        json.dump(forest_performance, outfile)
+    return(test_metrics)
 
-def batch_instance_ceiling(data_split, n_instances=None, batch_size=None):
-    dataset_size = len(data_split.y_test)
+def batch_instance_ceiling(ds_container, n_instances=None, batch_size=None):
+    dataset_size = len(ds_container.y_test)
     if batch_size is None:
         batch_size = dataset_size
     if n_instances is None:
@@ -309,40 +327,3 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             CHIRPS_explainers_store = open(save_results_path + save_results_file + '.pickle', "wb")
             pickle.dump(b_CHIRPS_exp.CHIRPS_explainers, CHIRPS_explainers_store)
             CHIRPS_explainers_store.close()
-
-def anchors_preproc(dataset, random_state, iv_low, iv_high):
-    mydata = dataset(random_state)
-    tt = mydata.xval_split(iv_low=iv_low, iv_high=iv_high, test_index=random_state, random_state=123)
-
-    # mappings for anchors
-    mydata.class_names=mydata.get_label(mydata.class_col, [i for i in range(len(mydata.class_names))]).tolist()
-    mydata.unsorted_categorical = [(v, mydata.var_dict[v]['order_col']) for v in mydata.var_dict if mydata.var_dict[v]['data_type'] == 'nominal' and mydata.var_dict[v]['class_col'] != True]
-    mydata.categorical_features = [c[1] for c in sorted(mydata.unsorted_categorical, key = lambda x: x[1])]
-    mydata.categorical_names = {i : mydata.var_dict[v]['labels'] for v, i in mydata.unsorted_categorical}
-
-    # discretizes all cont vars
-    disc = limtab.QuartileDiscretizer(data=np.array(mydata.data.drop(labels=mydata.class_col, axis=1)),
-                                             categorical_features=mydata.categorical_features,
-                                             feature_names=mydata.features)
-
-    # update the tt object
-    tt['X_train'] = np.array(disc.discretize(np.array(tt['X_train'])))
-    tt['X_test'] = np.array(disc.discretize(np.array(tt['X_test'])))
-    tt['y_train'] = np.array(tt['y_train'])
-    tt['y_test'] = np.array(tt['y_test'])
-
-    # add the mappings of discretized vars for anchors
-    mydata.categorical_names.update(disc.names)
-
-    explainer = anchtab.AnchorTabularExplainer(mydata.class_names, mydata.features, tt['X_train'], mydata.categorical_names)
-    explainer.fit(tt['X_train'], tt['y_train'], tt['X_test'], tt['y_test'])
-    # update the tt object
-    tt['encoder'] = explainer.encoder
-    tt['X_train_enc'] = explainer.encoder.transform(tt['X_train'])
-
-    return(mydata, tt, explainer)
-
-def anchors_explanation(instance, explainer, forest, random_state=123, threshold=0.95):
-    np.random.seed(random_state)
-    exp = explainer.explain_instance(instance, forest.predict, threshold=threshold)
-    return(exp)

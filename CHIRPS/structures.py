@@ -377,6 +377,8 @@ class data_container(non_deterministic):
     def get_meta(self):
         return({'class_col' : self.class_col,
                 'class_names' : self.class_names,
+                'class_names_label_order' : self.get_label(self.class_col, \
+                            [i for i in range(len(self.class_names))]),
                 'var_names' : self.var_names,
                 'var_types' : self.var_types,
                 'features' : self.features,

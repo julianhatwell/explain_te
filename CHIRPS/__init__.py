@@ -59,3 +59,10 @@ def chisq_indep_test(counts, prior_counts):
 def if_nexists_make_dir(save_path):
     if not pth(save_path).is_dir():
         mkdir(save_path)
+
+# create a file if doesn't exist
+def if_nexists_make_file(save_path, init_text='None'):
+    if not pth(save_path).is_file():
+        f = open(save_path, 'w+')
+        f.write(init_text)
+        f.close()
