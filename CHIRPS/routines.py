@@ -168,12 +168,12 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
 
         # get test sample by leave-one-out on current instance
         instance_id = instance_idx[i]
-        _, instances_enc, _, true_labels = ds_container.get_loo_instances(instance_id)
+        _, _, instances_enc, _, true_labels = ds_container.get_loo_instances(instance_id)
         # get the model predicted labels
         labels = Series(forest.predict(instances_enc), index = true_labels.index)
 
         # get the detail of the current index
-        _, current_instance_enc, _, current_instance_label = ds_container.get_by_id([instance_id], which_split='test')
+        _, _, current_instance_enc, _, current_instance_label = ds_container.get_by_id([instance_id], which_split='test')
 
         # then evaluating rule metrics on the leave-one-out test set
         eval_rule = c.evaluate_rule(rule='pruned', instances=instances_enc, labels=labels)

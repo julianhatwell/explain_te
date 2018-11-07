@@ -81,15 +81,17 @@ class data_split_container:
         # general getter for code re-use
         if which_split == 'test':
             instances = self.X_test
+            instances_matrix = self.X_test_matrix
             instances_enc = self.X_test_enc
             instances_enc_matrix = self.X_test_enc_matrix
             labels = self.y_test
         else:
             instances = self.X_train
+            instances_matrix = self.X_train_matrix
             instances_enc = self.X_train_enc
             instances_enc_matrix = self.X_train_enc_matrix
             labels = self.y_train
-        return(instances, instances_enc, instances_enc_matrix, labels)
+        return(instances, instances_matrix, instances_enc, instances_enc_matrix, labels)
 
     def get_by_id(self, instance_idx, which_split=None):
 
@@ -102,21 +104,22 @@ class data_split_container:
                 print('ids found in neither or both partitions. Must be from a single partition.')
                 return(None, None, None, None)
 
-        instances, instances_enc, instances_enc_matrix, labels = \
+        instances, instances_matrix, instances_enc, instances_enc_matrix, labels = \
                                             self.get_which_split(which_split)
 
         # filter by the list of indices given
         instances = instances.loc[instance_idx]
         loc_index = [i for i, idx in enumerate(labels.index) if idx in instance_idx]
+        instances_matrix = instances_matrix[loc_index,:]
         instances_enc = instances_enc[loc_index,:]
         instances_enc_matrix = instances_enc_matrix[loc_index,:]
         labels = labels[instance_idx]
 
-        return(instances, instances_enc, instances_enc_matrix, labels)
+        return(instances, instances_matrix, instances_enc, instances_enc_matrix, labels)
 
     def get_next(self, batch_size = 1, which_split='train'):
 
-        instances, instances_enc, instances_enc_matrix, labels = \
+        instances, instances_matrix, instances_enc, instances_enc_matrix, labels = \
                                             self.get_which_split(which_split)
 
         if which_split == 'test':
@@ -127,34 +130,38 @@ class data_split_container:
             self.current_row_train += batch_size
 
         instances = instances[current_row:current_row + batch_size]
+        instances_matrix = instances_matrix[current_row:current_row + batch_size]
         instances_enc = instances_enc[current_row:current_row + batch_size]
         instances_enc_matrix = instances_enc_matrix[current_row:current_row + batch_size]
         labels = labels[current_row:current_row + batch_size]
 
-        return(instances, instances_enc, instances_enc_matrix, labels)
+        return(instances, instances_matrix, instances_enc, instances_enc_matrix, labels)
 
     # leave one out by instance_id and encode the rest
     def get_loo_instances(self, instance_id, which_split='test'):
 
-        instances, instances_enc, instances_enc_matrix, labels = \
+        instances, instances_matrix, instances_enc, instances_enc_matrix, labels = \
                                             self.get_which_split(which_split)
 
         if instance_id in instances.index:
             instances = instances.drop(instance_id)
             loc_index = labels.index == instance_id
+            instances_matrix = instances_matrix[~loc_index,:]
             instances_enc = instances_enc[~loc_index,:]
             instances_enc_matrix = instances_enc_matrix[~loc_index,:]
             labels = labels.drop(instance_id)
-            return(instances, instances_enc, instances_enc_matrix, labels)
+            return(instances, instances_matrix, instances_enc, instances_enc_matrix, labels)
         else:
             print('Instance not found in this data partition')
-            return(None, None, None, None)
+            return(None, None, None, None, None)
 
     def to_dict(self):
         return({'X_train': self.X_train,
+            'X_train_matrix' : self.X_train_matrix,
             'X_train_enc' : self.X_train_enc,
             'X_train_enc_matrix' : self.X_train_enc_matrix,
             'X_test' : self.X_test,
+            'X_test_matrix' : self.X_test_matrix,
             'X_test_enc' : self.X_test_enc,
             'X_test_enc_matrix' : self.X_test_enc_matrix,
             'y_train' : self.y_train,
