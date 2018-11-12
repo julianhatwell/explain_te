@@ -23,9 +23,7 @@ warnings.filterwarnings(module='sklearn*', action='ignore', category=Deprecation
 def do_tuning(X, y, grid = None, random_state=123, save_path = None):
     if grid is None:
         grid = ParameterGrid({
-            'n_estimators': [(i + 1) * 500 for i in range(3)]
-            , 'max_depth' : [i for i in [8, 16]]
-            , 'min_samples_leaf' : [1, 5]
+            'n_estimators': [(i + 1) * 200 for i in range(8)]
             })
 
     start_time = timeit.default_timer()
@@ -50,8 +48,8 @@ def do_tuning(X, y, grid = None, random_state=123, save_path = None):
 
     elapsed = timeit.default_timer() - start_time
 
-    params = DataFrame(params).sort_values(['score','n_estimators','max_depth','min_samples_leaf'],
-                                        ascending=[False, True, True, False])
+    params = DataFrame(params).sort_values(['score','n_estimators' ],
+                                        ascending=[False, True])
 
     best_grid = params.loc[params['score'].idxmax()]
     best_params = {k: int(v) for k, v in best_grid.items() if k != 'score'}
@@ -102,16 +100,15 @@ def update_model_performance(save_path, test_metrics, identifier, random_state):
     with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'w') as outfile:
         json.dump(forest_performance, outfile)
 
-def evaluate_model(X, y, prediction_model, class_names=None,
+def evaluate_model(y_true, y_pred, class_names=None,
                     print_metrics=False, plot_cm=True, plot_cm_norm=True,
                     save_path=None, identifier = 'main', random_state=123):
-    pred = prediction_model.predict(X)
 
     # view the confusion matrix
-    cm = confusion_matrix(y, pred)
-    prfs = precision_recall_fscore_support(y, pred)
-    acc = accuracy_score(y, pred)
-    coka = cohen_kappa_score(y, pred)
+    cm = confusion_matrix(y_true, y_pred)
+    prfs = precision_recall_fscore_support(y_true, y_pred)
+    acc = accuracy_score(y_true, y_pred)
+    coka = cohen_kappa_score(y_true, y_pred)
 
     test_metrics = {'confmat' : cm.tolist(),
                             'test_accuracy' : acc,
@@ -151,10 +148,29 @@ def batch_instance_ceiling(ds_container, n_instances=None, batch_size=None):
     n_batches = int(batch_size / n_instances)
     return(n_instances, n_batches)
 
+def save_results(results, save_results_path, save_results_file):
+    # create new directory if necessary
+    if_nexists_make_dir(save_results_path)
+    # save the tabular results to a file
+    headers = ['dataset_name', 'instance_id', 'algorithm',
+                'pretty rule', 'rule length',
+                'pred class', 'pred class label',
+                'target class', 'target class label',
+                'forest vote share', 'pred prior',
+                'precision(tr)', 'stability(tr)', 'recall(tr)',
+                'f1(tr)', 'accuracy(tr)', 'lift(tr)',
+                'coverage(tr)', 'xcoverage(tr)',
+                'precision(tt)', 'stability(tt)', 'recall(tt)',
+                'f1(tt)', 'accuracy(tt)', 'lift(tt)',
+                'coverage(tt)', 'xcoverage(tt)']
+    output_df = DataFrame(results, columns=headers)
+    output_df.to_csv(save_results_path + save_results_file + '.csv')
+
 def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                 ds_container, # data_split_container (for the test data and the LOO function
                                 instance_idx, # should match the instances in the batch
                                 forest,
+                                dataset_name='',
                                 eval_alt_labelings=False,
                                 eval_rule_complements=False,
                                 print_to_screen=False,
@@ -162,7 +178,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                 save_results_file=None,
                                 save_CHIRPS=False):
 
-    output = [[]] * len(b_CHIRPS_exp.CHIRPS_explainers)
+    results = [[]] * len(b_CHIRPS_exp.CHIRPS_explainers)
 
     for i, c in enumerate(b_CHIRPS_exp.CHIRPS_explainers):
 
@@ -205,7 +221,8 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                                         sample_instances=instances_enc,
                                                         forest=forest)
 
-        output[i] = [instance_id,
+        results[i] = [dataset_name,
+            instance_id,
             c.algorithm,
             c.pretty_rule,
             c.rule_len,
@@ -214,7 +231,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             c.target_class,
             c.target_class_label,
             c.forest_vote_share,
-            c.prior,
+            c.prior[tc],
             c.est_prec,
             c.est_stab,
             c.est_recall,
@@ -305,25 +322,10 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         print()
 
     if save_results_path is not None:
-        # create new directory if necessary
-        if_nexists_make_dir(save_results_path)
-        # save the tabular results to a file
-        headers = ['instance_id', 'algorithm',
-                    'pretty rule', 'rule length',
-                    'pred class', 'pred class label',
-                    'target class', 'target class label',
-                    'forest vote share', 'pred prior',
-                    'precision(tr)', 'stability(tr)', 'recall(tr)',
-                    'f1(tr)', 'accuracy(tr)', 'lift(tr)',
-                    'coverage(tr)', 'xcoverage(tr)',
-                    'precision(tt)', 'stability(tt)', 'recall(tt)',
-                    'f1(tt)', 'accuracy(tt)', 'lift(tt)',
-                    'coverage(tt)', 'xcoverage(tt)']
-        output_df = DataFrame(output, columns=headers)
-        output_df.to_csv(save_results_path + save_results_file + '.csv')
+        save_results(results, save_results_path, save_results_file)
 
-        if save_CHIRPS:
-            # save the batch_CHIRPS_explainer object
-            CHIRPS_explainers_store = open(save_results_path + save_results_file + '.pickle', "wb")
-            pickle.dump(b_CHIRPS_exp.CHIRPS_explainers, CHIRPS_explainers_store)
-            CHIRPS_explainers_store.close()
+    if save_CHIRPS:
+        # save the batch_CHIRPS_explainer object
+        CHIRPS_explainers_store = open(save_results_path + save_results_file + '.pickle', "wb")
+        pickle.dump(b_CHIRPS_exp.CHIRPS_explainers, CHIRPS_explainers_store)
+        CHIRPS_explainers_store.close()

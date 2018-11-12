@@ -752,9 +752,85 @@ class forest_walker:
 
 # classes and functions for the parallelisable CHIRPS algorithm
 
+# this is to have the evaluator function inherited from one place
+class evaluator:
+
+    def evaluate(self, prior_labels, post_idx, class_names=None):
+
+        if class_names is None:
+            class_names = [i for i in range(len(prior_labels.unique()))]
+        prior = p_count_corrected(prior_labels, class_names)
+
+        coverage = post_idx.sum()/len(post_idx) # tp + fp / tp + fp + tn + fn
+        xcoverage = post_idx.sum()/(len(post_idx) + 1 ) # tp + fp / tp + fp + tn + fn + current instance
+
+        p_counts = p_count_corrected(prior_labels.iloc[post_idx], class_names)
+        posterior = p_counts['p_counts']
+        stability = p_counts['s_counts']
+
+        counts = p_counts['counts']
+        labels = p_counts['labels']
+
+        chisq = chisq_indep_test(counts, prior['counts'])[1] # p-value
+
+        # TPR (recall) TP / (TP + FN)
+        recall = counts / prior['counts']
+
+        # F1
+        p_corrected = np.array([p if p > 0.0 else 1.0 for p in posterior]) # to avoid div by zeros
+        r_corrected = np.array([r if r > 0.0 else 1.0 for r in recall]) # to avoid div by zeros
+        f1 = [2] * ((posterior * recall) / (p_corrected + r_corrected))
+
+        not_covered_counts = counts + (np.sum(prior['counts']) - prior['counts']) - (np.sum(counts) - counts)
+        # accuracy = (TP + TN) / num_instances formula: https://books.google.co.uk/books?id=ubzZDQAAQBAJ&pg=PR75&lpg=PR75&dq=rule+precision+and+coverage&source=bl&ots=Aa4Gj7fh5g&sig=6OsF3y4Kyk9KlN08OPQfkZCuZOc&hl=en&sa=X&ved=0ahUKEwjM06aW2brZAhWCIsAKHY5sA4kQ6AEIUjAE#v=onepage&q=rule%20precision%20and%20coverage&f=false
+        accu = not_covered_counts/prior['counts'].sum()
+
+        # to avoid div by zeros
+        pri_corrected = np.array([pri if pri > 0.0 else 1.0 for pri in prior['p_counts']])
+        pos_corrected = np.array([pos if pri > 0.0 else 0.0 for pri, pos in zip(prior['p_counts'], posterior)])
+        if counts.sum() == 0:
+            rec_corrected = np.array([0.0] * len(pos_corrected))
+            cov_corrected = np.array([1.0] * len(pos_corrected))
+        else:
+            rec_corrected = counts / counts.sum()
+            cov_corrected = np.array([counts.sum() / prior['counts'].sum()])
+
+        # lift = precis / (total_cover * prior)
+        lift = pos_corrected / ( cov_corrected * pri_corrected )
+
+        return({'coverage' : coverage,
+                'xcoverage' : xcoverage,
+                'stability' : stability,
+                'prior' : prior,
+                'posterior' : posterior,
+                'counts' : counts,
+                'labels' : labels,
+                'recall' : recall,
+                'f1' : f1,
+                'accuracy' : accu,
+                'lift' : lift,
+                'chisq' : chisq
+                })
+
+    def prettify_rule(self, rule=None, var_dict=None):
+
+        if rule is None: # default
+            rule = self.pruned_rule
+
+        if var_dict is None: # default - match prediction model
+            var_dict = self.var_dict_enc
+
+        Tr_Fa = lambda x, y, z : x + ' False' if y else x + ' True'
+        lt_gt = lambda x, y, z : x + ' <= ' + str(z) if y else x + ' > ' + str(z)
+        def bin_or_cont(x, y, z):
+            if x in var_dict:
+                return(Tr_Fa(x,y,z))
+            else:
+                return(lt_gt(x,y,z))
+        return(' AND '.join([bin_or_cont(f, t, v) for f, t, v in rule]))
+
 # this is inherited by CHIRPS_explainer and CHIRPS_runner
-# the main point is to have the rule_evaluator function inherited from one place
-class rule_evaluator(non_deterministic):
+class rule_evaluator(non_deterministic, evaluator):
 
     # allows new values other than those already in self
     def init_values(self, rule=None, features=None, class_names=None):
@@ -828,61 +904,12 @@ class rule_evaluator(non_deterministic):
         rule, features, class_names = self.init_values(rule=rule, features=features, class_names=class_names)
         instances, labels = self.init_instances(instances=instances, labels=labels)
 
+        # get the covered idx
+        idx = self.apply_rule(rule=rule, instances=instances, features=features)
+
+        metrics = self.evaluate(prior_labels=labels, post_idx=idx)
         # collect metrics
-        prior = p_count_corrected(labels, [i for i in range(len(class_names))])
-
-        idx = self.apply_rule(rule, instances, features)
-
-        coverage = idx.sum()/len(idx) # tp + fp / tp + fp + tn + fn
-        xcoverage = idx.sum()/(len(idx) + 1 ) # tp + fp / tp + fp + tn + fn + current instance
-
-        p_counts = p_count_corrected(labels.iloc[idx], [i for i in range(len(class_names))]) # true positives
-        posterior = p_counts['p_counts']
-        stability = p_counts['s_counts']
-
-        counts = p_counts['counts']
-        labels = p_counts['labels']
-
-        chisq = chisq_indep_test(counts, prior['counts'])[1] # p-value
-
-        # TPR (recall) TP / (TP + FN)
-        recall = counts / prior['counts']
-
-        # F1
-        p_corrected = np.array([p if p > 0.0 else 1.0 for p in posterior]) # to avoid div by zeros
-        r_corrected = np.array([r if r > 0.0 else 1.0 for r in recall]) # to avoid div by zeros
-        f1 = [2] * ((posterior * recall) / (p_corrected + r_corrected))
-
-        not_covered_counts = counts + (np.sum(prior['counts']) - prior['counts']) - (np.sum(counts) - counts)
-        # accuracy = (TP + TN) / num_instances formula: https://books.google.co.uk/books?id=ubzZDQAAQBAJ&pg=PR75&lpg=PR75&dq=rule+precision+and+coverage&source=bl&ots=Aa4Gj7fh5g&sig=6OsF3y4Kyk9KlN08OPQfkZCuZOc&hl=en&sa=X&ved=0ahUKEwjM06aW2brZAhWCIsAKHY5sA4kQ6AEIUjAE#v=onepage&q=rule%20precision%20and%20coverage&f=false
-        accu = not_covered_counts/prior['counts'].sum()
-
-        # to avoid div by zeros
-        pri_corrected = np.array([pri if pri > 0.0 else 1.0 for pri in prior['p_counts']])
-        pos_corrected = np.array([pos if pri > 0.0 else 0.0 for pri, pos in zip(prior['p_counts'], posterior)])
-        if counts.sum() == 0:
-            rec_corrected = np.array([0.0] * len(pos_corrected))
-            cov_corrected = np.array([1.0] * len(pos_corrected))
-        else:
-            rec_corrected = counts / counts.sum()
-            cov_corrected = np.array([counts.sum() / prior['counts'].sum()])
-
-        # lift = precis / (total_cover * prior)
-        lift = pos_corrected / ( cov_corrected * pri_corrected )
-
-        return({'coverage' : coverage,
-                'xcoverage' : xcoverage,
-                'stability' : stability,
-                'prior' : prior,
-                'posterior' : posterior,
-                'counts' : counts,
-                'labels' : labels,
-                'recall' : recall,
-                'f1' : f1,
-                'accuracy' : accu,
-                'lift' : lift,
-                'chisq' : chisq
-                })
+        return(metrics)
 
 class CHIRPS_explainer(rule_evaluator):
 
@@ -951,23 +978,6 @@ class CHIRPS_explainer(rule_evaluator):
         self.est_xcoverage = list(reversed(self.counts))[0].sum() / (self.counts[0].sum() + 1)
         self.posterior_counts = list(reversed(self.counts))[0]
         self.prior_counts = self.counts[0]
-
-    def prettify_rule(self, rule=None, var_dict=None):
-
-        if rule is None: # default
-            rule = self.pruned_rule
-
-        if var_dict is None: # default - match prediction model
-            var_dict = self.var_dict_enc
-
-        Tr_Fa = lambda x, y, z : x + ' False' if y else x + ' True'
-        lt_gt = lambda x, y, z : x + ' <= ' + str(z) if y else x + ' > ' + str(z)
-        def bin_or_cont(x, y, z):
-            if x in var_dict:
-                return(Tr_Fa(x,y,z))
-            else:
-                return(lt_gt(x,y,z))
-        return(' AND '.join([bin_or_cont(f, t, v) for f, t, v in rule]))
 
     def categorise_rule_features(self, rule=None, var_dict=None, var_dict_enc=None):
 
@@ -1442,7 +1452,7 @@ class CHIRPS_runner(rule_evaluator):
         else:
             self.sort_patterns(alpha=alpha_paths) # with only support/alpha sorting
 
-    def add_rule_term(self, p_total = 0.1):
+    def add_rule_term(self):
         self.__previous_rule = deepcopy(self.rule)
         next_rule = self.patterns[self.unapplied_rules[0]]
         candidate = [] # to be output and can be rejected and reverted if no improvement to target function
@@ -1659,9 +1669,15 @@ class CHIRPS_runner(rule_evaluator):
         rule_length_counter = 0
         self.merge_rule_iter = 0
 
-        while current_precision != 1.0 and current_precision != 0.0 and current_precision < precis_threshold and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or rule_length_counter < max(1, fixed_length)):
+        while current_precision != 1.0 \
+            and current_precision != 0.0 \
+            and current_precision < precis_threshold \
+            and self.accumulated_points <= self.total_points * self.stopping_param \
+            and (fixed_length is None or rule_length_counter < max(1, fixed_length)) \
+            and len(self.unapplied_rules) > 0:
             self.merge_rule_iter += 1
-            candidate = self.add_rule_term(p_total = self.stopping_param)
+
+            candidate = self.add_rule_term()
             # you could add a round of bootstrapping here, but what does that do to performance
             eval_rule = self.evaluate_rule(instances=sample_instances,
                                             labels=sample_labels)
