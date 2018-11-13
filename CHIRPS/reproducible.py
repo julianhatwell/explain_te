@@ -2,7 +2,6 @@ import json
 import time
 import timeit
 import numpy as np
-from pandas import Series
 from copy import deepcopy
 import CHIRPS.datasets as ds
 import CHIRPS.routines as rt
@@ -37,9 +36,14 @@ def export_data_splits(datasets, project_dir=None, random_state_splits=123):
                                                                 encoded_features = mydata.features_enc)
     print('Exported train-test data for ' + str(len(datasets)) + ' datasets.')
 
-def forest_prep(X_train, y_train, X_test, y_test, meta_data,
+def forest_prep(ds_container, meta_data,
                 save_path=None, override_tuning=False,
                 tuning_grid=None, identifier='main'):
+
+    X_train=ds_container.X_train_enc
+    X_test=ds_container.X_test_enc
+    y_train=ds_container.y_train
+    y_test=ds_container.y_test
 
     class_names=meta_data['class_names_label_order']
     random_state=meta_data['random_state']
@@ -95,7 +99,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
                                                                                 n_instances=n_instances,
                                                                                 batch_size=batch_size)
     # get predictions
-    preds = Series(forest.predict(instances_enc), index = labels.index)
+    preds = forest.predict(instances_enc)
 
     # 3.1 - Extract Tree Prediction Paths
     print('Walking forest for ' + str(len(labels)) + ' instances... (please wait)')
@@ -109,7 +113,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
     # do the walk - returns a batch_paths_container (even for just one instance)
     # requires the X instances in a matrix (dense, ordinary numpy matrix) - this is available in the data_split_container
     bp_container = f_walker.forest_walk(instances = instances_enc_matrix
-                            , labels = preds.values # we're explaining the prediction, not the true label!
+                            , labels = preds # we're explaining the prediction, not the true label!
                             , forest_walk_async = forest_walk_async)
 
     # stop the timer
@@ -122,13 +126,12 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
 
     # 3.2-3.4 - Freqent pattern mining of paths, Score and sort mined path segments, Merge path segments into one rule
     # get what the model predicts on the training sample
-    sample_labels = Series(forest.predict(ds_container.X_train_enc), index = ds_container.y_train.index)
+    sample_labels = forest.predict(ds_container.X_train_enc)
 
     # build CHIRPS and a rule for each instance represented in the batch paths container
     CHIRPS = strcts.batch_CHIRPS_explainer(bp_container,
                                     forest=forest,
                                     sample_instances=ds_container.X_train_enc, # any representative sample can be used
-                                    # sample_labels=tt.y_train,  # any representative sample can be used
                                     sample_labels=sample_labels,
                                     meta_data=meta_data)
 
@@ -215,46 +218,42 @@ def Anchors_benchmark(forest, ds_container, meta_data,
     # 2. Prepare Unseen Data and Predictions
     print('Prepare Unseen Data and Predictions for Anchors benchmark')
     # OPTION 1 - batching (to be implemented in the new code, right now it will do just one batch)
-    _, _, _, _, labels = unseen_data_prep(ds_container,
+    _, instances_matrix, instances_enc, _, labels = unseen_data_prep(ds_container,
                                             n_instances=n_instances,
                                             batch_size=batch_size)
     # get predictions
-    preds = Series(forest.predict(instances_enc), index = labels.index)
-    sample_labels = Series(forest.predict(ds_container.X_train_enc), index = ds_container.y_train.index) # for train estimates
+    preds = forest.predict(instances_enc)
+    sample_labels = forest.predict(ds_container.X_train_enc) # for train estimates
 
     print('Running Anchors on each instance and collecting results')
     # iterate through each instance to generate the anchors explanation
     results = [[]] * len(labels)
+    evaluator = strcts.evaluator()
     for i in range(len(labels)):
         instance_id = labels.index[i]
         if i % 10 == 0: print('Working on ' + identifier + ' for instance ' + str(instance_id))
 
-        # collect the results
-        tc = preds.loc[instance_id]
-        tc_lab = meta_data['get_label'](meta_data['class_col'], tc)
-
         # get test sample by leave-one-out on current instance
-        _, _, loo_instances_enc, _, loo_true_labels = ds_container.get_loo_instances(instance_id, which_split='test')
+        _, loo_instances_matrix, loo_instances_enc, _, loo_true_labels = ds_container.get_loo_instances(instance_id, which_split='test')
 
         # get the model predicted labels
-        loo_preds = Series(forest.predict(loo_instances_enc), index = loo_true_labels.index)
+        loo_preds = forest.predict(loo_instances_enc)
 
-        # get the detail of the current index
-        _, current_instance, current_instance_enc, _, current_instance_label = ds_container.get_by_id([instance_id], which_split='test') # matrix version of current instance
-
-        explanation = Anchors_explanation(current_instance, anchors_explainer, forest,
+        explanation = Anchors_explanation(instances_matrix[i], anchors_explainer, forest,
                                             threshold=precis_threshold,
                                             random_state=random_state)
 
-        current_instance = current_instance[0] # get it out of nested list (Anchors_explanation wanted it nested - nothing I can do about that)
-
         # Get train and test idx (boolean) covered by the anchor
-        anchor_train_idx = np.array(np.all(ds_container.X_train_enc[:, explanation.features()] == current_instance[explanation.features()], axis=1).reshape(1, -1))[0]
-        anchor_test_idx = np.array(np.all(loo_instances_enc[:, explanation.features()] == current_instance[explanation.features()], axis=1).reshape(1, -1))[0]
+        anchor_train_idx = np.array([all_eq.all() for all_eq in ds_container.X_train_matrix[:, explanation.features()] == instances_matrix[:,explanation.features()][i]])
+        anchor_test_idx = np.array([all_eq.all() for all_eq in loo_instances_matrix[:, explanation.features()] == instances_matrix[:,explanation.features()][i]])
 
         # create a class to run the standard evaluation
-        train_metrics = strcts.evaluator().evaluate(prior_labels=sample_labels, post_idx=anchor_train_idx)
-        test_metrics = strcts.evaluator().evaluate(prior_labels=loo_preds, post_idx=anchor_test_idx)
+        train_metrics = evaluator.evaluate(prior_labels=sample_labels, post_idx=anchor_train_idx)
+        test_metrics = evaluator.evaluate(prior_labels=loo_preds, post_idx=anchor_test_idx)
+
+        # collect the results
+        tc = preds[i]
+        tc_lab = meta_data['get_label'](meta_data['class_col'], tc)
 
         results[i] = [dataset_name,
             instance_id,
@@ -265,7 +264,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
             tc_lab,
             tc,
             tc_lab,
-            np.array([tree.predict(current_instance_enc) for tree in forest.estimators_][0] == ci_forest_pred.values.mean())[0], # majority vote share
+            np.array([tree.predict(instances_enc[i]) == tc for tree in forest.estimators_]).mean(), # majority vote share
             test_metrics['prior']['p_counts'][tc],
             train_metrics['posterior'][tc],
             train_metrics['stability'][tc],
@@ -288,10 +287,14 @@ def Anchors_benchmark(forest, ds_container, meta_data,
         rt.save_results(results, save_results_path=save_path,
                         save_results_file=identifier + '_results' + '_rnst_' + str(random_state))
 
-def defragTrees_prep(forest, meta_data,
-                        X_train, y_train, X_test, y_test,
+def defragTrees_prep(forest, meta_data, ds_container,
                         Kmax=10, maxitr=100, restart=10,
                         identifier='defragTrees', save_path=''):
+
+    X_train=ds_container.X_train_enc_matrix
+    y_train=ds_container.y_train
+    X_test=ds_container.X_test_enc_matrix
+    y_test=ds_container.y_test
 
     feature_names = meta_data['features_enc']
     class_names = meta_data['class_names_label_order']
@@ -357,26 +360,12 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
     identifier = 'defragTrees'
     print('defragTrees benchmark')
     # OPTION 1 - batching (to be implemented in the new code, right now it will do just one batch)
-    _, _, _, _, labels = unseen_data_prep(ds_container,
-                                            n_instances=n_instances,
-                                            batch_size=batch_size)
+    _, _, instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
+                                                                            n_instances=n_instances,
+                                                                            batch_size=batch_size)
 
-    coverage = np.zeros(len(labels))
-    xcoverage = np.zeros(len(labels))
-    learner_precision = np.zeros(len(labels))
-    learner_stability = np.zeros(len(labels))
-    learner_counts = np.zeros(len(labels))
-    learner_recall = np.zeros(len(labels))
-    learner_f1 = np.zeros(len(labels))
-    learner_accu = np.zeros(len(labels))
-    learner_lift = np.zeros(len(labels))
-    forest_precision = np.zeros(len(labels))
-    forest_stability = np.zeros(len(labels))
-    forest_counts = np.zeros(len(labels))
-    forest_recall = np.zeros(len(labels))
-    forest_f1 = np.zeros(len(labels))
-    forest_accu = np.zeros(len(labels))
-    forest_lift = np.zeros(len(labels))
+    forest_preds = forest.predict(instances_enc)
+    dfrgtrs_preds = dfrgtrs.predict(np.array(instances_enc_matrix))
 
     rule_list = rule_list_from_dfrgtrs(dfrgtrs)
 
@@ -390,21 +379,14 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
         _, _, loo_instances_enc, loo_instances_enc_matrix, loo_true_labels = ds_container.get_loo_instances(instance_id,
                                                                                                             which_split='test')
 
-        # get the detail of the current index
-        _, current_instance, current_instance_enc, current_instance_enc_matrix, current_instance_label = ds_container.get_by_id([instance_id]
-                                                                                                      , which_split='test')
-
-        # get predictions from forest and dfrgtrs
-        forest_preds = Series(forest.predict(loo_instances_enc), index = loo_true_labels.index)
-        dfrgtrs_preds = Series(dfrgtrs.predict(np.array(loo_instances_enc_matrix)), index = loo_true_labels.index)
-        ci_forest_pred = Series(forest.predict(current_instance_enc), index = current_instance_label.index)
-        ci_dfrgtrs_pred = Series(forest.predict(current_instance_enc_matrix), index = current_instance_label.index)
+        loo_forest_preds = forest.predict(loo_instances_enc)
+        loo_dfrgtrs_preds = dfrgtrs.predict(np.array(loo_instances_enc_matrix))
 
         # which rule appies to each loo instance
         rule_idx = which_rule(rule_list, loo_instances_enc, features=meta_data['features_enc'])
 
         # which rule appies to current instance
-        rule = which_rule(rule_list, current_instance_enc, features=meta_data['features_enc'])
+        rule = which_rule(rule_list, instances_enc[i], features=meta_data['features_enc'])
 
         # which instances are covered by this rule
         covered_instances = rule_idx == rule
@@ -414,8 +396,8 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
 
         # majority class is the forest vote class
         # target class is the benchmark algorithm prediction
-        mc = ci_forest_pred.values
-        tc = ci_dfrgtrs_pred.values
+        mc = forest_preds[i]
+        tc = dfrgtrs_preds[i]
 
         results[i] = [dataset_name,
         instance_id,
@@ -423,10 +405,10 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
         evaluator.prettify_rule(rule_list[rule[0]], meta_data['var_dict']),
         len(rule),
         mc,
-        meta_data['get_label'](meta_data['class_col'], ci_forest_pred.values)[0],
+        meta_data['get_label'](meta_data['class_col'], mc),
         tc,
-        meta_data['get_label'](meta_data['class_col'], ci_dfrgtrs_pred.values)[0],
-        np.array([tree.predict(current_instance_enc) for tree in forest.estimators_][0] == ci_forest_pred.values.mean())[0],
+        meta_data['get_label'](meta_data['class_col'], tc),
+        np.array([tree.predict(instances_enc[i]) == mc for tree in forest.estimators_]).mean(), # majority vote share
         metrics['prior']['p_counts'][mc],
         metrics['posterior'][tc],
         metrics['stability'][tc],

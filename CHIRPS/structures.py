@@ -758,13 +758,13 @@ class evaluator:
     def evaluate(self, prior_labels, post_idx, class_names=None):
 
         if class_names is None:
-            class_names = [i for i in range(len(prior_labels.unique()))]
+            class_names = [i for i in range(len(np.unique(prior_labels)))]
         prior = p_count_corrected(prior_labels, class_names)
 
         coverage = post_idx.sum()/len(post_idx) # tp + fp / tp + fp + tn + fn
         xcoverage = post_idx.sum()/(len(post_idx) + 1 ) # tp + fp / tp + fp + tn + fn + current instance
 
-        p_counts = p_count_corrected(prior_labels.iloc[post_idx], class_names)
+        p_counts = p_count_corrected(prior_labels[post_idx], class_names)
         posterior = p_counts['p_counts']
         stability = p_counts['s_counts']
 
@@ -1652,7 +1652,7 @@ class CHIRPS_runner(rule_evaluator):
                 self.target_class_label = self.get_label(self.class_col, self.target_class)
 
         # prior - empty rule
-        p_counts = p_count_corrected(sample_labels.values, [i for i in range(len(self.class_names))])
+        p_counts = p_count_corrected(sample_labels, [i for i in range(len(self.class_names))])
         self.posterior = np.array([p_counts['p_counts'].tolist()])
         self.stability = np.array([p_counts['s_counts'].tolist()])
         self.counts = np.array([p_counts['counts'].tolist()])
