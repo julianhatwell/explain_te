@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path as pth
 from os import makedirs as mkdir
-from scipy.stats import chi2_contingency
+from scipy.stats import chi2_contingency, entropy
 
 # helper function determines if we're in a jup notebook
 def in_ipynb():
@@ -54,6 +54,13 @@ def chisq_indep_test(counts, prior_counts):
         r, c = observed.shape
         chisq = (np.nan, np.nan, (r - 1) * (c - 1))
     return(chisq)
+
+def entropy_corrected(p, q):
+    p_smooth = np.random.uniform(size=len(p))
+    q_smooth = np.random.uniform(size=len(p)) # convex smooth idea https://mathoverflow.net/questions/72668/how-to-compute-kl-divergence-when-pmf-contains-0s
+    p_smoothed = p_smooth * 0.01 + np.array(p) * 0.99
+    q_smoothed = q_smooth * 0.01 + np.array(q) * 0.99
+    return(entropy(p_smoothed, q_smoothed))
 
 # create a directory if doesn't exist
 def if_nexists_make_dir(save_path):

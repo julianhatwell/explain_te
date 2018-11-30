@@ -159,10 +159,10 @@ def save_results(results, save_results_path, save_results_file):
                 'forest vote share', 'pred prior',
                 'precision(tr)', 'stability(tr)', 'recall(tr)',
                 'f1(tr)', 'accuracy(tr)', 'lift(tr)',
-                'coverage(tr)', 'xcoverage(tr)',
+                'coverage(tr)', 'xcoverage(tr)', 'kl_div(tr)',
                 'precision(tt)', 'stability(tt)', 'recall(tt)',
                 'f1(tt)', 'accuracy(tt)', 'lift(tt)',
-                'coverage(tt)', 'xcoverage(tt)']
+                'coverage(tt)', 'xcoverage(tt)', 'kl_div(tt)']
     output_df = DataFrame(results, columns=headers)
     output_df.to_csv(save_results_path + save_results_file + '.csv')
 
@@ -210,6 +210,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         tt_lift = eval_rule['lift'][tc]
         tt_coverage = eval_rule['coverage']
         tt_xcoverage = eval_rule['xcoverage']
+        tt_kl_div = eval_rule['kl_div']
 
         if eval_rule_complements:
             rule_complement_results = c.eval_rule_complements(sample_instances=instances_enc, sample_labels=labels)
@@ -240,6 +241,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             c.est_lift,
             c.est_coverage,
             c.est_xcoverage,
+            c.est_kl_div,
             tt_prec,
             tt_stab,
             tt_recall,
@@ -247,7 +249,8 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             tt_acc,
             tt_lift,
             tt_coverage,
-            tt_xcoverage]
+            tt_xcoverage,
+            tt_kl_div]
 
         if print_to_screen:
             print('INSTANCE RESULTS')
@@ -269,6 +272,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             print('rule posterior (unseen data): ' + str(tt_posterior))
             print('rule posterior counts (unseen data): ' + str(tt_posterior_counts))
             print('rule chisq p-value (unseen data): ' + str(tt_chisq))
+            print('rule Kullback-Leibler divergence (unseen data): ' + str(tt_kl_div))
             print()
             if eval_rule_complements:
                 print('RULE COMPLEMENT RESULTS')
@@ -285,6 +289,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                     tt_lift = eval_rule['lift'][tc]
                     tt_coverage = eval_rule['coverage']
                     tt_xcoverage = eval_rule['xcoverage']
+                    kl_div = rcr['kl_div']
                     print('Feature Reversed: ' + rcr['feature'])
                     print('rule: ' + rcr['pretty_rule'])
                     print('rule coverage (unseen data): ' + str(tt_coverage))
@@ -299,6 +304,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                     print('rule posterior (unseen data): ' + str(tt_posterior))
                     print('rule posterior counts (unseen data): ' + str(tt_posterior_counts))
                     print('rule chisq p-value (unseen data): ' + str(tt_chisq))
+                    print('rule Kullback-Leibler divergence from original: ' + str(kl_div))
                     if eval_alt_labelings:
                         for alt_labels in alt_labelings_results:
                             if alt_labels['feature'] == rcr['feature']:

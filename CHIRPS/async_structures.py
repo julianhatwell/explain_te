@@ -6,7 +6,7 @@ import numpy as np
 from scipy import sparse
 from copy import deepcopy
 from collections import deque
-from scipy.stats import chi2_contingency, entropy
+from scipy.stats import chi2_contingency
 
 # parallelisable function for the forest_walker class
 def as_tree_walk(tree_idx, instances, labels, n_instances,
@@ -80,28 +80,29 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
 
     return(tree_idx, tree_paths)
 
-def as_CHIRPS(c_runner,
+def as_CHIRPS(c_runner, target_class,
                 sample_instances, sample_labels, forest,
                 support_paths=0.1, alpha_paths=0.0,
                 disc_path_bins=4, disc_path_eqcounts=False,
-                weighting='chisq', algorithm='greedy_stab',
+                score_func=1, weighting='chisq',
+                algorithm='greedy_stab', bootstraps=0,
                 precis_threshold=0.95, batch_idx=None):
     # these steps make up the CHIRPS process:
     # mine paths for freq patts
-
     # fp growth mining
     c_runner.mine_path_segments(support_paths,
                             disc_path_bins, disc_path_eqcounts)
 
     # score and sort
     c_runner.score_sort_path_segments(sample_instances, sample_labels,
-                                    alpha_paths, weighting)
+                                    target_class, alpha_paths, score_func, weighting)
 
     # greedily add terms to create rule
     c_runner.merge_rule(sample_instances=sample_instances,
                 sample_labels=sample_labels,
                 forest=forest,
                 algorithm=algorithm,
+                bootstraps=bootstraps,
                 precis_threshold=precis_threshold)
     c_runner.prune_rule()
     CHIRPS_exp = c_runner.get_CHIRPS_explainer()

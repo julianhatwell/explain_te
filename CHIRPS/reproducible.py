@@ -11,6 +11,9 @@ from lime import lime_tabular as limtab
 from anchor import anchor_tabular as anchtab
 from defragTrees.defragTrees import DefragModel
 
+
+penalise_bad_prediction = lambda mc, tc, value : value if mc == tc else 0 # for global interp methods
+
 datasets = [
             ds.adult_small_samp_data,
             ds.bankmark_samp_data,
@@ -274,6 +277,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
             train_metrics['lift'][tc],
             train_metrics['coverage'],
             train_metrics['xcoverage'],
+            train_metrics['kl_div'],
             test_metrics['posterior'][tc],
             test_metrics['stability'][tc],
             test_metrics['recall'][tc],
@@ -281,7 +285,8 @@ def Anchors_benchmark(forest, ds_container, meta_data,
             test_metrics['accuracy'][tc],
             test_metrics['lift'][tc],
             test_metrics['coverage'],
-            test_metrics['xcoverage']]
+            test_metrics['xcoverage'],
+            test_metrics['kl_div']]
 
     if save_path is not None:
         rt.save_results(results, save_results_path=save_path,
@@ -332,7 +337,7 @@ def defragTrees_prep(forest, meta_data, ds_container,
 def rule_list_from_dfrgtrs(dfrgtrs):
     rule_list = [[]] * len(dfrgtrs.rule_)
     for r, rule in enumerate(dfrgtrs.rule_):
-        rule_list[r] = [(dfrgtrs.featurename_[item[0]-1], not item[1], item[2]) for item in rule]
+        rule_list[r] = [(dfrgtrs.featurename_[int(item[0]-1)], not item[1], item[2]) for item in rule]
 
     return(rule_list)
 
@@ -340,7 +345,7 @@ def which_rule(rule_list, X, features):
     left_idx = np.array([i for i in range(len(X.todense()))])
     rules_idx = np.full(len(left_idx), np.nan)
     rule_cascade = 0
-    while len(left_idx) > 0:
+    while len(left_idx) > 0 and rule_cascade < len(rule_list):
         rule_evaluator = strcts.rule_evaluator()
         match_idx = rule_evaluator.apply_rule(rule=rule_list[rule_cascade],
                                               instances=X[left_idx,:],
@@ -348,7 +353,8 @@ def which_rule(rule_list, X, features):
         rules_idx[left_idx[match_idx]] = rule_cascade
         left_idx = np.array([li for li, mi in zip(left_idx, match_idx) if not mi])
         rule_cascade += 1
-    rules_idx[np.where(np.isnan(rules_idx))] = rule_cascade + 1 # default prediction
+    # what's left is the default prediction
+    rules_idx[np.where(np.isnan(rules_idx))] = rule_cascade # default prediction
     rules_idx = rules_idx.astype(int)
     return(rules_idx)
 
@@ -387,6 +393,10 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
 
         # which rule appies to current instance
         rule = which_rule(rule_list, instances_enc[i], features=meta_data['features_enc'])
+        if rule[0] >= len(rule_list):
+            pretty_rule = []
+        else:
+            pretty_rule = evaluator.prettify_rule(rule_list[rule[0]], meta_data['var_dict'])
 
         # which instances are covered by this rule
         covered_instances = rule_idx == rule
@@ -402,7 +412,7 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
         results[i] = [dataset_name,
         instance_id,
         identifier,
-        evaluator.prettify_rule(rule_list[rule[0]], meta_data['var_dict']),
+        pretty_rule,
         len(rule),
         mc,
         meta_data['get_label'](meta_data['class_col'], mc),
@@ -418,14 +428,16 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
         metrics['lift'][tc],
         metrics['coverage'],
         metrics['xcoverage'],
-        metrics['posterior'][mc],
-        metrics['stability'][mc],
-        metrics['recall'][mc],
-        metrics['f1'][mc],
-        metrics['accuracy'][mc],
-        metrics['lift'][mc],
+        metrics['kl_div'],
+        penalise_bad_prediction(mc, tc, metrics['posterior'][mc]),
+        penalise_bad_prediction(mc, tc, metrics['stability'][mc]),
+        penalise_bad_prediction(mc, tc, metrics['recall'][mc]),
+        penalise_bad_prediction(mc, tc, metrics['f1'][mc]),
+        penalise_bad_prediction(mc, tc, metrics['accuracy'][mc]),
+        penalise_bad_prediction(mc, tc, metrics['lift'][mc]),
         metrics['coverage'],
-        metrics['xcoverage']]
+        metrics['xcoverage'],
+        metrics['kl_div']]
 
     if save_path is not None:
         rt.save_results(results, save_results_path=save_path,
