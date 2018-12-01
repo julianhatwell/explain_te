@@ -85,7 +85,7 @@ def as_CHIRPS(c_runner, target_class,
                 support_paths=0.1, alpha_paths=0.0,
                 disc_path_bins=4, disc_path_eqcounts=False,
                 score_func=1, weighting='chisq',
-                algorithm='greedy_stab', bootstraps=0,
+                algorithm='greedy_stab', bootstraps=0, delta=0.1,
                 precis_threshold=0.95, batch_idx=None):
     # these steps make up the CHIRPS process:
     # mine paths for freq patts
@@ -103,8 +103,9 @@ def as_CHIRPS(c_runner, target_class,
                 forest=forest,
                 algorithm=algorithm,
                 bootstraps=bootstraps,
+                delta=delta,
                 precis_threshold=precis_threshold)
-    c_runner.prune_rule()
+
     CHIRPS_exp = c_runner.get_CHIRPS_explainer()
 
     return(batch_idx, CHIRPS_exp)

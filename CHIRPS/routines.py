@@ -192,7 +192,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         _, _, current_instance_enc, _, current_instance_label = ds_container.get_by_id([instance_id], which_split='test')
 
         # then evaluating rule metrics on the leave-one-out test set
-        eval_rule = c.evaluate_rule(rule='pruned', instances=instances_enc, labels=labels)
+        eval_rule = c.evaluate_rule(rule='pruned', sample_instances=instances_enc, sample_labels=labels)
         tc = c.target_class
         tc_lab = c.target_class_label
 

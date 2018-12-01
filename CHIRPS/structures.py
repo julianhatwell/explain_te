@@ -801,8 +801,8 @@ class evaluator:
         pri_corrected = np.array([pri if pri > 0.0 else 1.0 for pri in prior['p_counts']])
         pos_corrected = np.array([pos if pri > 0.0 else 0.0 for pri, pos in zip(prior['p_counts'], posterior)])
         if counts.sum() == 0:
-            rec_corrected = np.array([0.0] * len(pos_corrected))
-            cov_corrected = np.array([1.0] * len(pos_corrected))
+            rec_corrected = np.zeros(len(pos_corrected))
+            cov_corrected = np.ones(len(pos_corrected))
         else:
             rec_corrected = counts / counts.sum()
             cov_corrected = np.array([counts.sum() / prior['counts'].sum()])
@@ -911,11 +911,11 @@ class rule_evaluator(non_deterministic, evaluator):
 
     # score a rule on an instance space
     def evaluate_rule(self, rule=None, features=None, class_names=None,
-                        instances=None, labels=None, target_class=None):
+                        sample_instances=None, sample_labels=None, target_class=None):
 
         # allow new values or get self properties
         rule, features, class_names = self.init_values(rule=rule, features=features, class_names=class_names)
-        instances, labels = self.init_instances(instances=instances, labels=labels)
+        instances, labels = self.init_instances(instances=sample_instances, labels=sample_labels)
 
         # get the covered idx
         idx = self.apply_rule(rule=rule, instances=instances, features=features)
@@ -923,6 +923,29 @@ class rule_evaluator(non_deterministic, evaluator):
         metrics = self.evaluate(prior_labels=labels, post_idx=idx)
         # collect metrics
         return(metrics)
+
+    def categorise_rule_features(self, rule=None, var_dict=None, var_dict_enc=None):
+
+        # allow new values or get self properties
+        rule, _, _ = self.init_values(rule=rule)
+        var_dict, var_dict_enc = self.init_dicts(var_dict=var_dict, var_dict_enc=var_dict_enc)
+
+        # sort out features in a rule belonging to parent groups
+        parent_features = {}
+        for i, item in enumerate(rule):
+            # nominal vars
+            if item[0] in var_dict_enc:
+                parent_item = var_dict_enc[item[0]]
+                # with a single True value
+                if item[1]: # True (less than thresh); is a disjoint set or one or more
+                    if parent_item not in parent_features.keys():
+                        parent_features.update({ parent_item : 'disjoint'}) # capture the parent feature
+                # nominal vars with one or more False values (a disjoint rule);
+                else: # False (greater than thresh); there can be only one for each parent
+                    parent_features.update({ parent_item : item[0]}) # capture the parent feature and the child
+            else: # continuous
+                parent_features.update({item[0] : 'continuous'}) # capture the type of bound
+        return(parent_features)
 
     def get_rule_complements(self, rule='pruned', var_dict=None, var_dict_enc=None):
 
@@ -980,8 +1003,8 @@ class rule_evaluator(non_deterministic, evaluator):
         rule_complement_results = []
         for feature in rule_complements:
             rc = rule_complements[feature]
-            eval = self.evaluate_rule(rule=rc, instances=instances, labels=labels)
-            kl_div = entropy_corrected(self.evaluate_rule(rule=self.rule, instances=instances, labels=labels)['posterior'], eval['posterior'])
+            eval = self.evaluate_rule(rule=rc, sample_instances=instances, sample_labels=labels)
+            kl_div = entropy_corrected(self.evaluate_rule(rule=self.rule, sample_instances=instances, sample_labels=labels)['posterior'], eval['posterior'])
             rule_complement_results.append( { 'feature' : feature,
                                             'rule' : rc,
                                             'pretty_rule' : self.prettify_rule(rc),
@@ -1060,29 +1083,6 @@ class CHIRPS_explainer(rule_evaluator):
         self.est_kl_div = list(reversed(self.kl_div))[0]
         self.posterior_counts = list(reversed(self.counts))[0]
         self.prior_counts = self.counts[0]
-
-    def categorise_rule_features(self, rule=None, var_dict=None, var_dict_enc=None):
-
-        # allow new values or get self properties
-        rule, _, _ = self.init_values(rule=rule)
-        var_dict, var_dict_enc = self.init_dicts(var_dict=var_dict, var_dict_enc=var_dict_enc)
-
-        # sort out features in a rule belonging to parent groups
-        parent_features = {}
-        for i, item in enumerate(rule):
-            # nominal vars
-            if item[0] in var_dict_enc:
-                parent_item = var_dict_enc[item[0]]
-                # with a single True value
-                if item[1]: # True (less than thresh); is a disjoint set or one or more
-                    if parent_item not in parent_features.keys():
-                        parent_features.update({ parent_item : 'disjoint'}) # capture the parent feature
-                # nominal vars with one or more False values (a disjoint rule);
-                else: # False (greater than thresh); there can be only one for each parent
-                    parent_features.update({ parent_item : item[0]}) # capture the parent feature and the child
-            else: # continuous
-                parent_features.update({item[0] : 'continuous'}) # capture the type of bound
-        return(parent_features)
 
     def get_distribution_by_rule(self, sample_instances, size=None,
                                     rule='pruned', features=None,
@@ -1247,7 +1247,6 @@ class CHIRPS_explainer(rule_evaluator):
 
         return(alt_labelings_results)
 
-
     def to_screen(self):
         print('Model Results for Instance')
         print('target (predicted) class: ' + str(self.target_class) + ' (' + self.target_class_label + ')')
@@ -1257,7 +1256,7 @@ class CHIRPS_explainer(rule_evaluator):
         print('rule: ' + self.pretty_rule)
         print('rule cardinality: ' + str(self.rule_len))
         print()
-        print('Estimated Results - Rule Training Sample. Algorith: ' + self.algorithm)
+        print('Estimated Results - Rule Training Sample. Algorithm: ' + self.algorithm)
         print('rule coverage (training data): ' + str(self.est_coverage))
         print('rule xcoverage (training data): ' + str(self.est_xcoverage))
         print('rule precision (training data): ' + str(self.est_prec))
@@ -1657,14 +1656,15 @@ class CHIRPS_runner(rule_evaluator):
             self.__reverted.append(False)
             return(False)
 
-    def merge_rule(self, sample_instances, sample_labels, forest
-                        , stopping_param = 1
-                        , precis_threshold = 0.95
-                        , fixed_length = None
-                        , target_class = None
-                        , algorithm='greedy_stab'
-                        , bootstraps = 0
-                        , random_state=None):
+    def merge_rule(self, sample_instances, sample_labels, forest,
+                        stopping_param = 1,
+                        precis_threshold = 0.95,
+                        fixed_length = None,
+                        target_class = None,
+                        algorithm='greedy_stab',
+                        bootstraps = 0,
+                        delta = 0.1,
+                        random_state=None):
 
         self.unapplied_rules = [i for i in range(len(self.patterns))]
         self.total_points = sum([scrs[2] for scrs in self.patterns])
@@ -1737,8 +1737,8 @@ class CHIRPS_runner(rule_evaluator):
 
             candidate = self.add_rule_term()
 
-            eval_rule = self.evaluate_rule(instances=sample_instances,
-                                    labels=sample_labels)
+            eval_rule = self.evaluate_rule(sample_instances=sample_instances,
+                                    sample_labels=sample_labels)
             # confirm rule, or revert to previous
             # choosing from a range of possible metrics and learning improvement
             # e.g if there was no change, or a decrease then reject, roll back and take the next one
@@ -1762,18 +1762,27 @@ class CHIRPS_runner(rule_evaluator):
             if bootstraps == 0:
                 should_continue = self.__greedy_commit__(current, previous)
             else: # get a bootstrapped evaluation
-                b_curr = np.array([np.nan] * bootstraps)
-                for i in range(bootstraps):
+                b_curr = np.full(bootstraps, np.nan)
+                b_prev = np.full(bootstraps, np.nan)
+                for b in range(bootstraps):
                     idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
                     b_sample_instances = sample_instances[idx]
                     b_sample_labels = sample_labels.iloc[idx]
 
-                    b_eval_rule = self.evaluate_rule(instances=b_sample_instances,
-                                                labels=b_sample_labels)
-                    b_curr[i] = b_eval_rule[metric][np.where(eval_rule['labels'] == self.target_class)]
-                # now test how many boostrap evaluations were greater than the previous (non-bootstrapped)
-                should_continue = self.__greedy_commit__((b_curr > previous).sum(), 0.95 * bootstraps)
+                    b_eval_rule = self.evaluate_rule(sample_instances=b_sample_instances,
+                                                sample_labels=b_sample_labels)
+                    b_curr[b] = b_eval_rule[metric][np.where(eval_rule['labels'] == self.target_class)]
 
+                    b_eval_prev = self.evaluate_rule(rule = self.__previous_rule,
+                                                sample_instances=b_sample_instances,
+                                                sample_labels=b_sample_labels)
+                    b_prev[b] = b_eval_prev[metric][np.where(b_eval_prev['labels'] == self.target_class)]
+
+                # for c, p in zip(b_curr, b_prev):
+                #     print(c, p)
+                # print((b_curr > b_prev).sum(), 0.95 * bootstraps)
+                # now test how many bootstrap evaluations were greater than the previous (non-bootstrapped)
+                should_continue = self.__greedy_commit__((b_curr > b_prev).sum(), 0.95 * bootstraps)
 
             if should_continue:
                 continue # don't update all the metrics, just go to the next round
@@ -1828,6 +1837,81 @@ class CHIRPS_runner(rule_evaluator):
             self.isolation_pos = np.min(np.where(np.argmax(self.posterior, axis=1) == self.target_class))
         else: self.isolation_pos = None
 
+        # set up the rule for clean up
+        self.prune_rule()
+
+        # rule complement testing to remove any redundant rule terms
+
+        if bootstraps == 0:
+            eval_pruned = self.evaluate_rule(rule=self.pruned_rule, sample_instances=self.sample_instances, sample_labels=self.sample_labels)
+            rule_complement_results = self.eval_rule_complements(sample_instances=self.sample_instances, sample_labels=self.sample_labels)
+
+            tt_rule_posterior = eval_pruned['posterior']
+            tt_rule_posterior_counts = eval_pruned['counts']
+            print(self.pruned_rule)
+            print(tt_rule_posterior)
+            print(tt_rule_posterior_counts)
+
+            for rcr in rule_complement_results:
+                eval_rcr = rcr['eval']
+                rcr_posterior = eval_rcr['posterior']
+                rcr_posterior_counts = eval_rcr['counts']
+                rcr_chisq = chisq_indep_test(rcr_posterior_counts, tt_rule_posterior_counts)[1]
+                rcr_kl_div = entropy_corrected(rcr_posterior, tt_rule_posterior)
+
+                print(rcr_posterior)
+                print(rcr_posterior_counts)
+                print(rcr_chisq)
+                print(rcr_kl_div)
+
+        else: # get a bootstrapped evaluation
+            b_pruned = np.full(bootstraps, np.nan)
+            for b in range(bootstraps):
+                idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
+                b_sample_instances = sample_instances[idx]
+                b_sample_labels = sample_labels.iloc[idx]
+
+                eval_pruned = self.evaluate_rule(rule=self.pruned_rule, sample_instances=b_sample_instances, sample_labels=b_sample_labels)
+                eval_pruned_post = eval_pruned['posterior']
+                eval_pruned_counts = eval_pruned['counts']
+                rule_complement_results = self.eval_rule_complements(sample_instances=b_sample_instances, sample_labels=b_sample_labels)
+                b_pruned[b] = eval_pruned_post[np.where(eval_rule['labels'] == self.target_class)]
+
+                n_rule_complements = len(rule_complement_results)
+                b_rc = np.full(n_rule_complements, np.nan)
+                b_rc_kl = np.full(n_rule_complements, np.nan)
+                b_rc_chisq = np.full(n_rule_complements, np.nan)
+                for rc, rcr in enumerate(rule_complement_results):
+                    eval_rcr = rcr['eval']
+                    rcr_posterior = eval_rcr['posterior']
+                    rcr_posterior_counts = eval_rcr['counts']
+                    b_rc[rc] = rcr_posterior[np.where(eval_rcr['labels'] == self.target_class)]
+                    b_rc_kl[rc] = entropy_corrected(rcr_posterior, eval_pruned_post)
+                    b_rc_chisq[rc] = chisq_indep_test(rcr_posterior_counts, eval_pruned_counts)[1]
+
+                if b == 0:
+                    b_rcr = np.array(b_rc)
+                    b_rcr_kl = np.array(b_rc_kl)
+                    b_rcr_chisq = np.array(b_rc_chisq)
+                else:
+                    b_rcr = np.vstack((b_rcr, b_rc))
+                    b_rcr_kl = np.vstack((b_rcr_kl, b_rc_kl))
+                    b_rcr_chisq = np.vstack((b_rcr_chisq, b_rc_chisq))
+
+            print(b_pruned.mean(axis=0))
+            print(b_rcr_kl.mean(axis=0))
+            print(b_rcr_chisq.mean(axis=0))
+            for rc in range(n_rule_complements):
+                print(b_rcr[:,rc].mean(axis=0))
+                print((b_pruned - delta >= b_rcr[:,rc]).sum(), 0.95 * bootstraps) # if b_rcr too large, there is not a big enough drop in prec
+
+
+                # for c, p in zip(b_curr, b_prev):
+                #     print(c, p)
+
+
+
+
     def get_CHIRPS_explainer(self):
         return(CHIRPS_explainer(self.random_state,
         self.features, self.features_enc, self.class_names,
@@ -1865,7 +1949,7 @@ class batch_CHIRPS_explainer:
     def batch_run_CHIRPS(self, target_classes=None, support_paths=0.1, alpha_paths=0.0,
                         disc_path_bins=4, disc_path_eqcounts=False, score_func=1,
                         which_trees='majority', precis_threshold=0.95, weighting='chisq',
-                        algorithm='greedy_stab', bootstraps=0, chirps_explanation_async=False):
+                        algorithm='greedy_stab', bootstraps=0, delta=0.1, chirps_explanation_async=False):
 
         # convenience function to orient the top level of bpc
         # a bit like reshaping an array
@@ -1900,7 +1984,7 @@ class batch_CHIRPS_explainer:
                     self.forest,
                     support_paths, alpha_paths,
                     disc_path_bins, disc_path_eqcounts, score_func,
-                    weighting, algorithm, bootstraps, precis_threshold, i)
+                    weighting, algorithm, bootstraps, delta, precis_threshold, i)
                 ))
 
             # block and collect the pool
@@ -1926,7 +2010,7 @@ class batch_CHIRPS_explainer:
                     self.forest,
                     support_paths, alpha_paths,
                     disc_path_bins, disc_path_eqcounts, score_func,
-                    weighting, algorithm, bootstraps, precis_threshold, i)
+                    weighting, algorithm, bootstraps, delta, precis_threshold, i)
 
                 # add the finished rule accumulator to the results
                 CHIRPS_explainers[i] = CHIRPS_exp
