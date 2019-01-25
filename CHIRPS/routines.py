@@ -16,9 +16,21 @@ from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recal
 from CHIRPS import if_nexists_make_dir, if_nexists_make_file, chisq_indep_test, p_count_corrected
 from CHIRPS.plotting import plot_confusion_matrix
 
+from CHIRPS import config as cfg
+
 # bug in sk-learn. Should be fixed in August
 import warnings
 warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
+
+def extend_path(stem, extensions, is_dir=False):
+    # add the extension and the path separator
+    for x in extensions:
+        stem = stem + x + cfg.path_sep
+    # just add the final extension
+    if is_dir:
+        return(stem)
+    else:
+        return(stem[:-1])
 
 def do_tuning(X, y, grid = None, random_state=123, save_path = None):
     if grid is None:

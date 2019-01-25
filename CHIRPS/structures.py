@@ -311,7 +311,7 @@ class data_container(non_deterministic):
     # a function to return any label from a code
     def get_label(self, col, label):
         if len(self.le_dict.keys()) > 0 and col in self.le_dict.keys():
-            return self.le_dict[col].inverse_transform([label])[0]
+            return self.le_dict[col].inverse_transform(label)
         else:
             return(label)
 
