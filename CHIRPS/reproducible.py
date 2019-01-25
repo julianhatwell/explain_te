@@ -15,15 +15,15 @@ from defragTrees.defragTrees import DefragModel
 penalise_bad_prediction = lambda mc, tc, value : value if mc == tc else 0 # for global interp methods
 
 datasets = [
-            ds.adult_small_samp_data,
-            ds.bankmark_samp_data,
-            ds.car_data,
-            ds.cardio_data,
-            ds.credit_data,
-            ds.german_data,
-            ds.lending_tiny_samp_data,
-            ds.nursery_samp_data,
-            # ds.rcdv_samp_data
+            ds.adult_small_samp,
+            ds.bankmark_samp,
+            ds.car,
+            ds.cardio,
+            ds.credit,
+            ds.german,
+            ds.lending_tiny_samp,
+            ds.nursery_samp,
+            ds.rcdv_samp
            ]
 
 def export_data_splits(datasets, project_dir=None, random_state_splits=123):
@@ -94,8 +94,9 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
                     forest_walk_async=True,
                     chirps_explanation_async=True,
                     save_path='', dataset_name='',
-                    random_state=123):
+                    random_state=123, **kwargs):
     # 2. Prepare Unseen Data and Predictions
+
     print('Prepare Unseen Data and Predictions for CHIRPS benchmark')
     # OPTION 1 - batching (to be implemented in the new code, right now it will do just one batch)
     instances, _, instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
@@ -142,7 +143,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
     # start a timer
     ce_start_time = timeit.default_timer()
 
-    CHIRPS.batch_run_CHIRPS(chirps_explanation_async=chirps_explanation_async) # all the defaults
+    CHIRPS.batch_run_CHIRPS(chirps_explanation_async=chirps_explanation_async, **kwargs)
 
     ce_end_time = timeit.default_timer()
     ce_elapsed_time = ce_end_time - ce_start_time
@@ -162,8 +163,8 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
                                   print_to_screen=False, # set True when running single instances
                                   save_results_path=save_path,
                                   dataset_name=dataset_name,
-                                  save_results_file='CHIRPS_results' + '_rnst_' + str(random_state),
-                                  save_CHIRPS=True)
+                                  save_results_file='CHIRPS' + '_rnst_' + str(random_state),
+                                  save_CHIRPS=False)
 
     results_end_time = timeit.default_timer()
     results_elapsed_time = results_end_time - results_start_time
@@ -441,4 +442,4 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
 
     if save_path is not None:
         rt.save_results(results, save_results_path=save_path,
-                        save_results_file=identifier + '_results' + '_rnst_' + str(random_state))
+                        save_results_file=identifier + '_rnst_' + str(random_state))

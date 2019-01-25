@@ -85,15 +85,20 @@ def as_CHIRPS(c_runner, target_class,
                 support_paths=0.1, alpha_paths=0.0,
                 disc_path_bins=4, disc_path_eqcounts=False,
                 score_func=1, weighting='chisq',
-                algorithm='greedy_stab', bootstraps=0, delta=0.1,
-                precis_threshold=0.95, batch_idx=None):
+                algorithm='greedy_stab',
+                merging_bootstraps=0, pruning_bootstraps=0,
+                delta=0.1, precis_threshold=0.95, batch_idx=None):
     # these steps make up the CHIRPS process:
     # mine paths for freq patts
     # fp growth mining
+    print(batch_idx)
     c_runner.mine_path_segments(support_paths,
                             disc_path_bins, disc_path_eqcounts)
 
     # score and sort
+    if len(c_runner.patterns) > 1000:
+         print('a long wait for label ' + str(batch_idx))
+         print([cp for i, cp in enumerate(c_runner.patterns) if i < 50])
     c_runner.score_sort_path_segments(sample_instances, sample_labels,
                                     target_class, alpha_paths, score_func, weighting)
 
@@ -102,10 +107,10 @@ def as_CHIRPS(c_runner, target_class,
                 sample_labels=sample_labels,
                 forest=forest,
                 algorithm=algorithm,
-                bootstraps=bootstraps,
+                merging_bootstraps=merging_bootstraps,
+                pruning_bootstraps=pruning_bootstraps,
                 delta=delta,
                 precis_threshold=precis_threshold)
 
     CHIRPS_exp = c_runner.get_CHIRPS_explainer()
-
     return(batch_idx, CHIRPS_exp)

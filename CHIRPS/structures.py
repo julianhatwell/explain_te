@@ -713,7 +713,7 @@ class forest_walker:
 
         if forest_walk_async:
             async_out = []
-            n_cores = mp.cpu_count()-1
+            n_cores = mp.cpu_count()-2
             pool = mp.Pool(processes=n_cores)
 
             for i, t in enumerate(self.forest.estimators_):
@@ -1458,8 +1458,10 @@ class CHIRPS_runner(rule_evaluator):
             score_function = lambda x, w: (x[0], x[1], w * x[1] * (len(x[0]) - alpha) / (len(x[0])**2))
         elif score_func == 3:
             score_function = lambda x, w: (x[0], x[1], w * (len(x[0]) - alpha) / len(x[0]))
-        else:
+        elif score_func == 4:
             score_function = lambda x, w: (x[0], x[1], w * (len(x[0]) - alpha) / (len(x[0])**2))
+        else: # weights only
+            score_function = lambda x, w: (x[0], x[1], w)
         fp_scope = [fp for fp in map(score_function, fp_scope.items(), weights)]
         # score is now at position 2 of tuple
         self.patterns = sorted(fp_scope, key=itemgetter(2), reverse = True)
@@ -1469,6 +1471,7 @@ class CHIRPS_runner(rule_evaluator):
         # best at -1 < alpha < 1
         # now the patterns are scored and sorted. alpha > 0 favours longer patterns. 0 neutral. < 0 shorter.
         # the patterns can be weighted by chi**2 for independence test, p-values
+        print(len(self.patterns))
         if weighting is None:
             self.sort_patterns(alpha=alpha_paths, score_func=score_func) # with only support/alpha sorting
         else:
@@ -1488,24 +1491,27 @@ class CHIRPS_runner(rule_evaluator):
                     else:
                         weights.append(np.nan)
 
-                elif target_class is not None:
-                    cc = p_counts_covered['counts'][target_class]
-                    ic = sum([c for c, l in zip(p_counts_covered['counts'], p_counts_covered['labels']) if l != target_class])
-                    if weighting == 'rf+hc1':
-                        weights.append((cc-ic) / (cc+ic) + cc / (ic + 1)) # 4 is given in the paper. it can be anything to prevent div by zero
-                        weights = [w + abs(min(weights)) for w in weights] # shift to zero or above
-                    elif weighting == 'rf+hc2':
-                        weights.append((cc-ic) / (cc+ic) + cc / (ic + 1) + cc / len(wp[0]))
-                        weights = [w + abs(min(weights)) for w in weights]
-                    else:
-                        weights = [1] * len(self.patterns) # no valid combo
+                # rf+hc score or no
+                else: #
+                    weights = [1] * len(self.patterns) # default if no valid combo
+                    if target_class is not None:
+                        cc = p_counts_covered['counts'][target_class]
+                        ic = sum([c for c, l in zip(p_counts_covered['counts'], p_counts_covered['labels']) if l != target_class])
+                        if weighting == 'rf+hc1':
+                            weights.append((cc-ic) / (cc+ic) + cc / (ic + 1)) # 4 is given in the paper. it can be anything to prevent div by zero
+                            weights = [w + abs(min(weights)) for w in weights] # shift to zero or above
+                        elif weighting == 'rf+hc2':
+                            weights.append((cc-ic) / (cc+ic) + cc / (ic + 1) + cc / len(wp[0]))
+                            weights = [w + abs(min(weights)) for w in weights]
+                        else:
+                            pass
+
 
             # correct any uncalculable weights
             weights = [w if not n else min(weights) for w, n in zip(weights, np.isnan(weights))]
             weights = [w/max(weights) for w in weights]
             # final application of weights
-            self.sort_patterns(alpha=alpha_paths, score_func=score_func, weights=weights) # with chi2 and support sorting
-
+            self.sort_patterns(alpha=alpha_paths, score_func=score_func, weights=weights)
 
     def add_rule_term(self):
         self.__previous_rule = deepcopy(self.rule)
@@ -1662,7 +1668,8 @@ class CHIRPS_runner(rule_evaluator):
                         fixed_length = None,
                         target_class = None,
                         algorithm='greedy_stab',
-                        bootstraps = 0,
+                        merging_bootstraps = 0,
+                        pruning_bootstraps = 0,
                         delta = 0.1,
                         random_state=None):
 
@@ -1759,15 +1766,15 @@ class CHIRPS_runner(rule_evaluator):
             current = curr[np.where(eval_rule['labels'] == self.target_class)]
             previous = list(reversed(prev))[0][np.where(eval_rule['labels'] == self.target_class)]
 
-            if bootstraps == 0:
+            if merging_bootstraps == 0:
                 should_continue = self.__greedy_commit__(current, previous)
             else: # get a bootstrapped evaluation
-                b_curr = np.full(bootstraps, np.nan)
-                b_prev = np.full(bootstraps, np.nan)
-                for b in range(bootstraps):
+                b_curr = np.full(merging_bootstraps, np.nan)
+                b_prev = np.full(merging_bootstraps, np.nan)
+                for b in range(merging_bootstraps):
                     idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
                     b_sample_instances = sample_instances[idx]
-                    b_sample_labels = sample_labels.iloc[idx]
+                    b_sample_labels = sample_labels[idx]
 
                     b_eval_rule = self.evaluate_rule(sample_instances=b_sample_instances,
                                                 sample_labels=b_sample_labels)
@@ -1778,11 +1785,7 @@ class CHIRPS_runner(rule_evaluator):
                                                 sample_labels=b_sample_labels)
                     b_prev[b] = b_eval_prev[metric][np.where(b_eval_prev['labels'] == self.target_class)]
 
-                # for c, p in zip(b_curr, b_prev):
-                #     print(c, p)
-                # print((b_curr > b_prev).sum(), 0.95 * bootstraps)
-                # now test how many bootstrap evaluations were greater than the previous (non-bootstrapped)
-                should_continue = self.__greedy_commit__((b_curr > b_prev).sum(), 0.95 * bootstraps)
+                should_continue = self.__greedy_commit__((b_curr > b_prev).sum(), 0.95 * merging_bootstraps)
 
             if should_continue:
                 continue # don't update all the metrics, just go to the next round
@@ -1842,34 +1845,13 @@ class CHIRPS_runner(rule_evaluator):
 
         # rule complement testing to remove any redundant rule terms
 
-        if bootstraps == 0:
-            eval_pruned = self.evaluate_rule(rule=self.pruned_rule, sample_instances=self.sample_instances, sample_labels=self.sample_labels)
-            rule_complement_results = self.eval_rule_complements(sample_instances=self.sample_instances, sample_labels=self.sample_labels)
-
-            tt_rule_posterior = eval_pruned['posterior']
-            tt_rule_posterior_counts = eval_pruned['counts']
-            print(self.pruned_rule)
-            print(tt_rule_posterior)
-            print(tt_rule_posterior_counts)
-
-            for rcr in rule_complement_results:
-                eval_rcr = rcr['eval']
-                rcr_posterior = eval_rcr['posterior']
-                rcr_posterior_counts = eval_rcr['counts']
-                rcr_chisq = chisq_indep_test(rcr_posterior_counts, tt_rule_posterior_counts)[1]
-                rcr_kl_div = entropy_corrected(rcr_posterior, tt_rule_posterior)
-
-                print(rcr_posterior)
-                print(rcr_posterior_counts)
-                print(rcr_chisq)
-                print(rcr_kl_div)
-
-        else: # get a bootstrapped evaluation
-            b_pruned = np.full(bootstraps, np.nan)
-            for b in range(bootstraps):
+        if pruning_bootstraps > 0:
+            # get a bootstrapped evaluation
+            b_pruned = np.full(pruning_bootstraps, np.nan)
+            for b in range(pruning_bootstraps):
                 idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
                 b_sample_instances = sample_instances[idx]
-                b_sample_labels = sample_labels.iloc[idx]
+                b_sample_labels = sample_labels[idx]
 
                 eval_pruned = self.evaluate_rule(rule=self.pruned_rule, sample_instances=b_sample_instances, sample_labels=b_sample_labels)
                 eval_pruned_post = eval_pruned['posterior']
@@ -1884,33 +1866,44 @@ class CHIRPS_runner(rule_evaluator):
                 for rc, rcr in enumerate(rule_complement_results):
                     eval_rcr = rcr['eval']
                     rcr_posterior = eval_rcr['posterior']
-                    rcr_posterior_counts = eval_rcr['counts']
                     b_rc[rc] = rcr_posterior[np.where(eval_rcr['labels'] == self.target_class)]
-                    b_rc_kl[rc] = entropy_corrected(rcr_posterior, eval_pruned_post)
-                    b_rc_chisq[rc] = chisq_indep_test(rcr_posterior_counts, eval_pruned_counts)[1]
+                    # rcr_posterior_counts = eval_rcr['counts']
+                    # b_rc_kl[rc] = entropy_corrected(rcr_posterior, eval_pruned_post)
+                    # b_rc_chisq[rc] = chisq_indep_test(rcr_posterior_counts, eval_pruned_counts)[1]
 
                 if b == 0:
                     b_rcr = np.array(b_rc)
-                    b_rcr_kl = np.array(b_rc_kl)
-                    b_rcr_chisq = np.array(b_rc_chisq)
+                    # b_rcr_kl = np.array(b_rc_kl)
+                    # b_rcr_chisq = np.array(b_rc_chisq)
                 else:
                     b_rcr = np.vstack((b_rcr, b_rc))
-                    b_rcr_kl = np.vstack((b_rcr_kl, b_rc_kl))
-                    b_rcr_chisq = np.vstack((b_rcr_chisq, b_rc_chisq))
+                    # b_rcr_kl = np.vstack((b_rcr_kl, b_rc_kl))
+                    # b_rcr_chisq = np.vstack((b_rcr_chisq, b_rc_chisq))
 
-            print(b_pruned.mean(axis=0))
-            print(b_rcr_kl.mean(axis=0))
-            print(b_rcr_chisq.mean(axis=0))
+            to_remove = []
             for rc in range(n_rule_complements):
-                print(b_rcr[:,rc].mean(axis=0))
-                print((b_pruned - delta >= b_rcr[:,rc]).sum(), 0.95 * bootstraps) # if b_rcr too large, there is not a big enough drop in prec
+                if (b_pruned - delta >= b_rcr[:,rc]).sum() < 0.95 * pruning_bootstraps:
+                        if self.var_dict[rcr['feature']]['data_type'] == 'nominal':
+                            to_remove = to_remove + self.var_dict[rcr['feature']]['labels_enc']
+                        else:
+                            to_remove = to_remove + [rcr['feature']]
+            self.pruned_rule = [(f, t, v) for f, t, v in self.pruned_rule if f not in to_remove]
+        # else: do nothing
+            # eval_pruned = self.evaluate_rule(rule=self.pruned_rule, sample_instances=self.sample_instances, sample_labels=self.sample_labels)
+            # rule_complement_results = self.eval_rule_complements(sample_instances=self.sample_instances, sample_labels=self.sample_labels)
+            #
+            # tt_rule_posterior = eval_pruned['posterior']
+            # tt_rule_posterior_counts = eval_pruned['counts']
+            # print(self.pruned_rule)
+            # print(tt_rule_posterior)
+            # print(tt_rule_posterior_counts)
 
-
-                # for c, p in zip(b_curr, b_prev):
-                #     print(c, p)
-
-
-
+            # for rcr in rule_complement_results:
+            #     eval_rcr = rcr['eval']
+            #     rcr_posterior = eval_rcr['posterior']
+                # rcr_posterior_counts = eval_rcr['counts']
+                # rcr_chisq = chisq_indep_test(rcr_posterior_counts, tt_rule_posterior_counts)[1]
+                # rcr_kl_div = entropy_corrected(rcr_posterior, tt_rule_posterior)
 
     def get_CHIRPS_explainer(self):
         return(CHIRPS_explainer(self.random_state,
@@ -1946,10 +1939,24 @@ class batch_CHIRPS_explainer:
         self.meta_data = meta_data
         self.CHIRPS_explainers = None
 
-    def batch_run_CHIRPS(self, target_classes=None, support_paths=0.1, alpha_paths=0.0,
-                        disc_path_bins=4, disc_path_eqcounts=False, score_func=1,
-                        which_trees='majority', precis_threshold=0.95, weighting='chisq',
-                        algorithm='greedy_stab', bootstraps=0, delta=0.1, chirps_explanation_async=False):
+    def batch_run_CHIRPS(self, target_classes=None,
+                        chirps_explanation_async=False,
+                        **kwargs):
+        # defaults
+        options = {
+            'support_paths' : 0.05,
+            'alpha_paths' : 0.0,
+            'disc_path_bins' : 4,
+            'disc_path_eqcounts' : False,
+            'score_func' : 1,
+            'which_trees' : 'majority',
+            'precis_threshold' : 0.95,
+            'weighting' : 'chisq',
+            'algorithm' : 'greedy_stab',
+            'merging_bootstraps' : 20,
+            'pruning_bootstraps' : 200,
+            'delta' : 0.15 }
+        options.update(kwargs)
 
         # convenience function to orient the top level of bpc
         # a bit like reshaping an array
@@ -1968,7 +1975,7 @@ class batch_CHIRPS_explainer:
         if chirps_explanation_async:
 
             async_out = []
-            n_cores = mp.cpu_count()-1
+            n_cores = mp.cpu_count()-2
             pool = mp.Pool(processes=n_cores)
 
             # loop for each instance
@@ -1976,15 +1983,16 @@ class batch_CHIRPS_explainer:
                 # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
                 # use deepcopy to ensure by_value, not by_reference instantiation
-                c_runner = self.bp_container.get_CHIRPS_runner(i, deepcopy(self.meta_data), which_trees=which_trees)
+                c_runner = self.bp_container.get_CHIRPS_runner(i, deepcopy(self.meta_data), which_trees=options['which_trees'])
                 # run the chirps process on each instance paths
                 async_out.append(pool.apply_async(as_CHIRPS,
                     (c_runner, target_classes[i],
                     self.sample_instances, self.sample_labels,
                     self.forest,
-                    support_paths, alpha_paths,
-                    disc_path_bins, disc_path_eqcounts, score_func,
-                    weighting, algorithm, bootstraps, delta, precis_threshold, i)
+                    options['support_paths'], options['alpha_paths'],
+                    options['disc_path_bins'], options['disc_path_eqcounts'], options['score_func'],
+                    options['weighting'], options['algorithm'], options['merging_bootstraps'], options['pruning_bootstraps'],
+                    options['delta'], options['precis_threshold'], i)
                 ))
 
             # block and collect the pool
@@ -1999,18 +2007,20 @@ class batch_CHIRPS_explainer:
 
         else:
             for i in range(n_instances):
+                if i % 5 == 0: print('Working on CHIRPS for instance ' + str(i) + ' of ' + str(n_instances))
                 # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
                 # use deepcopy to ensure by_value, not by_reference instantiation
-                c_runner = self.bp_container.get_CHIRPS_runner(i, deepcopy(self.meta_data), which_trees=which_trees)
+                c_runner = self.bp_container.get_CHIRPS_runner(i, deepcopy(self.meta_data), which_trees=options['which_trees'])
                 # run the chirps process on each instance paths
                 _, CHIRPS_exp = \
                     as_CHIRPS(c_runner, target_classes[i],
                     self.sample_instances, self.sample_labels,
                     self.forest,
-                    support_paths, alpha_paths,
-                    disc_path_bins, disc_path_eqcounts, score_func,
-                    weighting, algorithm, bootstraps, delta, precis_threshold, i)
+                    options['support_paths'], options['alpha_paths'],
+                    options['disc_path_bins'], options['disc_path_eqcounts'], options['score_func'],
+                    options['weighting'], options['algorithm'], options['merging_bootstraps'], options['pruning_bootstraps'],
+                    options['delta'], options['precis_threshold'], i)
 
                 # add the finished rule accumulator to the results
                 CHIRPS_explainers[i] = CHIRPS_exp

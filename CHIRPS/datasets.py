@@ -6,7 +6,7 @@ from CHIRPS import config as cfg
 from CHIRPS.structures import data_container
 
 # accident
-def accident_data(random_state=123, project_dir=None):
+def accident(random_state=123, project_dir=None):
 
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident.csv.gz',
@@ -34,7 +34,7 @@ def accident_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # accident sample: 0.1
-def accident_samp_data(random_state=123, project_dir=None):
+def accident_samp(random_state=123, project_dir=None):
 
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident_samp.csv.gz',
@@ -62,7 +62,7 @@ def accident_samp_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # accident small sample: 0.01
-def accident_small_samp_data(random_state=123, project_dir=None):
+def accident_small_samp(random_state=123, project_dir=None):
 
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident_small_samp.csv.gz',
@@ -90,7 +90,7 @@ def accident_small_samp_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # adult
-def adult_data(random_state=123, project_dir=None):
+def adult(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult.csv.gz',
                         compression='gzip'),
@@ -120,7 +120,7 @@ def adult_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # adult sample: 0.25
-def adult_samp_data(random_state=123, project_dir=None):
+def adult_samp(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult_samp.csv.gz',
                         compression='gzip'),
@@ -150,7 +150,7 @@ def adult_samp_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # adult sample: 0.025
-def adult_small_samp_data(random_state=123, project_dir=None):
+def adult_small_samp(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult_small_samp.csv.gz',
                         compression='gzip'),
@@ -180,7 +180,7 @@ def adult_small_samp_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # bank marketing
-def bankmark_data(random_state=123, project_dir=None):
+def bankmark(random_state=123, project_dir=None):
 
     vtypes = {'age': np.int16,
      'campaign': np.int16,
@@ -260,7 +260,7 @@ def bankmark_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # bank marketing sample: 0.05
-def bankmark_samp_data(random_state=123, project_dir=None):
+def bankmark_samp(random_state=123, project_dir=None):
 
     vtypes = {'age': np.int16,
      'campaign': np.int16,
@@ -340,7 +340,7 @@ def bankmark_samp_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # car
-def car_data(random_state=123, project_dir=None):
+def car(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'car.csv.gz',
                         compression='gzip'),
@@ -371,7 +371,7 @@ def car_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # cardio
-def cardio_data(random_state=123, project_dir=None):
+def cardio(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cardio.csv.gz',
                         compression='gzip'),
@@ -412,7 +412,7 @@ def cardio_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # credit
-def credit_data(random_state=123, project_dir=None):
+def credit(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'credit.csv.gz',
                     compression='gzip'),
@@ -450,7 +450,7 @@ def credit_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # german
-def german_data(random_state=123, project_dir=None):
+def german(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'german.csv.gz',
                     compression='gzip'),
@@ -486,7 +486,7 @@ def german_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # lending
-def lending_data(random_state=123, project_dir=None):
+def lending(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending.csv.gz',
                     compression='gzip'),
@@ -507,7 +507,7 @@ def lending_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # lending sample: 0.1
-def lending_samp_data(random_state=123, project_dir=None):
+def lending_samp(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_samp.csv.gz',
                     compression='gzip'),
@@ -528,7 +528,7 @@ def lending_samp_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # lending small sample: 0.01
-def lending_small_samp_data(random_state=123, project_dir=None):
+def lending_small_samp(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_small_samp.csv.gz',
                     compression='gzip'),
@@ -549,7 +549,7 @@ def lending_small_samp_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # lending tiny sample: 0.0025
-def lending_tiny_samp_data(random_state=123, project_dir=None):
+def lending_tiny_samp(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_tiny_samp.csv.gz',
                     compression='gzip'),
@@ -570,7 +570,7 @@ def lending_tiny_samp_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # nursery
-def nursery_data(random_state=123, project_dir=None):
+def nursery(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery.csv.gz',
                     compression='gzip'),
@@ -596,7 +596,7 @@ def nursery_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # nursery sample: 0.2
-def nursery_samp_data(random_state=123, project_dir=None):
+def nursery_samp(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery_samp.csv.gz',
                     compression='gzip'),
@@ -622,7 +622,7 @@ def nursery_samp_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # rcdv
-def rcdv_data(random_state=123, project_dir=None):
+def rcdv(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'rcdv.csv.gz',
                     compression='gzip'),
@@ -676,7 +676,7 @@ def rcdv_data(random_state=123, project_dir=None):
     return(data_cont)
 
 # rcdv sample: 0.1
-def rcdv_samp_data(random_state=123, project_dir=None):
+def rcdv_samp(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'rcdv_samp.csv.gz',
                     compression='gzip'),

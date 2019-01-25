@@ -58,9 +58,9 @@ def do_tuning(X, y, grid = None, random_state=123, save_path = None):
 
     if save_path is not None:
         if_nexists_make_dir(save_path)
-        with open(save_path + 'best_params_rndst_' + str(random_state) + '.json', 'w') as outfile:
+        with open(save_path + 'best_params_rnst_' + str(random_state) + '.json', 'w') as outfile:
             json.dump(best_params, outfile)
-        with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'w') as outfile:
+        with open(save_path + 'forest_performance_rnst_' + str(random_state) + '.json', 'w') as outfile:
             json.dump(forest_performance, outfile)
 
     return(best_params, forest_performance)
@@ -77,10 +77,10 @@ def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuni
         print('Tuning time elapsed:', "{:0.4f}".format(tun_elapsed_time), 'seconds')
     else:
         try:
-            with open(save_path + 'best_params_rndst_' + str(random_state) + '.json', 'r') as infile:
+            with open(save_path + 'best_params_rnst_' + str(random_state) + '.json', 'r') as infile:
                 print('using previous tuning parameters')
                 best_params = json.load(infile)
-            with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'r') as infile:
+            with open(save_path + 'forest_performance_rnst_' + str(random_state) + '.json', 'r') as infile:
                 forest_performance = json.load(infile)
             return(best_params, forest_performance)
         except:
@@ -94,10 +94,10 @@ def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuni
     return(best_params, forest_performance)
 
 def update_model_performance(save_path, test_metrics, identifier, random_state):
-    with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'r') as infile:
+    with open(save_path + 'forest_performance_rnst_' + str(random_state) + '.json', 'r') as infile:
         forest_performance = json.load(infile)
     forest_performance.update({identifier : test_metrics})
-    with open(save_path + 'forest_performance_rndst_' + str(random_state) + '.json', 'w') as outfile:
+    with open(save_path + 'forest_performance_rnst_' + str(random_state) + '.json', 'w') as outfile:
         json.dump(forest_performance, outfile)
 
 def evaluate_model(y_true, y_pred, class_names=None,
@@ -325,7 +325,6 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                 print()
                     else:
                         print()
-        print()
 
     if save_results_path is not None:
         save_results(results, save_results_path, save_results_file)
