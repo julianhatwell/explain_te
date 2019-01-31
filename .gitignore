@@ -20,3 +20,5 @@ accepted_2007_to_2018Q2.csv.gz
 lending.csv.gz
 
 ~/whiteboxing/adult_small_samp/
+
+*.json

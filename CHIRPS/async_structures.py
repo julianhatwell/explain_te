@@ -96,9 +96,9 @@ def as_CHIRPS(c_runner, target_class,
                             disc_path_bins, disc_path_eqcounts)
 
     # score and sort
-    if len(c_runner.patterns) > 1000:
-         print('a long wait for label ' + str(batch_idx))
-         print([cp for i, cp in enumerate(c_runner.patterns) if i < 50])
+    # if len(c_runner.patterns) > 1000:
+    #      print('a long wait for label ' + str(batch_idx))
+    #      print([cp for i, cp in enumerate(c_runner.patterns) if i < 50])
     c_runner.score_sort_path_segments(sample_instances, sample_labels,
                                     target_class, alpha_paths, score_func, weighting)
 

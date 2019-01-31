@@ -1703,7 +1703,7 @@ class CHIRPS_runner(rule_evaluator):
         if self.get_label is None:
             self.major_class_label = self.major_class
         else:
-            self.major_class_label = self.get_label(self.class_col, self.major_class)
+            self.major_class_label = self.get_label(self.class_col, [self.major_class])
 
         # target class
         if target_class is None and self.target_class is None:
@@ -1714,7 +1714,7 @@ class CHIRPS_runner(rule_evaluator):
         if self.get_label is None:
             self.target_class_label = self.target_class
         else:
-            self.target_class_label = self.get_label(self.class_col, self.target_class)
+            self.target_class_label = self.get_label(self.class_col, [self.target_class])
 
         # prior - empty rule
         p_counts = p_count_corrected(sample_labels, [i for i in range(len(self.class_names))])
