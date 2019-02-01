@@ -112,6 +112,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
     f_walker = strcts.forest_walker(forest = forest, meta_data=meta_data)
 
     # set the timer
+    eval_start_time = time.asctime( time.localtime(time.time()) )
     forest_walk_start_time = timeit.default_timer()
 
     # do the walk - returns a batch_paths_container (even for just one instance)
@@ -123,6 +124,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
     # stop the timer
     forest_walk_end_time = timeit.default_timer()
     forest_walk_elapsed_time = forest_walk_end_time - forest_walk_start_time
+    forest_walk_mean_elapsed_time = forest_walk_elapsed_time/len(labels)
 
     print('Forest Walk with async = ' + str(forest_walk_async))
     print('Forest Walk time elapsed:', "{:0.4f}".format(forest_walk_elapsed_time), 'seconds')
@@ -137,7 +139,8 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
                                     forest=forest,
                                     sample_instances=ds_container.X_train_enc, # any representative sample can be used
                                     sample_labels=sample_labels,
-                                    meta_data=meta_data)
+                                    meta_data=meta_data,
+                                    forest_walk_mean_elapsed_time=forest_walk_mean_elapsed_time)
 
     print('Running CHIRPS on a batch of ' + str(len(labels)) + ' instances... (please wait)')
     # start a timer
@@ -160,6 +163,8 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
     # scoring will leave out the specific instance by this id.
     rt.evaluate_CHIRPS_explainers(CHIRPS, ds_container, labels.index,
                                   forest=forest,
+                                  meta_data=meta_data,
+                                  eval_start_time=eval_start_time,
                                   print_to_screen=False, # set True when running single instances
                                   save_results_path=save_path,
                                   dataset_name=dataset_name,

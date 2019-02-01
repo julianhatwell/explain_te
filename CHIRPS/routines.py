@@ -160,21 +160,10 @@ def batch_instance_ceiling(ds_container, n_instances=None, batch_size=None):
     n_batches = int(batch_size / n_instances)
     return(n_instances, n_batches)
 
-def save_results(results, save_results_path, save_results_file):
+def save_results(headers, results, save_results_path, save_results_file):
     # create new directory if necessary
     if_nexists_make_dir(save_results_path)
     # save the tabular results to a file
-    headers = ['dataset_name', 'instance_id', 'algorithm',
-                'pretty rule', 'rule length',
-                'pred class', 'pred class label',
-                'target class', 'target class label',
-                'forest vote share', 'pred prior',
-                'precision(tr)', 'stability(tr)', 'recall(tr)',
-                'f1(tr)', 'accuracy(tr)', 'lift(tr)',
-                'coverage(tr)', 'xcoverage(tr)', 'kl_div(tr)',
-                'precision(tt)', 'stability(tt)', 'recall(tt)',
-                'f1(tt)', 'accuracy(tt)', 'lift(tt)',
-                'coverage(tt)', 'xcoverage(tt)', 'kl_div(tt)']
     output_df = DataFrame(results, columns=headers)
     output_df.to_csv(save_results_path + save_results_file + '.csv')
 
@@ -182,7 +171,9 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                 ds_container, # data_split_container (for the test data and the LOO function
                                 instance_idx, # should match the instances in the batch
                                 forest,
+                                meta_data,
                                 dataset_name='',
+                                eval_start_time = time.asctime( time.localtime(time.time()) ),
                                 eval_alt_labelings=False,
                                 eval_rule_complements=False,
                                 print_to_screen=False,
@@ -262,7 +253,8 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             tt_lift,
             tt_coverage,
             tt_xcoverage,
-            tt_kl_div]
+            tt_kl_div,
+            c.elapsed_time]
 
         if print_to_screen:
             print('INSTANCE RESULTS')
@@ -285,6 +277,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             print('rule posterior counts (unseen data): ' + str(tt_posterior_counts))
             print('rule chisq p-value (unseen data): ' + str(tt_chisq))
             print('rule Kullback-Leibler divergence (unseen data): ' + str(tt_kl_div))
+            print('Evaluation Time: ' + str(c.elapsed_time))
             print()
             if eval_rule_complements:
                 print('RULE COMPLEMENT RESULTS')
@@ -339,7 +332,35 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                         print()
 
     if save_results_path is not None:
-        save_results(results, save_results_path, save_results_file)
+        headers = ['dataset_name', 'instance_id', 'algorithm',
+                    'pretty rule', 'rule length',
+                    'pred class', 'pred class label',
+                    'target class', 'target class label',
+                    'forest vote share', 'pred prior',
+                    'precision(tr)', 'stability(tr)', 'recall(tr)',
+                    'f1(tr)', 'accuracy(tr)', 'lift(tr)',
+                    'coverage(tr)', 'xcoverage(tr)', 'kl_div(tr)',
+                    'precision(tt)', 'stability(tt)', 'recall(tt)',
+                    'f1(tt)', 'accuracy(tt)', 'lift(tt)',
+                    'coverage(tt)', 'xcoverage(tt)', 'kl_div(tt)', 'elapsed_time']
+        save_results(headers, results, save_results_path, save_results_file + '.csv')
+
+        # collect summary_results
+        with open(meta_data['get_save_path']() + 'forest_performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
+            forest_performance = json.load(infile)
+        f_perf = forest_performance['main']['test_accuracy']
+        p_perf = f_perf # for CHIRPS, forest pred and CHIRPS target are always the same
+        fid = 1 # for CHIRPS, forest pred and CHIRPS target are always the same
+        summary_results_headers = ['dataset_name', 'algorithm', 'n_instances', 'n_rules', \
+                                    'n_rules_used', 'mean_rule_cascade', 'sd_rule_cascade', \
+                                    'mean_rulelen', 'sd_rulelen', 'begin_time', 'completion_time', \
+                                    'forest_performance', 'sd_forest_performance', 'sd_proxy_performance', 'sd_fidelity']
+        summary_results = [[dataset_name, results[0][2], len(b_CHIRPS_exp.CHIRPS_explainers), 1, \
+                            1, 1, 0, np.mean([rl_ln[4] for rl_ln in results]), 0, eval_start_time, time.asctime( time.localtime(time.time()) ), \
+                            f_perf, (f_perf/(1-f_perf))/len(b_CHIRPS_exp.CHIRPS_explainers), \
+                            0, 0]]
+
+        save_results(summary_results_headers, summary_results, save_results_path, save_results_file + '_summary.csv')
 
     if save_CHIRPS:
         # save the batch_CHIRPS_explainer object

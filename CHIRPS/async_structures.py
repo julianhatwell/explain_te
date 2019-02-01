@@ -1,6 +1,8 @@
 # this module is required for parallel processing
 # parallel requires functions/classes to be in __main__ or already referenced.
 # as this code is quite complex, the latter is preferred
+import time
+import timeit
 import math
 import numpy as np
 from scipy import sparse
@@ -81,7 +83,7 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
     return(tree_idx, tree_paths)
 
 def as_CHIRPS(c_runner, target_class,
-                sample_instances, sample_labels, forest,
+                sample_instances, sample_labels, forest, forest_walk_mean_elapsed_time,
                 support_paths=0.1, alpha_paths=0.0,
                 disc_path_bins=4, disc_path_eqcounts=False,
                 score_func=1, weighting='chisq',
@@ -91,7 +93,10 @@ def as_CHIRPS(c_runner, target_class,
     # these steps make up the CHIRPS process:
     # mine paths for freq patts
     # fp growth mining
-    print(batch_idx)
+
+    # collect the time taken
+    cr_start_time = timeit.default_timer()
+
     c_runner.mine_path_segments(support_paths,
                             disc_path_bins, disc_path_eqcounts)
 
@@ -112,5 +117,9 @@ def as_CHIRPS(c_runner, target_class,
                 delta=delta,
                 precis_threshold=precis_threshold)
 
-    CHIRPS_exp = c_runner.get_CHIRPS_explainer()
+    cr_end_time = timeit.default_timer()
+    cr_elapsed_time = cr_end_time - cr_start_time
+    cr_elapsed_time = cr_elapsed_time + forest_walk_mean_elapsed_time
+
+    CHIRPS_exp = c_runner.get_CHIRPS_explainer(cr_elapsed_time)
     return(batch_idx, CHIRPS_exp)

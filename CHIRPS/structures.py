@@ -1034,7 +1034,8 @@ class CHIRPS_explainer(rule_evaluator):
                 lift,
                 chisq,
                 kl_div,
-                algorithm):
+                algorithm,
+                elapsed_time):
         self.random_state = random_state
         self.features = features
         self.features_enc = features_enc
@@ -1064,6 +1065,7 @@ class CHIRPS_explainer(rule_evaluator):
         self.chisq = chisq
         self.kl_div = kl_div
         self.algorithm = algorithm
+        self.elapsed_time = elapsed_time
 
         # instance meta data
         self.prior = self.posterior[0]
@@ -1905,7 +1907,7 @@ class CHIRPS_runner(rule_evaluator):
                 # rcr_chisq = chisq_indep_test(rcr_posterior_counts, tt_rule_posterior_counts)[1]
                 # rcr_kl_div = entropy_corrected(rcr_posterior, tt_rule_posterior)
 
-    def get_CHIRPS_explainer(self):
+    def get_CHIRPS_explainer(self, elapsed_time=0):
         return(CHIRPS_explainer(self.random_state,
         self.features, self.features_enc, self.class_names,
         self.class_col, self.get_label,
@@ -1925,12 +1927,14 @@ class CHIRPS_runner(rule_evaluator):
         self.lift,
         self.chisq,
         self.kl_div,
-        self.algorithm))
+        self.algorithm,
+        elapsed_time))
 
 class batch_CHIRPS_explainer:
 
     def __init__(self, bp_container, # batch_paths_container
-                        forest, sample_instances, sample_labels, meta_data):
+                        forest, sample_instances, sample_labels, meta_data,
+                        forest_walk_mean_elapsed_time=0):
         self.bp_container = bp_container
         self.data_container = data_container
         self.forest = forest
@@ -1938,6 +1942,7 @@ class batch_CHIRPS_explainer:
         self.sample_labels = sample_labels
         self.meta_data = meta_data
         self.CHIRPS_explainers = None
+        self.fwmet = forest_walk_mean_elapsed_time
 
     def batch_run_CHIRPS(self, target_classes=None,
                         chirps_explanation_async=False,
@@ -1988,7 +1993,7 @@ class batch_CHIRPS_explainer:
                 async_out.append(pool.apply_async(as_CHIRPS,
                     (c_runner, target_classes[i],
                     self.sample_instances, self.sample_labels,
-                    self.forest,
+                    self.forest, self.fwmet,
                     options['support_paths'], options['alpha_paths'],
                     options['disc_path_bins'], options['disc_path_eqcounts'], options['score_func'],
                     options['weighting'], options['algorithm'], options['merging_bootstraps'], options['pruning_bootstraps'],
@@ -2016,7 +2021,7 @@ class batch_CHIRPS_explainer:
                 _, CHIRPS_exp = \
                     as_CHIRPS(c_runner, target_classes[i],
                     self.sample_instances, self.sample_labels,
-                    self.forest,
+                    self.forest, self.fwmet,
                     options['support_paths'], options['alpha_paths'],
                     options['disc_path_bins'], options['disc_path_eqcounts'], options['score_func'],
                     options['weighting'], options['algorithm'], options['merging_bootstraps'], options['pruning_bootstraps'],
