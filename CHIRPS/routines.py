@@ -231,9 +231,9 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             c.pretty_rule,
             c.rule_len,
             c.major_class,
-            c.major_class_label,
+            c.major_class_label[0],
             c.target_class,
-            c.target_class_label,
+            c.target_class_label[0],
             c.forest_vote_share,
             c.prior[tc],
             c.est_prec,
@@ -332,18 +332,8 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                         print()
 
     if save_results_path is not None:
-        headers = ['dataset_name', 'instance_id', 'algorithm',
-                    'pretty rule', 'rule length',
-                    'pred class', 'pred class label',
-                    'target class', 'target class label',
-                    'forest vote share', 'pred prior',
-                    'precision(tr)', 'stability(tr)', 'recall(tr)',
-                    'f1(tr)', 'accuracy(tr)', 'lift(tr)',
-                    'coverage(tr)', 'xcoverage(tr)', 'kl_div(tr)',
-                    'precision(tt)', 'stability(tt)', 'recall(tt)',
-                    'f1(tt)', 'accuracy(tt)', 'lift(tt)',
-                    'coverage(tt)', 'xcoverage(tt)', 'kl_div(tt)', 'elapsed_time']
-        save_results(headers, results, save_results_path, save_results_file + '.csv')
+        # save to file between each loop, in case of crashes/restarts
+        save_results(cfg.results_headers, results, save_results_path, save_results_file)
 
         # collect summary_results
         with open(meta_data['get_save_path']() + 'forest_performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
@@ -351,16 +341,13 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         f_perf = forest_performance['main']['test_accuracy']
         p_perf = f_perf # for CHIRPS, forest pred and CHIRPS target are always the same
         fid = 1 # for CHIRPS, forest pred and CHIRPS target are always the same
-        summary_results_headers = ['dataset_name', 'algorithm', 'n_instances', 'n_rules', \
-                                    'n_rules_used', 'mean_rule_cascade', 'sd_rule_cascade', \
-                                    'mean_rulelen', 'sd_rulelen', 'begin_time', 'completion_time', \
-                                    'forest_performance', 'sd_forest_performance', 'sd_proxy_performance', 'sd_fidelity']
         summary_results = [[dataset_name, results[0][2], len(b_CHIRPS_exp.CHIRPS_explainers), 1, \
-                            1, 1, 0, np.mean([rl_ln[4] for rl_ln in results]), 0, eval_start_time, time.asctime( time.localtime(time.time()) ), \
+                            1, 1, 0, np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
+                            eval_start_time, time.asctime( time.localtime(time.time()) ), \
                             f_perf, (f_perf/(1-f_perf))/len(b_CHIRPS_exp.CHIRPS_explainers), \
                             0, 0]]
 
-        save_results(summary_results_headers, summary_results, save_results_path, save_results_file + '_summary.csv')
+        save_results(cfg.summary_results_headers, summary_results, save_results_path, save_results_file + '_summary')
 
     if save_CHIRPS:
         # save the batch_CHIRPS_explainer object

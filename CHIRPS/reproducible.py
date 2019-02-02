@@ -7,6 +7,7 @@ import CHIRPS.datasets as ds
 import CHIRPS.routines as rt
 import CHIRPS.structures as strcts
 from CHIRPS import p_count_corrected
+from CHIRPS import config as cfg
 from lime import lime_tabular as limtab
 from anchor import anchor_tabular as anchtab
 # from defragTrees.defragTrees import DefragModel
@@ -235,6 +236,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
     sample_labels = forest.predict(ds_container.X_train_enc) # for train estimates
 
     print('Running Anchors on each instance and collecting results')
+    eval_start_time = time.asctime( time.localtime(time.time()) )
     # iterate through each instance to generate the anchors explanation
     results = [[]] * len(labels)
     evaluator = strcts.evaluator()
@@ -248,9 +250,17 @@ def Anchors_benchmark(forest, ds_container, meta_data,
         # get the model predicted labels
         loo_preds = forest.predict(loo_instances_enc)
 
+        # collect the time taken
+        anch_start_time = timeit.default_timer()
+
+        # start the explanation process
         explanation = Anchors_explanation(instances_matrix[i], anchors_explainer, forest,
                                             threshold=precis_threshold,
                                             random_state=random_state)
+
+        # the whole anchor explanation routine has run so stop the clock
+        anch_end_time = timeit.default_timer()
+        anch_elapsed_time = anch_end_time - anch_start_time
 
         # Get train and test idx (boolean) covered by the anchor
         anchor_train_idx = np.array([all_eq.all() for all_eq in ds_container.X_train_matrix[:, explanation.features()] == instances_matrix[:,explanation.features()][i]])
@@ -261,7 +271,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
         test_metrics = evaluator.evaluate(prior_labels=loo_preds, post_idx=anchor_test_idx)
 
         # collect the results
-        tc = preds[i]
+        tc = [preds[i]]
         tc_lab = meta_data['get_label'](meta_data['class_col'], tc)
 
         results[i] = [dataset_name,
@@ -269,34 +279,51 @@ def Anchors_benchmark(forest, ds_container, meta_data,
             identifier,
             ' AND '.join(explanation.names()),
             len(explanation.names()),
-            tc,
-            tc_lab,
-            tc,
-            tc_lab,
+            tc[0],
+            tc_lab[0],
+            tc[0],
+            tc_lab[0],
             np.array([tree.predict(instances_enc[i]) == tc for tree in forest.estimators_]).mean(), # majority vote share
-            test_metrics['prior']['p_counts'][tc],
-            train_metrics['posterior'][tc],
-            train_metrics['stability'][tc],
-            train_metrics['recall'][tc],
-            train_metrics['f1'][tc],
-            train_metrics['accuracy'][tc],
-            train_metrics['lift'][tc],
+            test_metrics['prior']['p_counts'][tc][0],
+            train_metrics['posterior'][tc][0],
+            train_metrics['stability'][tc][0],
+            train_metrics['recall'][tc][0],
+            train_metrics['f1'][tc][0],
+            train_metrics['accuracy'][tc][0],
+            train_metrics['lift'][tc][0],
             train_metrics['coverage'],
             train_metrics['xcoverage'],
             train_metrics['kl_div'],
-            test_metrics['posterior'][tc],
-            test_metrics['stability'][tc],
-            test_metrics['recall'][tc],
-            test_metrics['f1'][tc],
-            test_metrics['accuracy'][tc],
-            test_metrics['lift'][tc],
+            test_metrics['posterior'][tc][0],
+            test_metrics['stability'][tc][0],
+            test_metrics['recall'][tc][0],
+            test_metrics['f1'][tc][0],
+            test_metrics['accuracy'][tc][0],
+            test_metrics['lift'][tc][0],
             test_metrics['coverage'],
             test_metrics['xcoverage'],
-            test_metrics['kl_div']]
+            test_metrics['kl_div'],
+            anch_elapsed_time]
 
     if save_path is not None:
-        rt.save_results(results, save_results_path=save_path,
-                        save_results_file=identifier + '_results' + '_rnst_' + str(random_state))
+        save_results_file = identifier + '_results' + '_rnst_' + str(random_state)
+        # save to file between each loop, in case of crashes/restarts
+        rt.save_results(cfg.results_headers, results, save_results_path=save_path,
+                        save_results_file=save_results_file)
+
+        # collect summary_results
+        with open(meta_data['get_save_path']() + 'forest_performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
+            forest_performance = json.load(infile)
+        f_perf = forest_performance['Anchors']['test_accuracy']
+        p_perf = f_perf # for Anchors, forest pred and Anchors target are always the same
+        fid = 1 # for Anchors, forest pred and Anchors target are always the same
+        summary_results = [[dataset_name, identifier, len(labels), 1, \
+                            1, 1, 0, np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
+                            eval_start_time, time.asctime( time.localtime(time.time()) ), \
+                            f_perf, (f_perf/(1-f_perf))/len(labels), \
+                            0, 0]]
+
+        rt.save_results(cfg.summary_results_headers, summary_results, save_path, save_results_file + '_summary')
 
 # def defragTrees_prep(forest, meta_data, ds_container,
 #                         Kmax=10, maxitr=100, restart=10,
