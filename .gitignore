@@ -10,15 +10,25 @@
 *.xlsx
 *.txt
 *.png
-*.pickle
-best_param*
 /.ipynb_checkpoints
-/__pycache__
 /CHIRPS/__pycache__
-/forest_surveyor/__pycache__
 accepted_2007_to_2018Q2.csv.gz
 lending.csv.gz
 
 ~/whiteboxing/adult_small_samp/
 
 *.json
+
+*.pyc
+
+paper/result
+/defragTrees/
+
+__pycache__
+/defragTrees/
+paper
+
+
+/defragTrees/example
+/defragTrees/*.md
+/defragTrees/*.txt

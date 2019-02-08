@@ -10,7 +10,7 @@ from CHIRPS import p_count_corrected
 from CHIRPS import config as cfg
 from lime import lime_tabular as limtab
 from anchor import anchor_tabular as anchtab
-# from defragTrees.defragTrees import DefragModel
+from defragTrees.defragTrees import DefragModel
 
 
 penalise_bad_prediction = lambda mc, tc, value : value if mc == tc else 0 # for global interp methods
@@ -94,8 +94,12 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
                     batch_size=100, n_instances=100,
                     forest_walk_async=True,
                     chirps_explanation_async=True,
-                    save_path='', dataset_name='',
+                    save_path='', save_sensitivity_path=None,
+                    dataset_name='',
                     random_state=123, **kwargs):
+
+    if save_sensitivity_path is None:
+        save_sensitivity_path=save_path
     # 2. Prepare Unseen Data and Predictions
 
     print('Prepare Unseen Data and Predictions for CHIRPS benchmark')
@@ -167,7 +171,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
                                   meta_data=meta_data,
                                   eval_start_time=eval_start_time,
                                   print_to_screen=False, # set True when running single instances
-                                  save_results_path=save_path,
+                                  save_results_path=save_sensitivity_path,
                                   dataset_name=dataset_name,
                                   save_results_file='CHIRPS' + '_rnst_' + str(random_state),
                                   save_CHIRPS=False)
@@ -325,153 +329,186 @@ def Anchors_benchmark(forest, ds_container, meta_data,
 
         rt.save_results(cfg.summary_results_headers, summary_results, save_path, save_results_file + '_summary')
 
-# def defragTrees_prep(forest, meta_data, ds_container,
-#                         Kmax=10, maxitr=100, restart=10,
-#                         identifier='defragTrees', save_path=''):
-#
-#     X_train=ds_container.X_train_enc_matrix
-#     y_train=ds_container.y_train
-#     X_test=ds_container.X_test_enc_matrix
-#     y_test=ds_container.y_test
-#
-#     feature_names = meta_data['features_enc']
-#     class_names = meta_data['class_names_label_order']
-#     random_state = meta_data['random_state']
-#
-#     print('Running defragTrees')
-#     print()
-#     defTrees_start_time = timeit.default_timer()
-#
-#     # fit simplified model
-#     splitter = DefragModel.parseSLtrees(forest) # parse sklearn tree ensembles into the array of (feature index, threshold)
-#     mdl = DefragModel(modeltype='classification', maxitr=maxitr, qitr=0, tol=1e-6, restart=restart, verbose=0, seed=random_state)
-#     mdl.fit(np.array(X_train), y_train, splitter, Kmax, fittype='FAB', featurename=feature_names)
-#
-#     defTrees_end_time = timeit.default_timer()
-#     defTrees_elapsed_time = defTrees_end_time - defTrees_start_time
-#     print('Fit defragTrees time elapsed:', "{:0.4f}".format(defTrees_elapsed_time), 'seconds')
-#     print()
-#
-#     score, cover, coll = mdl.evaluate(np.array(X_test), y_test)
-#     print('defragTrees test accuracy')
-#     print('Accuracy = %f' % (1 - score,))
-#     print('Coverage = %f' % (cover,))
-#     print('Overlap = %f' % (coll,))
-#
-#     rt.evaluate_model(y_true=y_test, y_pred=mdl.predict(np.array(X_test)),
-#                         class_names=class_names,
-#                         plot_cm=False, plot_cm_norm=False, # False here will output the metrics and suppress the plots
-#                         save_path=save_path,
-#                         identifier=identifier,
-#                         random_state=random_state)
-#
-#     return(mdl)
-#
-# def rule_list_from_dfrgtrs(dfrgtrs):
-#     rule_list = [[]] * len(dfrgtrs.rule_)
-#     for r, rule in enumerate(dfrgtrs.rule_):
-#         rule_list[r] = [(dfrgtrs.featurename_[int(item[0]-1)], not item[1], item[2]) for item in rule]
-#
-#     return(rule_list)
-#
-# def which_rule(rule_list, X, features):
-#     left_idx = np.array([i for i in range(len(X.todense()))])
-#     rules_idx = np.full(len(left_idx), np.nan)
-#     rule_cascade = 0
-#     while len(left_idx) > 0 and rule_cascade < len(rule_list):
-#         rule_evaluator = strcts.rule_evaluator()
-#         match_idx = rule_evaluator.apply_rule(rule=rule_list[rule_cascade],
-#                                               instances=X[left_idx,:],
-#                                               features=features)
-#         rules_idx[left_idx[match_idx]] = rule_cascade
-#         left_idx = np.array([li for li, mi in zip(left_idx, match_idx) if not mi])
-#         rule_cascade += 1
-#     # what's left is the default prediction
-#     rules_idx[np.where(np.isnan(rules_idx))] = rule_cascade # default prediction
-#     rules_idx = rules_idx.astype(int)
-#     return(rules_idx)
-#
-# def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
-#                             batch_size=100, n_instances=100,
-#                             save_path='', dataset_name='',
-#                             random_state=123):
-#
-#     identifier = 'defragTrees'
-#     print('defragTrees benchmark')
-#     # OPTION 1 - batching (to be implemented in the new code, right now it will do just one batch)
-#     _, _, instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
-#                                                                             n_instances=n_instances,
-#                                                                             batch_size=batch_size)
-#
-#     forest_preds = forest.predict(instances_enc)
-#     dfrgtrs_preds = dfrgtrs.predict(np.array(instances_enc_matrix))
-#
-#     rule_list = rule_list_from_dfrgtrs(dfrgtrs)
-#
-#     results = [[]] * len(labels)
-#     evaluator = strcts.evaluator()
-#     for i in range(len(labels)):
-#         instance_id = labels.index[i]
-#         if i % 10 == 0: print('Working on ' + identifier + ' for instance ' + str(instance_id))
-#
-#         # get test sample by leave-one-out on current instance
-#         _, _, loo_instances_enc, loo_instances_enc_matrix, loo_true_labels = ds_container.get_loo_instances(instance_id,
-#                                                                                                             which_split='test')
-#
-#         loo_forest_preds = forest.predict(loo_instances_enc)
-#         loo_dfrgtrs_preds = dfrgtrs.predict(np.array(loo_instances_enc_matrix))
-#
-#         # which rule appies to each loo instance
-#         rule_idx = which_rule(rule_list, loo_instances_enc, features=meta_data['features_enc'])
-#
-#         # which rule appies to current instance
-#         rule = which_rule(rule_list, instances_enc[i], features=meta_data['features_enc'])
-#         if rule[0] >= len(rule_list):
-#             pretty_rule = []
-#         else:
-#             pretty_rule = evaluator.prettify_rule(rule_list[rule[0]], meta_data['var_dict'])
-#
-#         # which instances are covered by this rule
-#         covered_instances = rule_idx == rule
-#
-#         metrics = evaluator.evaluate(prior_labels=loo_true_labels,
-#                                         post_idx=covered_instances)
-#
-#         # majority class is the forest vote class
-#         # target class is the benchmark algorithm prediction
-#         mc = forest_preds[i]
-#         tc = dfrgtrs_preds[i]
-#
-#         results[i] = [dataset_name,
-#         instance_id,
-#         identifier,
-#         pretty_rule,
-#         len(rule),
-#         mc,
-#         meta_data['get_label'](meta_data['class_col'], mc),
-#         tc,
-#         meta_data['get_label'](meta_data['class_col'], tc),
-#         np.array([tree.predict(instances_enc[i]) == mc for tree in forest.estimators_]).mean(), # majority vote share
-#         metrics['prior']['p_counts'][mc],
-#         metrics['posterior'][tc],
-#         metrics['stability'][tc],
-#         metrics['recall'][tc],
-#         metrics['f1'][tc],
-#         metrics['accuracy'][tc],
-#         metrics['lift'][tc],
-#         metrics['coverage'],
-#         metrics['xcoverage'],
-#         metrics['kl_div'],
-#         penalise_bad_prediction(mc, tc, metrics['posterior'][mc]),
-#         penalise_bad_prediction(mc, tc, metrics['stability'][mc]),
-#         penalise_bad_prediction(mc, tc, metrics['recall'][mc]),
-#         penalise_bad_prediction(mc, tc, metrics['f1'][mc]),
-#         penalise_bad_prediction(mc, tc, metrics['accuracy'][mc]),
-#         penalise_bad_prediction(mc, tc, metrics['lift'][mc]),
-#         metrics['coverage'],
-#         metrics['xcoverage'],
-#         metrics['kl_div']]
-#
-#     if save_path is not None:
-#         rt.save_results(results, save_results_path=save_path,
-#                         save_results_file=identifier + '_rnst_' + str(random_state))
+def defragTrees_prep(forest, meta_data, ds_container,
+                        Kmax=10, maxitr=100, restart=10,
+                        identifier='defragTrees', save_path=''):
+
+    X_train=ds_container.X_train_enc_matrix
+    y_train=ds_container.y_train
+    X_test=ds_container.X_test_enc_matrix
+    y_test=ds_container.y_test
+
+    feature_names = meta_data['features_enc']
+    class_names = meta_data['class_names_label_order']
+    random_state = meta_data['random_state']
+
+    print('Running defragTrees')
+    print()
+    eval_start_time = time.asctime( time.localtime(time.time()) )
+    defTrees_start_time = timeit.default_timer()
+
+    # fit simplified model
+    splitter = DefragModel.parseSLtrees(forest) # parse sklearn tree ensembles into the array of (feature index, threshold)
+    mdl = DefragModel(modeltype='classification', maxitr=maxitr, qitr=0, tol=1e-6, restart=restart, verbose=0, seed=random_state)
+    mdl.fit(np.array(X_train), y_train, splitter, Kmax, fittype='FAB', featurename=feature_names)
+
+    defTrees_end_time = timeit.default_timer()
+    defTrees_elapsed_time = defTrees_end_time - defTrees_start_time
+    print('Fit defragTrees time elapsed:', "{:0.4f}".format(defTrees_elapsed_time), 'seconds')
+    print()
+
+    score, cover, coll = mdl.evaluate(np.array(X_test), y_test)
+    print('defragTrees test accuracy')
+    print('Accuracy = %f' % (1 - score,))
+    print('Coverage = %f' % (cover,))
+    print('Overlap = %f' % (coll,))
+
+    rt.evaluate_model(y_true=y_test, y_pred=mdl.predict(np.array(X_test)),
+                        class_names=class_names,
+                        plot_cm=False, plot_cm_norm=False, # False here will output the metrics and suppress the plots
+                        save_path=save_path,
+                        identifier=identifier,
+                        random_state=random_state)
+
+    return(mdl, eval_start_time, defTrees_elapsed_time)
+
+def rule_list_from_dfrgtrs(dfrgtrs):
+    rule_list = [[]] * len(dfrgtrs.rule_)
+    for r, rule in enumerate(dfrgtrs.rule_):
+        rule_list[r] = [(dfrgtrs.featurename_[int(item[0]-1)], not item[1], item[2]) for item in rule]
+
+    return(rule_list)
+
+def which_rule(rule_list, X, features):
+    left_idx = np.array([i for i in range(len(X.todense()))])
+    rules_idx = np.full(len(left_idx), np.nan)
+    rule_cascade = 0
+    while len(left_idx) > 0 and rule_cascade < len(rule_list):
+        rule_evaluator = strcts.rule_evaluator()
+        match_idx = rule_evaluator.apply_rule(rule=rule_list[rule_cascade],
+                                              instances=X[left_idx,:],
+                                              features=features)
+        rules_idx[left_idx[match_idx]] = rule_cascade
+        left_idx = np.array([li for li, mi in zip(left_idx, match_idx) if not mi])
+        rule_cascade += 1
+    # what's left is the default prediction
+    rules_idx[np.where(np.isnan(rules_idx))] = rule_cascade # default prediction
+    rules_idx = rules_idx.astype(int)
+    return(rules_idx)
+
+def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
+                            eval_start_time, defTrees_elapsed_time,
+                            batch_size=100, n_instances=100,
+                            save_path='', dataset_name='',
+                            random_state=123):
+
+    identifier = 'defragTrees'
+    print('defragTrees benchmark')
+    # OPTION 1 - batching (to be implemented in the new code, right now it will do just one batch)
+    _, _, instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
+                                                                            n_instances=n_instances,
+                                                                            batch_size=batch_size)
+
+    defTrees_mean_elapsed_time = defTrees_elapsed_time / len(labels)
+
+    forest_preds = forest.predict(instances_enc)
+    dfrgtrs_preds = dfrgtrs.predict(np.array(instances_enc_matrix))
+
+    rule_list = rule_list_from_dfrgtrs(dfrgtrs)
+
+    results = [[]] * len(labels)
+    evaluator = strcts.evaluator()
+    for i in range(len(labels)):
+        instance_id = labels.index[i]
+        if i % 10 == 0: print('Working on ' + identifier + ' for instance ' + str(instance_id))
+
+        # get test sample by leave-one-out on current instance
+        _, _, loo_instances_enc, loo_instances_enc_matrix, loo_true_labels = ds_container.get_loo_instances(instance_id,
+                                                                                                            which_split='test')
+
+        loo_forest_preds = forest.predict(loo_instances_enc)
+        loo_dfrgtrs_preds = dfrgtrs.predict(np.array(loo_instances_enc_matrix))
+
+        # start a timer for the individual eval
+        dt_start_time = timeit.default_timer()
+
+        # which rule appies to each loo instance
+        rule_idx = which_rule(rule_list, loo_instances_enc, features=meta_data['features_enc'])
+
+        # which rule appies to current instance
+        rule = which_rule(rule_list, instances_enc[i], features=meta_data['features_enc'])
+        if rule[0] >= len(rule_list):
+            pretty_rule = []
+        else:
+            pretty_rule = evaluator.prettify_rule(rule_list[rule[0]], meta_data['var_dict'])
+
+        dt_end_time = timeit.default_timer()
+        dt_elapsed_time = dt_end_time - dt_start_time
+        dt_elapsed_time = dt_elapsed_time + defTrees_mean_elapsed_time # add the mean modeling time per instance
+
+        # which instances are covered by this rule
+        covered_instances = rule_idx == rule
+
+        metrics = evaluator.evaluate(prior_labels=loo_true_labels,
+                                        post_idx=covered_instances)
+
+        # majority class is the forest vote class
+        # target class is the benchmark algorithm prediction
+        mc = [forest_preds[i]]
+        tc = [dfrgtrs_preds[i]]
+        mc_lab = meta_data['get_label'](meta_data['class_col'], mc)
+        tc_lab = meta_data['get_label'](meta_data['class_col'], tc)
+
+        results[i] = [dataset_name,
+        instance_id,
+        identifier,
+        pretty_rule,
+        len(rule),
+        mc[0],
+        mc_lab[0],
+        tc[0],
+        tc_lab[0],
+        np.array([tree.predict(instances_enc[i]) == mc for tree in forest.estimators_]).mean(), # majority vote share
+        metrics['prior']['p_counts'][mc][0],
+        metrics['posterior'][tc][0],
+        metrics['stability'][tc][0],
+        metrics['recall'][tc][0],
+        metrics['f1'][tc][0],
+        metrics['accuracy'][tc][0],
+        metrics['lift'][tc][0],
+        metrics['coverage'],
+        metrics['xcoverage'],
+        metrics['kl_div'],
+        penalise_bad_prediction(mc, tc, metrics['posterior'][mc][0]),
+        penalise_bad_prediction(mc, tc, metrics['stability'][mc][0]),
+        penalise_bad_prediction(mc, tc, metrics['recall'][mc][0]),
+        penalise_bad_prediction(mc, tc, metrics['f1'][mc][0]),
+        penalise_bad_prediction(mc, tc, metrics['accuracy'][mc][0]),
+        penalise_bad_prediction(mc, tc, metrics['lift'][mc][0]),
+        metrics['coverage'],
+        metrics['xcoverage'],
+        metrics['kl_div'],
+        dt_elapsed_time]
+
+    if save_path is not None:
+        save_results_file=identifier + '_rnst_' + str(random_state)
+
+        rt.save_results(cfg.results_headers, results,
+                        save_results_path=save_path,
+                        save_results_file=save_results_file)
+
+        # collect summary_results
+        with open(meta_data['get_save_path']() + 'forest_performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
+            forest_performance = json.load(infile)
+        f_perf = forest_performance['main']['test_accuracy']
+        p_perf = np.mean(dfrgtrs_preds == labels)
+        fid = np.mean(dfrgtrs_preds == forest_preds)
+        summary_results = [[dataset_name, identifier, len(labels), 1, \
+                            1, 1, 0, np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
+                            eval_start_time, time.asctime( time.localtime(time.time()) ), \
+                            f_perf, (f_perf/(1-f_perf))/len(labels), \
+                            (p_perf/(1-p_perf))/len(labels), (fid/(1-fid))/len(labels)]]
+
+        rt.save_results(cfg.summary_results_headers, summary_results,
+                        save_results_path=save_path,
+                        save_results_file=save_results_file + '_summary')
