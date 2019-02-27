@@ -1837,6 +1837,11 @@ class CHIRPS_runner(rule_evaluator):
                         if item[2] > self.var_dict[item[0]]['lower_bound'][0]:
                             self.var_dict[item[0]]['lower_bound'][0] = item[2]
 
+        # case no solution was found
+        if len(self.kl_div) == 0:
+            print('no solution, kl_div correction')
+            self.kl_div = np.append(self.kl_div, [0], axis=0 )
+
         # first time major_class is isolated
         if any(np.argmax(self.posterior, axis=1) == self.target_class):
             self.isolation_pos = np.min(np.where(np.argmax(self.posterior, axis=1) == self.target_class))
@@ -1908,6 +1913,7 @@ class CHIRPS_runner(rule_evaluator):
                 # rcr_kl_div = entropy_corrected(rcr_posterior, tt_rule_posterior)
 
     def get_CHIRPS_explainer(self, elapsed_time=0):
+
         return(CHIRPS_explainer(self.random_state,
         self.features, self.features_enc, self.class_names,
         self.class_col, self.get_label,

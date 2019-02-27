@@ -310,7 +310,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
             anch_elapsed_time]
 
     if save_path is not None:
-        save_results_file = identifier + '_results' + '_rnst_' + str(random_state)
+        save_results_file = identifier + '_rnst_' + str(random_state)
         # save to file between each loop, in case of crashes/restarts
         rt.save_results(cfg.results_headers, results, save_results_path=save_path,
                         save_results_file=save_results_file)
