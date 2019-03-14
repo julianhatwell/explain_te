@@ -20,6 +20,9 @@ results_headers = ['dataset_name', 'instance_id', 'algorithm',
             'coverage(tt)', 'xcoverage(tt)', 'kl_div(tt)', 'elapsed_time']
 
 summary_results_headers = ['dataset_name', 'algorithm', 'n_instances', 'n_rules', \
-                            'n_rules_used', 'mean_rule_cascade', 'sd_rule_cascade', \
-                            'mean_rulelen', 'sd_rulelen', 'begin_time', 'completion_time', \
-                            'forest_performance', 'sd_forest_performance', 'sd_proxy_performance', 'sd_fidelity']
+                            'n_rules_used', 'median_rule_cascade', 'mean_rule_cascade', 'sd_rule_cascade', \
+                            'mean_rulelen', 'sd_rulelen', \
+                            'begin_time', 'completion_time', \
+                            'forest_performance', 'sd_forest_performance', \
+                            'proxy_performance', 'sd_proxy_performance', \
+                            'kappa', 'fidelity', 'sd_fidelity']

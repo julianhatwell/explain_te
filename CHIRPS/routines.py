@@ -342,10 +342,10 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         p_perf = f_perf # for CHIRPS, forest pred and CHIRPS target are always the same
         fid = 1 # for CHIRPS, forest pred and CHIRPS target are always the same
         summary_results = [[dataset_name, results[0][2], len(b_CHIRPS_exp.CHIRPS_explainers), 1, \
-                            1, 1, 0, np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
+                            1, 1, 1, 0, np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
                             eval_start_time, time.asctime( time.localtime(time.time()) ), \
-                            f_perf, (f_perf/(1-f_perf))/len(b_CHIRPS_exp.CHIRPS_explainers), \
-                            0, 0]]
+                            f_perf, sqrt((f_perf/(1-f_perf))/len(b_CHIRPS_exp.CHIRPS_explainers)), \
+                            1, 0, 1, 0]]
 
         save_results(cfg.summary_results_headers, summary_results, save_results_path, save_results_file + '_summary')
 

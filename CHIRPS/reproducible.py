@@ -2,6 +2,7 @@ import json
 import time
 import timeit
 import numpy as np
+from math import sqrt
 from copy import deepcopy
 import CHIRPS.datasets as ds
 import CHIRPS.routines as rt
@@ -11,7 +12,6 @@ from CHIRPS import config as cfg
 from lime import lime_tabular as limtab
 from anchor import anchor_tabular as anchtab
 from defragTrees.defragTrees import DefragModel
-
 
 penalise_bad_prediction = lambda mc, tc, value : value if mc == tc else 0 # for global interp methods
 
@@ -322,10 +322,12 @@ def Anchors_benchmark(forest, ds_container, meta_data,
         p_perf = f_perf # for Anchors, forest pred and Anchors target are always the same
         fid = 1 # for Anchors, forest pred and Anchors target are always the same
         summary_results = [[dataset_name, identifier, len(labels), 1, \
-                            1, 1, 0, np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
+                            1, 1, 1, 0, \
+                            np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
                             eval_start_time, time.asctime( time.localtime(time.time()) ), \
-                            f_perf, (f_perf/(1-f_perf))/len(labels), \
-                            0, 0]]
+                            f_perf, sqrt((f_perf/(1-f_perf))/len(labels)), \
+                            1, 0, \
+                            1, 1, 0]]
 
         rt.save_results(cfg.summary_results_headers, summary_results, save_path, save_results_file + '_summary')
 
@@ -362,13 +364,6 @@ def defragTrees_prep(forest, meta_data, ds_container,
     print('Accuracy = %f' % (1 - score,))
     print('Coverage = %f' % (cover,))
     print('Overlap = %f' % (coll,))
-
-    rt.evaluate_model(y_true=y_test, y_pred=mdl.predict(np.array(X_test)),
-                        class_names=class_names,
-                        plot_cm=False, plot_cm_norm=False, # False here will output the metrics and suppress the plots
-                        save_path=save_path,
-                        identifier=identifier,
-                        random_state=random_state)
 
     return(mdl, eval_start_time, defTrees_elapsed_time)
 
@@ -411,12 +406,20 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
 
     defTrees_mean_elapsed_time = defTrees_elapsed_time / len(labels)
 
+    eval_model = rt.evaluate_model(y_true=labels, y_pred=dfrgtrs.predict(np.array(instances_enc_matrix)),
+                        class_names=meta_data['class_names_label_order'],
+                        plot_cm=False, plot_cm_norm=False, # False here will output the metrics and suppress the plots
+                        save_path=save_path,
+                        identifier=identifier,
+                        random_state=random_state)
+
     forest_preds = forest.predict(instances_enc)
     dfrgtrs_preds = dfrgtrs.predict(np.array(instances_enc_matrix))
 
     rule_list = rule_list_from_dfrgtrs(dfrgtrs)
 
     results = [[]] * len(labels)
+    rule_idx = []
     evaluator = strcts.evaluator()
     for i in range(len(labels)):
         instance_id = labels.index[i]
@@ -433,7 +436,7 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
         dt_start_time = timeit.default_timer()
 
         # which rule appies to each loo instance
-        rule_idx = which_rule(rule_list, loo_instances_enc, features=meta_data['features_enc'])
+        rule_idx.append(which_rule(rule_list, loo_instances_enc, features=meta_data['features_enc']))
 
         # which rule appies to current instance
         rule = which_rule(rule_list, instances_enc[i], features=meta_data['features_enc'])
@@ -447,7 +450,7 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
         dt_elapsed_time = dt_elapsed_time + defTrees_mean_elapsed_time # add the mean modeling time per instance
 
         # which instances are covered by this rule
-        covered_instances = rule_idx == rule
+        covered_instances = rule_idx[i] == rule
 
         metrics = evaluator.evaluate(prior_labels=loo_true_labels,
                                         post_idx=covered_instances)
@@ -503,11 +506,13 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
         f_perf = forest_performance['main']['test_accuracy']
         p_perf = np.mean(dfrgtrs_preds == labels)
         fid = np.mean(dfrgtrs_preds == forest_preds)
-        summary_results = [[dataset_name, identifier, len(labels), 1, \
-                            1, 1, 0, np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
+        summary_results = [[dataset_name, identifier, len(labels), len(rule_list), \
+                            len(np.unique(rule_idx)), np.median(np.array(rule_idx) + 1), np.mean(np.array(rule_idx) + 1), np.std(np.array(rule_idx) + 1), \
+                            np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
                             eval_start_time, time.asctime( time.localtime(time.time()) ), \
-                            f_perf, (f_perf/(1-f_perf))/len(labels), \
-                            (p_perf/(1-p_perf))/len(labels), (fid/(1-fid))/len(labels)]]
+                            f_perf, sqrt((f_perf/(1-f_perf))/len(labels)), \
+                            p_perf, sqrt((p_perf/(1-p_perf))/len(labels)), \
+                            eval_model['test_kappa'], fid, sqrt((fid/(1-fid))/len(labels))]]
 
         rt.save_results(cfg.summary_results_headers, summary_results,
                         save_results_path=save_path,
