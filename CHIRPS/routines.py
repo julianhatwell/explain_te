@@ -209,6 +209,11 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         tt_stab = eval_rule['stability'][tc]
         tt_recall = eval_rule['recall'][tc]
         tt_f1 = eval_rule['f1'][tc]
+        tt_cc = eval_rule['cc'][tc]
+        tt_ci = eval_rule['ci'][tc]
+        tt_ncc = eval_rule['ncc'][tc]
+        tt_nci = eval_rule['nci'][tc]
+        tt_npv = eval_rule['npv'][tc]
         tt_acc = eval_rule['accuracy'][tc]
         tt_lift = eval_rule['lift'][tc]
         tt_coverage = eval_rule['coverage']
@@ -240,6 +245,11 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             c.est_stab,
             c.est_recall,
             c.est_f1,
+            c.est_cc,
+            c.est_ci,
+            c.est_ncc,
+            c.est_nci,
+            c.est_npv,
             c.est_acc,
             c.est_lift,
             c.est_coverage,
@@ -249,6 +259,11 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             tt_stab,
             tt_recall,
             tt_f1,
+            tt_cc,
+            tt_ci,
+            tt_ncc,
+            tt_nci,
+            tt_npv,
             tt_acc,
             tt_lift,
             tt_coverage,
@@ -270,6 +285,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             print('rule stability (unseen data): ' + str(tt_stab))
             print('rule recall (unseen data): ' + str(tt_recall))
             print('rule f1 score (unseen data): ' + str(tt_f1))
+            print('rule NPV (unseen data): ' + str(tt_npv))
             print('rule lift (unseen data): ' + str(tt_lift))
             print('prior (unseen data): ' + str(tt_prior))
             print('prior counts (unseen data): ' + str(tt_prior_counts))
@@ -290,6 +306,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                     tt_stab = eval_rule['stability'][tc]
                     tt_recall = eval_rule['recall'][tc]
                     tt_f1 = eval_rule['f1'][tc]
+                    tt_npv = eval_rule['npv'][tc]
                     tt_acc = eval_rule['accuracy'][tc]
                     tt_lift = eval_rule['lift'][tc]
                     tt_coverage = eval_rule['coverage']
@@ -303,6 +320,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                     print('rule stability (unseen data): ' + str(tt_stab))
                     print('rule recall (unseen data): ' + str(tt_recall))
                     print('rule f1 score (unseen data): ' + str(tt_f1))
+                    print('rule NPV (unseen data): ' + str(tt_npv))
                     print('rule lift (unseen data): ' + str(tt_lift))
                     print('prior (unseen data): ' + str(tt_prior))
                     print('prior counts (unseen data): ' + str(tt_prior_counts))
@@ -342,12 +360,15 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         p_perf = f_perf # for CHIRPS, forest pred and CHIRPS target are always the same
         fid = 1 # for CHIRPS, forest pred and CHIRPS target are always the same
         summary_results = [[dataset_name, results[0][2], len(b_CHIRPS_exp.CHIRPS_explainers), 1, \
-                            1, 1, 1, 0, np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
+                            1, 1, 1, 0, \
+                            np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
                             eval_start_time, time.asctime( time.localtime(time.time()) ), \
                             f_perf, sqrt((f_perf/(1-f_perf))/len(b_CHIRPS_exp.CHIRPS_explainers)), \
-                            1, 0, 1, 0]]
+                            1, 0, \
+                            1, 1, 0]]
 
         save_results(cfg.summary_results_headers, summary_results, save_results_path, save_results_file + '_summary')
+        print(save_results_path)
 
     if save_CHIRPS:
         # save the batch_CHIRPS_explainer object

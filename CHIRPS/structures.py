@@ -1,6 +1,7 @@
 import sys
 import math
 import multiprocessing as mp
+import traceback
 import numpy as np
 from pandas import DataFrame, Series
 from CHIRPS import p_count_corrected, if_nexists_make_dir, chisq_indep_test, entropy_corrected
@@ -764,17 +765,37 @@ class evaluator:
 
         if class_names is None:
             class_names = [i for i in range(len(np.unique(prior_labels)))]
+
+        # priors
+        all_c = len(prior_labels) # count all
         prior = p_count_corrected(prior_labels, class_names)
 
-        coverage = post_idx.sum()/len(post_idx) # tp + fp / tp + fp + tn + fn
-        xcoverage = post_idx.sum()/(len(post_idx) + 1 ) # tp + fp / tp + fp + tn + fn + current instance
-
+        # basic results
         p_counts = p_count_corrected(prior_labels[post_idx], class_names)
-        posterior = p_counts['p_counts']
-        stability = p_counts['s_counts']
-
-        counts = p_counts['counts']
+        counts = p_counts['counts'] # cc, covered and correct (for any label)
+        c = np.sum(counts) # covered
+        ci = c - counts # covered incorrect (total of other labels covered - won't add up to number of labels so do not sum ci)
         labels = p_counts['labels']
+        posterior = p_counts['p_counts']
+
+        # coverage
+        # tp + fp / tp + fp + tn + fn
+        coverage = c / all_c
+        # xcov = tp + fp / tp + fp + tn + fn + current instance, laplace corrected
+        xcoverage = (c + 1)/(all_c + len(class_names) + 1)
+
+        # stab = tp / tp + fp + current instance, laplace corrected
+        stability = (counts + 1) / (np.sum(counts) + len(class_names) + 1)
+
+        # negative results
+        np_counts = p_count_corrected(prior_labels[np.logical_not(post_idx)], class_names)
+        ncounts = np_counts['counts'] # ncc, not covered but still correct (for any label)
+        nc = all_c - c # not covered
+        nci = np.sum(ncounts) - ncounts
+        nlabels = np_counts['labels']
+        nposterior = np_counts['p_counts']
+        # tn / tn + fn, (all labels - the ones predicted) / (all instances - covered instances)
+        npv = ncounts /(ncounts + ci)
 
         # rfhc = [] # score from ForEx++ and rf+hc papers
         # for lab in labels:
@@ -810,8 +831,16 @@ class evaluator:
         # lift = precis / (total_cover * prior)
         lift = pos_corrected / ( cov_corrected * pri_corrected )
 
-        return({'coverage' : coverage,
+        output = {'count_all' : all_c,
+                'covered' : c,
+                'not_covered' : nc,
+                'cc' : counts,
+                'ci' : ci,
+                'ncc' : ncounts,
+                'nci' : nci,
+                'coverage' : coverage,
                 'xcoverage' : xcoverage,
+                'npv' : npv,
                 'stability' : stability,
                 'prior' : prior,
                 'posterior' : posterior,
@@ -823,7 +852,8 @@ class evaluator:
                 'lift' : lift,
                 'chisq' : chisq,
                 'kl_div' : kl_div
-                })
+                }
+        return(output)
 
     def prettify_rule(self, rule=None, var_dict=None):
 
@@ -1031,6 +1061,11 @@ class CHIRPS_explainer(rule_evaluator):
                 counts,
                 recall,
                 f1,
+                cc,
+                ci,
+                ncc,
+                nci,
+                npv,
                 lift,
                 chisq,
                 kl_div,
@@ -1061,6 +1096,11 @@ class CHIRPS_explainer(rule_evaluator):
         self.counts = counts
         self.recall = recall
         self.f1 = f1
+        self.cc = cc
+        self.ci = ci
+        self.ncc = ncc
+        self.nci = nci
+        self.npv = npv
         self.lift = lift
         self.chisq = chisq
         self.kl_div = kl_div
@@ -1078,6 +1118,11 @@ class CHIRPS_explainer(rule_evaluator):
         self.est_stab = list(reversed(self.stability))[0][self.target_class]
         self.est_recall = list(reversed(self.recall))[0][self.target_class]
         self.est_f1 = list(reversed(self.f1))[0][self.target_class]
+        self.est_cc = list(reversed(self.cc))[0][self.target_class]
+        self.est_ci = list(reversed(self.ci))[0][self.target_class]
+        self.est_ncc = list(reversed(self.ncc))[0][self.target_class]
+        self.est_nci = list(reversed(self.nci))[0][self.target_class]
+        self.est_npv = list(reversed(self.npv))[0][self.target_class]
         self.est_acc = list(reversed(self.accuracy))[0][self.target_class]
         self.est_lift = list(reversed(self.lift))[0][self.target_class]
         self.est_coverage = list(reversed(self.counts))[0].sum() / self.counts[0].sum()
@@ -1265,6 +1310,7 @@ class CHIRPS_explainer(rule_evaluator):
         print('rule stability (training data): ' + str(self.est_stab))
         print('rule recall (training data): ' + str(self.est_recall))
         print('rule f1 score (training data): ' + str(self.est_f1))
+        print('rule NPV (training data): ' + str(self.est_npv))
         print('rule lift (training data): ' + str(self.est_lift))
         print('prior (training data): ' + str(self.prior))
         print('prior counts (training data): ' + str(self.prior_counts))
@@ -1296,6 +1342,11 @@ class CHIRPS_explainer(rule_evaluator):
         'counts' : self.counts,
         'recall' : self.recall,
         'f1' : self.f1,
+        'cc' : self.cc,
+        'ci' : self.ci,
+        'ncc' : self.ncc,
+        'nci' : self.nci,
+        'npv' : self.npv,
         'lift' : self.lift,
         'chisq' : self.chisq,
         'algorithm' : algorithm})
@@ -1368,6 +1419,11 @@ class CHIRPS_runner(rule_evaluator):
         self.counts = None
         self.recall = None
         self.f1 = None
+        self.cc = None
+        self.ci = None
+        self.ncc = None
+        self.nci = None
+        self.npv = None
         self.lift = None
         self.chisq = []
         self.kl_div = []
@@ -1473,7 +1529,6 @@ class CHIRPS_runner(rule_evaluator):
         # best at -1 < alpha < 1
         # now the patterns are scored and sorted. alpha > 0 favours longer patterns. 0 neutral. < 0 shorter.
         # the patterns can be weighted by chi**2 for independence test, p-values
-        print(len(self.patterns))
         if weighting is None:
             self.sort_patterns(alpha=alpha_paths, score_func=score_func) # with only support/alpha sorting
         else:
@@ -1672,6 +1727,7 @@ class CHIRPS_runner(rule_evaluator):
                         algorithm='greedy_stab',
                         merging_bootstraps = 0,
                         pruning_bootstraps = 0,
+                        bootstrap_confidence = 0.95,
                         delta = 0.1,
                         random_state=None):
 
@@ -1719,18 +1775,26 @@ class CHIRPS_runner(rule_evaluator):
             self.target_class_label = self.get_label(self.class_col, [self.target_class])
 
         # prior - empty rule
-        p_counts = p_count_corrected(sample_labels, [i for i in range(len(self.class_names))])
-        self.posterior = np.array([p_counts['p_counts'].tolist()])
-        self.stability = np.array([p_counts['s_counts'].tolist()])
-        self.counts = np.array([p_counts['counts'].tolist()])
+        prior_eval = self.evaluate(sample_labels, np.full(len(sample_labels), True))
+        # p_counts = p_count_corrected(sample_labels, [i for i in range(len(self.class_names))])
+        self.posterior = np.array([prior_eval['posterior'].tolist()])
+        self.counts = np.array([prior_eval['counts'].tolist()])
+
+        self.stability = np.array([prior_eval['stability'].tolist()])
+
         self.recall = [np.full(self.n_classes, 1.0)] # counts / prior counts
         self.f1 =  [2] * ( ( self.posterior * self.recall ) / ( self.posterior + self.recall ) ) # 2 * (precis * recall/(precis + recall) )
-        self.accuracy = np.array([p_counts['p_counts'].tolist()])
+        self.accuracy = np.array([prior_eval['accuracy'].tolist()])
         self.lift = [np.full(self.n_classes, 1.0)] # precis / (total_cover * prior)
+        self.cc = np.array([prior_eval['cc'].tolist()])
+        self.ci = np.array([prior_eval['ci'].tolist()])
+        self.ncc = np.array([prior_eval['ncc'].tolist()])
+        self.nci = np.array([prior_eval['nci'].tolist()])
+        self.npv = np.array([prior_eval['npv'].tolist()])
 
         # pre-loop set up
         # rule based measures - prior/empty rule
-        current_precision = p_counts['p_counts'][np.where(p_counts['labels'] == self.target_class)][0] # based on prior
+        current_precision = prior_eval['posterior'][np.where(prior_eval['labels'] == self.target_class)][0] # based on prior
 
         # accumulate rule terms
         rule_length_counter = 0
@@ -1745,7 +1809,6 @@ class CHIRPS_runner(rule_evaluator):
             self.merge_rule_iter += 1
 
             candidate = self.add_rule_term()
-
             eval_rule = self.evaluate_rule(sample_instances=sample_instances,
                                     sample_labels=sample_labels)
             # confirm rule, or revert to previous
@@ -1774,7 +1837,9 @@ class CHIRPS_runner(rule_evaluator):
                 b_curr = np.full(merging_bootstraps, np.nan)
                 b_prev = np.full(merging_bootstraps, np.nan)
                 for b in range(merging_bootstraps):
+
                     idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
+
                     b_sample_instances = sample_instances[idx]
                     b_sample_labels = sample_labels[idx]
 
@@ -1787,7 +1852,7 @@ class CHIRPS_runner(rule_evaluator):
                                                 sample_labels=b_sample_labels)
                     b_prev[b] = b_eval_prev[metric][np.where(b_eval_prev['labels'] == self.target_class)]
 
-                should_continue = self.__greedy_commit__((b_curr > b_prev).sum(), 0.95 * merging_bootstraps)
+                should_continue = self.__greedy_commit__((b_curr > b_prev).sum(), bootstrap_confidence * merging_bootstraps)
 
             if should_continue:
                 continue # don't update all the metrics, just go to the next round
@@ -1810,6 +1875,11 @@ class CHIRPS_runner(rule_evaluator):
             self.lift = np.append(self.lift, [eval_rule['lift']], axis=0 )
             self.chisq = np.append(self.chisq, [eval_rule['chisq']], axis=0 ) # p-value
             self.kl_div = np.append(self.kl_div, [eval_rule['kl_div']], axis=0 )
+            self.cc = np.append(self.cc, [eval_rule['cc']], axis=0 )
+            self.ci = np.append(self.ci, [eval_rule['ci']], axis=0 )
+            self.ncc = np.append(self.ncc, [eval_rule['ncc']], axis=0 )
+            self.nci = np.append(self.nci, [eval_rule['nci']], axis=0 )
+            self.npv = np.append(self.npv, [eval_rule['npv']], axis=0 )
 
             # update the var_dict with the rule values
             for item in candidate:
@@ -1839,7 +1909,6 @@ class CHIRPS_runner(rule_evaluator):
 
         # case no solution was found
         if len(self.kl_div) == 0:
-            print('no solution, kl_div correction')
             self.kl_div = np.append(self.kl_div, [0], axis=0 )
 
         # first time major_class is isolated
@@ -1889,28 +1958,13 @@ class CHIRPS_runner(rule_evaluator):
 
             to_remove = []
             for rc in range(n_rule_complements):
-                if (b_pruned - delta >= b_rcr[:,rc]).sum() < 0.95 * pruning_bootstraps:
+                if (b_pruned - delta >= b_rcr[:,rc]).sum() < bootstrap_confidence * pruning_bootstraps:
                         if self.var_dict[rcr['feature']]['data_type'] == 'nominal':
                             to_remove = to_remove + self.var_dict[rcr['feature']]['labels_enc']
                         else:
                             to_remove = to_remove + [rcr['feature']]
             self.pruned_rule = [(f, t, v) for f, t, v in self.pruned_rule if f not in to_remove]
         # else: do nothing
-            # eval_pruned = self.evaluate_rule(rule=self.pruned_rule, sample_instances=self.sample_instances, sample_labels=self.sample_labels)
-            # rule_complement_results = self.eval_rule_complements(sample_instances=self.sample_instances, sample_labels=self.sample_labels)
-            #
-            # tt_rule_posterior = eval_pruned['posterior']
-            # tt_rule_posterior_counts = eval_pruned['counts']
-            # print(self.pruned_rule)
-            # print(tt_rule_posterior)
-            # print(tt_rule_posterior_counts)
-
-            # for rcr in rule_complement_results:
-            #     eval_rcr = rcr['eval']
-            #     rcr_posterior = eval_rcr['posterior']
-                # rcr_posterior_counts = eval_rcr['counts']
-                # rcr_chisq = chisq_indep_test(rcr_posterior_counts, tt_rule_posterior_counts)[1]
-                # rcr_kl_div = entropy_corrected(rcr_posterior, tt_rule_posterior)
 
     def get_CHIRPS_explainer(self, elapsed_time=0):
 
@@ -1930,6 +1984,11 @@ class CHIRPS_runner(rule_evaluator):
         self.counts,
         self.recall,
         self.f1,
+        self.cc,
+        self.ci,
+        self.ncc,
+        self.nci,
+        self.npv,
         self.lift,
         self.chisq,
         self.kl_div,
@@ -1964,8 +2023,8 @@ class batch_CHIRPS_explainer:
             'precis_threshold' : 0.95,
             'weighting' : 'chisq',
             'algorithm' : 'greedy_stab',
-            'merging_bootstraps' : 20,
-            'pruning_bootstraps' : 200,
+            'merging_bootstraps' : 0,
+            'pruning_bootstraps' : 0,
             'delta' : 0.15 }
         options.update(kwargs)
 

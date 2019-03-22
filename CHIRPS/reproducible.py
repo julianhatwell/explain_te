@@ -42,7 +42,8 @@ def export_data_splits(datasets, project_dir=None, random_state_splits=123):
 
 def forest_prep(ds_container, meta_data,
                 save_path=None, override_tuning=False,
-                tuning_grid=None, identifier='main'):
+                tuning_grid=None, identifier='main',
+                plot_cm=False, plot_cm_norm=False):
 
     X_train=ds_container.X_train_enc
     X_test=ds_container.X_test_enc
@@ -71,7 +72,7 @@ def forest_prep(ds_container, meta_data,
     # 0 <= p, r, f <= 1. s = number of instances for each true class label (row sums of cm)
     rt.evaluate_model(y_true=y_test, y_pred=rf.predict(X_test),
                         class_names=class_names,
-                        plot_cm=False, plot_cm_norm=False, # False here will output the metrics and suppress the plots
+                        plot_cm=plot_cm, plot_cm_norm=plot_cm_norm, # False here will output the metrics and suppress the plots
                         save_path=save_path,
                         identifier=identifier,
                         random_state=random_state)

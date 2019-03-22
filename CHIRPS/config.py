@@ -13,11 +13,12 @@ results_headers = ['dataset_name', 'instance_id', 'algorithm',
             'target class', 'target class label',
             'forest vote share', 'pred prior',
             'precision(tr)', 'stability(tr)', 'recall(tr)',
-            'f1(tr)', 'accuracy(tr)', 'lift(tr)',
-            'coverage(tr)', 'xcoverage(tr)', 'kl_div(tr)',
+            'f1(tr)', 'cc(tr)', 'ci(tr)', 'ncc(tr)', 'nci(tr)', 'npv(tr)',
+            'accuracy(tr)', 'lift(tr)', 'coverage(tr)', 'xcoverage(tr)', 'kl_div(tr)',
             'precision(tt)', 'stability(tt)', 'recall(tt)',
-            'f1(tt)', 'accuracy(tt)', 'lift(tt)',
-            'coverage(tt)', 'xcoverage(tt)', 'kl_div(tt)', 'elapsed_time']
+            'f1(tt)', 'cc(tt)', 'ci(tt)', 'ncc(tt)', 'nci(tt)', 'npv(tt)',
+            'accuracy(tt)', 'lift(tt)', 'coverage(tt)', 'xcoverage(tt)', 'kl_div(tt)',
+            'elapsed_time']
 
 summary_results_headers = ['dataset_name', 'algorithm', 'n_instances', 'n_rules', \
                             'n_rules_used', 'median_rule_cascade', 'mean_rule_cascade', 'sd_rule_cascade', \
