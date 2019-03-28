@@ -220,8 +220,9 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         tt_xcoverage = eval_rule['xcoverage']
         tt_kl_div = eval_rule['kl_div']
 
+        # the rule complements to be assessed on the train set: it's out put for the user.
         if eval_rule_complements:
-            rule_complement_results = c.eval_rule_complements(sample_instances=instances_enc, sample_labels=labels)
+            rule_complement_results = c.eval_rule_complements(sample_instances=ds_container.X_train_enc, sample_labels=ds_container.y_train)
 
         if eval_alt_labelings:
             # get the current instance being explained
@@ -274,7 +275,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         if print_to_screen:
             print('INSTANCE RESULTS')
             print('instance id: ' + str(instance_id) + ' with true class label: ' + str(current_instance_label.values[0]) + \
-                    ' (' + c.get_label(c.class_col, current_instance_label.values[0]) + ')')
+                    ' (' + c.get_label(c.class_col, current_instance_label.values) + ')')
             print()
             c.to_screen()
             print('Results - Previously Unseen Sample')
@@ -299,6 +300,8 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                 print('RULE COMPLEMENT RESULTS')
                 for rcr in rule_complement_results:
                     eval_rule = rcr['eval']
+                    tt_prior = eval_rule['prior']['p_counts']
+                    tt_prior_counts = eval_rule['prior']['counts']
                     tt_posterior = eval_rule['posterior']
                     tt_posterior_counts = eval_rule['counts']
                     tt_chisq = chisq_indep_test(tt_posterior_counts, tt_prior_counts)[1]
@@ -314,19 +317,19 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                     kl_div = rcr['kl_div']
                     print('Feature Reversed: ' + rcr['feature'])
                     print('rule: ' + rcr['pretty_rule'])
-                    print('rule coverage (unseen data): ' + str(tt_coverage))
-                    print('rule xcoverage (unseen data): ' + str(tt_xcoverage))
-                    print('rule precision (unseen data): ' + str(tt_prec))
-                    print('rule stability (unseen data): ' + str(tt_stab))
-                    print('rule recall (unseen data): ' + str(tt_recall))
-                    print('rule f1 score (unseen data): ' + str(tt_f1))
-                    print('rule NPV (unseen data): ' + str(tt_npv))
-                    print('rule lift (unseen data): ' + str(tt_lift))
-                    print('prior (unseen data): ' + str(tt_prior))
-                    print('prior counts (unseen data): ' + str(tt_prior_counts))
-                    print('rule posterior (unseen data): ' + str(tt_posterior))
-                    print('rule posterior counts (unseen data): ' + str(tt_posterior_counts))
-                    print('rule chisq p-value (unseen data): ' + str(tt_chisq))
+                    print('rule coverage (training data): ' + str(tt_coverage))
+                    print('rule xcoverage (training data): ' + str(tt_xcoverage))
+                    print('rule precision (training data): ' + str(tt_prec))
+                    print('rule stability (training data): ' + str(tt_stab))
+                    print('rule recall (training data): ' + str(tt_recall))
+                    print('rule f1 score (training data): ' + str(tt_f1))
+                    print('rule NPV (training data): ' + str(tt_npv))
+                    print('rule lift (training data): ' + str(tt_lift))
+                    print('prior (training data): ' + str(tt_prior))
+                    print('prior counts (training data): ' + str(tt_prior_counts))
+                    print('rule posterior (training data): ' + str(tt_posterior))
+                    print('rule posterior counts (training data): ' + str(tt_posterior_counts))
+                    print('rule chisq p-value (training data): ' + str(tt_chisq))
                     print('rule Kullback-Leibler divergence from original: ' + str(kl_div))
                     if eval_alt_labelings:
                         for alt_labels in alt_labelings_results:
@@ -336,12 +339,12 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                     print('note: this combination does not exist in the original data \
                                     \nexercise caution when interpreting the results.')
                                 print('instance specific. expected class: ' + str(np.argmax(alt_labels['is_mask']['p_counts'])) + \
-                                        ' (' + c.get_label(c.class_col, np.argmax(alt_labels['is_mask']['p_counts'])) + ')')
+                                        ' (' + c.get_label(c.class_col, [np.argmax(alt_labels['is_mask']['p_counts'])]) + ')')
                                 print('classes: ' + str(alt_labels['is_mask']['labels']))
                                 print('counts: ' + str(alt_labels['is_mask']['counts']))
                                 print('proba: ' + str(alt_labels['is_mask']['p_counts']))
                                 print('allowed values. expected class: ' + str(np.argmax(alt_labels['av_mask']['p_counts'])) + \
-                                        ' (' + c.get_label(c.class_col, np.argmax(alt_labels['is_mask']['p_counts'])) + ')')
+                                        ' (' + c.get_label(c.class_col, [np.argmax(alt_labels['is_mask']['p_counts'])]) + ')')
                                 print('classes: ' + str(alt_labels['av_mask']['labels']))
                                 print('counts: ' + str(alt_labels['av_mask']['counts']))
                                 print('proba: ' + str(alt_labels['av_mask']['p_counts']))

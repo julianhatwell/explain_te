@@ -792,10 +792,9 @@ class evaluator:
         ncounts = np_counts['counts'] # ncc, not covered but still correct (for any label)
         nc = all_c - c # not covered
         nci = np.sum(ncounts) - ncounts
-        nlabels = np_counts['labels']
         nposterior = np_counts['p_counts']
         # tn / tn + fn, (all labels - the ones predicted) / (all instances - covered instances)
-        npv = ncounts /(ncounts + ci)
+        npv = nci /(nci + ci)
 
         # rfhc = [] # score from ForEx++ and rf+hc papers
         # for lab in labels:
@@ -1799,6 +1798,7 @@ class CHIRPS_runner(rule_evaluator):
         # accumulate rule terms
         rule_length_counter = 0
         self.merge_rule_iter = 0
+        default_metric = 0.0
 
         while current_precision != 1.0 \
             and current_precision != 0.0 \
@@ -1830,6 +1830,10 @@ class CHIRPS_runner(rule_evaluator):
             curr = eval_rule[metric]
             current = curr[np.where(eval_rule['labels'] == self.target_class)]
             previous = list(reversed(prev))[0][np.where(eval_rule['labels'] == self.target_class)]
+
+            if rule_length_counter == 0 and current > default_metric: # we need a default rule
+                default_rule = self.rule # whatever was just set as the candidate
+                default_metric = current[0]
 
             if merging_bootstraps == 0:
                 should_continue = self.__greedy_commit__(current, previous)
@@ -1908,6 +1912,9 @@ class CHIRPS_runner(rule_evaluator):
                             self.var_dict[item[0]]['lower_bound'][0] = item[2]
 
         # case no solution was found
+        if rule_length_counter == 0:
+            print("no solution")
+            self.rule = default_rule
         if len(self.kl_div) == 0:
             self.kl_div = np.append(self.kl_div, [0], axis=0 )
 
@@ -1922,49 +1929,62 @@ class CHIRPS_runner(rule_evaluator):
         # rule complement testing to remove any redundant rule terms
 
         if pruning_bootstraps > 0:
-            # get a bootstrapped evaluation
-            b_pruned = np.full(pruning_bootstraps, np.nan)
-            for b in range(pruning_bootstraps):
-                idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
-                b_sample_instances = sample_instances[idx]
-                b_sample_labels = sample_labels[idx]
+            curr_len = len(self.pruned_rule) + 1
+            new_len = curr_len - 1
+            current_rule = self.pruned_rule
+            while curr_len > new_len and new_len > 1: # repeat until no more improvement, stop before removing last rule
+                # get a bootstrapped evaluation
+                b_current = np.full(pruning_bootstraps, np.nan)
+                for b in range(pruning_bootstraps):
+                    idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
+                    b_sample_instances = sample_instances[idx]
+                    b_sample_labels = sample_labels[idx]
 
-                eval_pruned = self.evaluate_rule(rule=self.pruned_rule, sample_instances=b_sample_instances, sample_labels=b_sample_labels)
-                eval_pruned_post = eval_pruned['posterior']
-                eval_pruned_counts = eval_pruned['counts']
-                rule_complement_results = self.eval_rule_complements(sample_instances=b_sample_instances, sample_labels=b_sample_labels)
-                b_pruned[b] = eval_pruned_post[np.where(eval_rule['labels'] == self.target_class)]
+                    eval_current = self.evaluate_rule(rule=current_rule, sample_instances=b_sample_instances, sample_labels=b_sample_labels)
+                    eval_current_post = eval_current['posterior']
+                    eval_current_counts = eval_current['counts']
+                    b_current[b] = eval_current_post[np.where(eval_rule['labels'] == self.target_class)]
 
-                n_rule_complements = len(rule_complement_results)
-                b_rc = np.full(n_rule_complements, np.nan)
-                b_rc_kl = np.full(n_rule_complements, np.nan)
-                b_rc_chisq = np.full(n_rule_complements, np.nan)
-                for rc, rcr in enumerate(rule_complement_results):
-                    eval_rcr = rcr['eval']
-                    rcr_posterior = eval_rcr['posterior']
-                    b_rc[rc] = rcr_posterior[np.where(eval_rcr['labels'] == self.target_class)]
-                    # rcr_posterior_counts = eval_rcr['counts']
-                    # b_rc_kl[rc] = entropy_corrected(rcr_posterior, eval_pruned_post)
-                    # b_rc_chisq[rc] = chisq_indep_test(rcr_posterior_counts, eval_pruned_counts)[1]
+                    rule_complement_results = self.eval_rule_complements(sample_instances=b_sample_instances, sample_labels=b_sample_labels)
+                    n_rule_complements = len(rule_complement_results)
+                    b_rc = np.full(n_rule_complements, np.nan)
 
-                if b == 0:
-                    b_rcr = np.array(b_rc)
-                    # b_rcr_kl = np.array(b_rc_kl)
-                    # b_rcr_chisq = np.array(b_rc_chisq)
-                else:
-                    b_rcr = np.vstack((b_rcr, b_rc))
-                    # b_rcr_kl = np.vstack((b_rcr_kl, b_rc_kl))
-                    # b_rcr_chisq = np.vstack((b_rcr_chisq, b_rc_chisq))
+                    for rc, rcr in enumerate(rule_complement_results):
+                        eval_rcr = rcr['eval']
+                        rcr_posterior = eval_rcr['posterior']
+                        b_rc[rc] = rcr_posterior[np.where(eval_rcr['labels'] == self.target_class)]
+                        # rcr_posterior_counts = eval_rcr['counts']
 
-            to_remove = []
-            for rc in range(n_rule_complements):
-                if (b_pruned - delta >= b_rcr[:,rc]).sum() < bootstrap_confidence * pruning_bootstraps:
-                        if self.var_dict[rcr['feature']]['data_type'] == 'nominal':
-                            to_remove = to_remove + self.var_dict[rcr['feature']]['labels_enc']
-                        else:
-                            to_remove = to_remove + [rcr['feature']]
-            self.pruned_rule = [(f, t, v) for f, t, v in self.pruned_rule if f not in to_remove]
+                    if b == 0:
+                        b_rcr = np.array(b_rc)
+                    else:
+                        b_rcr = np.vstack((b_rcr, b_rc))
+
+                to_remove = []
+                for rc in range(n_rule_complements):
+                    if (b_current - delta >= b_rcr[:,rc]).sum() < bootstrap_confidence * pruning_bootstraps:
+                            if self.var_dict[rule_complement_results[rc]['feature']]['data_type'] == 'nominal':
+                                to_remove = to_remove + self.var_dict[rule_complement_results[rc]['feature']]['labels_enc']
+                            else:
+                                to_remove = to_remove + [rule_complement_results[rc]['feature']]
+
+                self.__previous_rule = self.pruned_rule
+                self.pruned_rule = [(f, t, v) for f, t, v in self.pruned_rule if f not in to_remove]
+                curr_len = new_len
+                new_len = len(self.pruned_rule)
         # else: do nothing
+
+        # belt and braces - if rule pruning drops everything
+        if len(self.pruned_rule) == 0:
+            print("solution pruned away. defaulting")
+            self.pruned_rule = [self.__previous_rule[np.argmin(np.mean(b_rcr, axis=0))]] # keep the one that drops precision the most
+
+            # self.rule = self.pruned_rule[0]
+            # print("solution pruned away. defaulting")
+            # print(default_rule)
+            # self.rule = default_rule
+            # self.pruned_rule = default_rule
+
 
     def get_CHIRPS_explainer(self, elapsed_time=0):
 
@@ -2023,9 +2043,9 @@ class batch_CHIRPS_explainer:
             'precis_threshold' : 0.95,
             'weighting' : 'chisq',
             'algorithm' : 'greedy_stab',
-            'merging_bootstraps' : 0,
-            'pruning_bootstraps' : 0,
-            'delta' : 0.15 }
+            'merging_bootstraps' : 20,
+            'pruning_bootstraps' : 20,
+            'delta' : 0.1 }
         options.update(kwargs)
 
         # convenience function to orient the top level of bpc
