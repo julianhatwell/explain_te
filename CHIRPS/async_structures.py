@@ -1,12 +1,14 @@
 # this module is required for parallel processing
 # parallel requires functions/classes to be in __main__ or already referenced.
 # as this code is quite complex, the latter is preferred
+import time
+import timeit
 import math
 import numpy as np
 from scipy import sparse
 from copy import deepcopy
 from collections import deque
-from scipy.stats import chi2_contingency, entropy
+from scipy.stats import chi2_contingency
 
 # parallelisable function for the forest_walker class
 def as_tree_walk(tree_idx, instances, labels, n_instances,
@@ -80,30 +82,44 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
 
     return(tree_idx, tree_paths)
 
-def as_CHIRPS(c_runner,
-                sample_instances, sample_labels, forest,
+def as_CHIRPS(c_runner, target_class,
+                sample_instances, sample_labels, forest, forest_walk_mean_elapsed_time,
                 support_paths=0.1, alpha_paths=0.0,
                 disc_path_bins=4, disc_path_eqcounts=False,
-                weighting='chisq', algorithm='greedy_stab',
-                precis_threshold=0.95, batch_idx=None):
+                score_func=1, weighting='chisq',
+                algorithm='greedy_stab',
+                merging_bootstraps=0, pruning_bootstraps=0,
+                delta=0.1, precis_threshold=0.95, batch_idx=None):
     # these steps make up the CHIRPS process:
     # mine paths for freq patts
-
     # fp growth mining
+
+    # collect the time taken
+    cr_start_time = timeit.default_timer()
+
     c_runner.mine_path_segments(support_paths,
                             disc_path_bins, disc_path_eqcounts)
 
     # score and sort
+    # if len(c_runner.patterns) > 1000:
+    #      print('a long wait for label ' + str(batch_idx))
+    #      print([cp for i, cp in enumerate(c_runner.patterns) if i < 50])
     c_runner.score_sort_path_segments(sample_instances, sample_labels,
-                                    alpha_paths, weighting)
+                                    target_class, alpha_paths, score_func, weighting)
 
     # greedily add terms to create rule
     c_runner.merge_rule(sample_instances=sample_instances,
                 sample_labels=sample_labels,
                 forest=forest,
                 algorithm=algorithm,
+                merging_bootstraps=merging_bootstraps,
+                pruning_bootstraps=pruning_bootstraps,
+                delta=delta,
                 precis_threshold=precis_threshold)
-    c_runner.prune_rule()
-    CHIRPS_exp = c_runner.get_CHIRPS_explainer()
 
+    cr_end_time = timeit.default_timer()
+    cr_elapsed_time = cr_end_time - cr_start_time
+    cr_elapsed_time = cr_elapsed_time + forest_walk_mean_elapsed_time
+
+    CHIRPS_exp = c_runner.get_CHIRPS_explainer(cr_elapsed_time)
     return(batch_idx, CHIRPS_exp)

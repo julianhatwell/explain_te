@@ -528,6 +528,9 @@ if True:
     var_names = list(rcdv.columns[0:recid_pos]) + list(rcdv.columns[recid_pos + 1: len(rcdv.columns)]) + ['recid']
     rcdv = rcdv[var_names]
 
+    # convert class column to a categorical
+    rcdv['recid'] = rcdv['recid'].transform(lambda x: 'Y' if x == 1 else 'N')
+
     # save it out
     rcdv.to_csv('CHIRPS\\datafiles\\rcdv.csv.gz', index=False, compression='gzip')
 

@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path as pth
 from os import makedirs as mkdir
-from scipy.stats import chi2_contingency
+from scipy.stats import chi2_contingency, entropy
 
 # helper function determines if we're in a jup notebook
 def in_ipynb():
@@ -24,25 +24,21 @@ def p_count(arr):
     return(
     {'labels' : labels,
     'counts' : counts,
-    'p_counts' : counts / len(arr),
-    's_counts' : counts / (len(arr) + 1)})
+    'p_counts' : counts / len(arr)})
 
 # insert any zeros for unrepresented classes
 def p_count_corrected(arr, classes):
     n_classes = len(classes)
     p_counts = p_count(arr)
-    sc = np.zeros(n_classes)
     pc = np.zeros(n_classes)
     c = np.zeros(n_classes, dtype=np.int64)
     for i, cn in enumerate(classes):
         if cn in p_counts['labels']:
-            sc[i] = p_counts['s_counts'][np.where(p_counts['labels'] == cn)][0]
             pc[i] = p_counts['p_counts'][np.where(p_counts['labels'] == cn)][0]
             c[i] = p_counts['counts'][np.where(p_counts['labels'] == cn)][0]
     return({'labels' : classes,
     'counts' : c,
-    'p_counts' : pc,
-    's_counts' : sc})
+    'p_counts' : pc})
 
 def chisq_indep_test(counts, prior_counts):
     if type(counts) == list:
@@ -55,7 +51,21 @@ def chisq_indep_test(counts, prior_counts):
         chisq = (np.nan, np.nan, (r - 1) * (c - 1))
     return(chisq)
 
+def entropy_corrected(p, q):
+    p_smooth = np.random.uniform(size=len(p))
+    q_smooth = np.random.uniform(size=len(p)) # convex smooth idea https://mathoverflow.net/questions/72668/how-to-compute-kl-divergence-when-pmf-contains-0s
+    p_smoothed = p_smooth * 0.01 + np.array(p) * 0.99
+    q_smoothed = q_smooth * 0.01 + np.array(q) * 0.99
+    return(entropy(p_smoothed, q_smoothed))
+
 # create a directory if doesn't exist
 def if_nexists_make_dir(save_path):
     if not pth(save_path).is_dir():
         mkdir(save_path)
+
+# create a file if doesn't exist
+def if_nexists_make_file(save_path, init_text='None'):
+    if not pth(save_path).is_file():
+        f = open(save_path, 'w+')
+        f.write(init_text)
+        f.close()
