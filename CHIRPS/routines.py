@@ -6,7 +6,6 @@ import numpy as np
 import multiprocessing as mp
 from pandas import DataFrame, Series
 
-from scipy.stats import chi2_contingency
 from math import sqrt
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import ParameterGrid
