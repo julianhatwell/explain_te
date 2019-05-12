@@ -1,3 +1,5 @@
+import math
+import numpy as np
 import CHIRPS.datasets as ds
 import CHIRPS.routines as rt
 import CHIRPS.structures as strcts
@@ -19,3 +21,11 @@ from CHIRPS import config as cfg
 # bug in sk-learn. Should be fixed in August
 # import warnings
 # warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
+def calculate_weights(arr):
+    def weight(err):
+        err_value = (1-err)/err
+        return(0.5 * math.log(err_value))
+
+    vweight = np.vectorize(weight)
+
+    return(vweight(arr))
