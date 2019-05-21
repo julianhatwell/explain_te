@@ -40,7 +40,7 @@ def export_data_splits(datasets, project_dir=None, random_state_splits=123):
                                                                 encoded_features = mydata.features_enc)
     print('Exported train-test data for ' + str(len(datasets)) + ' datasets.')
 
-def forest_prep(ds_container, meta_data,
+def forest_prep(ds_container, meta_data, model='RandomForest',
                 save_path=None, override_tuning=False,
                 tuning_grid=None, identifier='main',
                 plot_cm=False, plot_cm_norm=False):
@@ -53,16 +53,36 @@ def forest_prep(ds_container, meta_data,
     class_names=meta_data['class_names_label_order']
     random_state=meta_data['random_state']
 
-    best_params, _ = rt.tune_rf(
-     X=X_train,
-     y=y_train,
-     grid=tuning_grid,
-     save_path=save_path,
-     override_tuning=override_tuning,
-     random_state=random_state)
+    if model == 'RandomForest':
 
-    rf = rt.RandomForestClassifier(random_state=random_state, oob_score=True, **best_params)
-    rf.fit(X_train, y_train)
+        best_params, _ = rt.tune_rf(
+         X=X_train,
+         y=y_train,
+         grid=tuning_grid,
+         save_path=save_path,
+         override_tuning=override_tuning,
+         random_state=random_state)
+
+        best_params.update({'oob_score' : True, 'random_state' : random_state})
+
+        rf = rt.RandomForestClassifier()
+        rf.set_params(**best_params)
+        rf.fit(X=X_train, y=y_train)
+
+    else:
+        best_params, _ = rt.tune_ada(
+         X=X_train,
+         y=y_train,
+         grid=tuning_grid,
+         save_path=save_path,
+         override_tuning=override_tuning,
+         random_state=random_state)
+
+        best_params.update({'random_state' : random_state})
+
+        rf = rt.AdaBoostClassifier()
+        rf.set_params(**best_params)
+        rf.fit(X=X_train, y=y_train)
 
     # the outputs of this function are:
     # cm - confusion matrix as 2d array

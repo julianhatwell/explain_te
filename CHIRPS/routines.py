@@ -7,8 +7,9 @@ import multiprocessing as mp
 from pandas import DataFrame, Series
 
 from math import sqrt
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import ParameterGrid
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
+from sklearn.tree import DecisionTreeClassifier, export_graphviz
+from sklearn.model_selection import ParameterGrid, GridSearchCV
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support, accuracy_score
 
@@ -31,11 +32,17 @@ def extend_path(stem, extensions, is_dir=False):
     else:
         return(stem[:-1])
 
-def do_tuning(X, y, grid = None, random_state=123, save_path = None):
+def default_param_grid(output='PG'):
+    grid = {'n_estimators': [(i + 1) * 200 for i in range(8)]}
+    if output=='PG':
+        return(ParameterGrid(grid))
+    else:
+        return(grid)
+
+def do_rf_tuning(X, y,
+            grid = None, random_state=123, save_path = None):
     if grid is None:
-        grid = ParameterGrid({
-            'n_estimators': [(i + 1) * 200 for i in range(8)]
-            })
+        grid = default_param_grid()
 
     start_time = timeit.default_timer()
 
@@ -69,34 +76,42 @@ def do_tuning(X, y, grid = None, random_state=123, save_path = None):
 
     if save_path is not None:
         if_nexists_make_dir(save_path)
-        with open(save_path + 'best_params_rnst_' + str(random_state) + '.json', 'w') as outfile:
+        with open(save_path + 'rf_best_params_rnst_' + str(random_state) + '.json', 'w') as outfile:
             json.dump(best_params, outfile)
-        with open(save_path + 'forest_performance_rnst_' + str(random_state) + '.json', 'w') as outfile:
+        with open(save_path + 'rf_forest_performance_rnst_' + str(random_state) + '.json', 'w') as outfile:
             json.dump(forest_performance, outfile)
 
     return(best_params, forest_performance)
 
-def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuning=False):
+def tune_rf(X, y,
+            grid = None, random_state=123,
+            save_path = None, override_tuning=False):
 
     # to do - test allowable structure of grid input
     if override_tuning:
         print('Over-riding previous tuning parameters. New grid tuning... (please wait)')
         print()
         tun_start_time = timeit.default_timer()
-        best_params, forest_performance = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
+        best_params, forest_performance = do_rf_tuning(X, y,
+                                                    grid=grid,
+                                                    random_state=random_state,
+                                                    save_path=save_path)
         tun_elapsed_time = timeit.default_timer() - tun_start_time
         print('Tuning time elapsed:', "{:0.4f}".format(tun_elapsed_time), 'seconds')
     else:
         try:
-            with open(save_path + 'best_params_rnst_' + str(random_state) + '.json', 'r') as infile:
+            with open(save_path + 'rf_best_params_rnst_' + str(random_state) + '.json', 'r') as infile:
                 print('using previous tuning parameters')
                 best_params = json.load(infile)
-            with open(save_path + 'forest_performance_rnst_' + str(random_state) + '.json', 'r') as infile:
+            with open(save_path + 'rf_forest_performance_rnst_' + str(random_state) + '.json', 'r') as infile:
                 forest_performance = json.load(infile)
             return(best_params, forest_performance)
         except:
             print('New grid tuning... (please wait)')
-            best_params, forest_performance = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
+            model, best_params, forest_performance = do_rf_tuning(X, y,
+                                                                grid=grid,
+                                                                random_state=random_state,
+                                                                save_path=save_path)
 
     print('Best OOB Accuracy Estimate during tuning: ' '{:0.4f}'.format(forest_performance['oobe_score']))
     print('Best parameters:', best_params)
@@ -104,11 +119,79 @@ def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuni
 
     return(best_params, forest_performance)
 
+def do_ada_tuning(X, y,
+            grid = None, random_state=123, save_path = None):
+    if grid is None:
+        grid = default_param_grid(output='asis')
+
+    start_time = timeit.default_timer()
+    print('Finding best params with 10-fold CV')
+    rf = GridSearchCV(AdaBoostClassifier(random_state=random_state), grid, cv=5)
+    rf.fit(X, y)
+    means = rf.cv_results_['mean_test_score']
+    stds = rf.cv_results_['std_test_score']
+    for mean, std, params in zip(means, stds, rf.cv_results_['params']):
+        print("%0.3f (+/-%0.03f) for %r"
+              % (mean, std * 2, params))
+    elapsed_time = timeit.default_timer() - start_time
+    print('CV time: ' + str(elapsed_time))
+    print()
+
+    best_params = rf.best_params_
+
+    forest_performance = {'cv_score' : rf.best_score_,
+                        'cv_time' : elapsed_time}
+
+    if save_path is not None:
+        if_nexists_make_dir(save_path)
+        with open(save_path + 'ada_best_params_rnst_' + str(random_state) + '.json', 'w') as outfile:
+            json.dump(best_params, outfile)
+        with open(save_path + 'ada_performance_rnst_' + str(random_state) + '.json', 'w') as outfile:
+            json.dump(forest_performance, outfile)
+
+    return(best_params, forest_performance)
+
+def tune_ada(X, y,
+            grid = None, random_state=123,
+            save_path = None, override_tuning=False):
+
+    # to do - test allowable structure of grid input
+    if override_tuning:
+        print('Over-riding previous tuning parameters. New grid tuning... (please wait)')
+        print()
+        tun_start_time = timeit.default_timer()
+        best_params, forest_performance = do_ada_tuning(X, y,
+                                                    grid=grid,
+                                                    random_state=random_state,
+                                                    save_path=save_path)
+        tun_elapsed_time = timeit.default_timer() - tun_start_time
+        print('Tuning time elapsed:', "{:0.4f}".format(tun_elapsed_time), 'seconds')
+    else:
+        try:
+            with open(save_path + 'ada_best_params_rnst_' + str(random_state) + '.json', 'r') as infile:
+                print('using previous tuning parameters')
+                best_params = json.load(infile)
+            with open(save_path + 'ada_performance_rnst_' + str(random_state) + '.json', 'r') as infile:
+                forest_performance = json.load(infile)
+            return(best_params, forest_performance)
+        except:
+            print('New grid tuning... (please wait)')
+            model, best_params, forest_performance = do_ada_tuning(X, y,
+                                                                grid=grid,
+                                                                random_state=random_state,
+                                                                save_path=save_path)
+
+    print('Best Accuracy Estimate during CV: ' '{:0.4f}'.format(forest_performance['cv_score']))
+    print('Best parameters:', best_params)
+    print()
+
+    return(best_params, forest_performance)
+
 def update_model_performance(save_path, test_metrics, identifier, random_state):
-    with open(save_path + 'forest_performance_rnst_' + str(random_state) + '.json', 'r') as infile:
+    with open(save_path + 'rf_forest_performance_rnst_' + str(random_state) + '.json', 'r') as infile:
         forest_performance = json.load(infile)
     forest_performance.update({identifier : test_metrics})
-    with open(save_path + 'forest_performance_rnst_' + str(random_state) + '.json', 'w') as outfile:
+    with open(save_path + 'rf_forest_performance_rnst_' + str(random_state) + '.json', 'w') as outfile:
         json.dump(forest_performance, outfile)
 
 def evaluate_model(y_true, y_pred, class_names=None,
@@ -356,7 +439,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         save_results(cfg.results_headers, results, save_results_path, save_results_file)
 
         # collect summary_results
-        with open(meta_data['get_save_path']() + 'forest_performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
+        with open(meta_data['get_save_path']() + 'rf_forest_performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
             forest_performance = json.load(infile)
         f_perf = forest_performance['main']['test_accuracy']
         p_perf = f_perf # for CHIRPS, forest pred and CHIRPS target are always the same
