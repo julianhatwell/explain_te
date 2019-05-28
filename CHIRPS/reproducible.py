@@ -64,6 +64,7 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
          random_state=random_state)
 
         best_params.update({'oob_score' : True, 'random_state' : random_state})
+        del(best_params['score'])
 
         rf = rt.RandomForestClassifier()
         rf.set_params(**best_params)
@@ -79,6 +80,7 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
          random_state=random_state)
 
         best_params.update({'random_state' : random_state})
+        del(best_params['score'])
 
         rf = rt.AdaBoostClassifier()
         rf.set_params(**best_params)
@@ -91,7 +93,7 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
     # prfs - precision, recall, f-score, support with the following signatures as a 2d array
     # 0 <= p, r, f <= 1. s = number of instances for each true class label (row sums of cm)
     rt.evaluate_model(y_true=y_test, y_pred=rf.predict(X_test),
-                        class_names=class_names,
+                        class_names=class_names, model=model,
                         plot_cm=plot_cm, plot_cm_norm=plot_cm_norm, # False here will output the metrics and suppress the plots
                         save_path=save_path,
                         identifier=identifier,
@@ -99,14 +101,14 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
 
     return(rf)
 
-def unseen_data_prep(ds_container, n_instances=1, batch_size=1, which_split='test'):
+def unseen_data_prep(ds_container, n_instances=1, which_split='test'):
     # this will normalise the above parameters to the size of the dataset
-    n_instances, n_batches = rt.batch_instance_ceiling(ds_container=ds_container, n_instances=n_instances, batch_size=batch_size)
+    n_instances = rt.n_instance_ceiling(ds_container=ds_container, n_instances=n_instances)
 
     # this gets the next batch out of the data_split_container according to the required number of instances
     # all formats can be extracted, depending on the requirement
     # unencoded, encoded (sparse matrix is the type returned by scikit), ordinary dense matrix also available
-    instances, instances_matrix, instances_enc, instances_enc_matrix, labels = ds_container.get_next(batch_size, which_split='test') # default
+    instances, instances_matrix, instances_enc, instances_enc_matrix, labels = ds_container.get_next(n_instances, which_split='test') # default
 
     return(instances, instances_matrix, instances_enc, instances_enc_matrix, labels)
 
@@ -126,8 +128,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
     print('Prepare Unseen Data and Predictions for CHIRPS benchmark')
     # OPTION 1 - batching (to be implemented in the new code, right now it will do just one batch)
     instances, _, instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
-                                                                                n_instances=n_instances,
-                                                                                batch_size=batch_size)
+                                                                                n_instances=n_instances)
     # get predictions
     preds = forest.predict(instances_enc)
 
@@ -254,8 +255,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
     print('Prepare Unseen Data and Predictions for Anchors benchmark')
     # OPTION 1 - batching (to be implemented in the new code, right now it will do just one batch)
     _, instances_matrix, instances_enc, _, labels = unseen_data_prep(ds_container,
-                                            n_instances=n_instances,
-                                            batch_size=batch_size)
+                                            n_instances=n_instances)
     # get predictions
     preds = forest.predict(instances_enc)
     sample_labels = forest.predict(ds_container.X_train_enc) # for train estimates
@@ -432,8 +432,7 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
     print('defragTrees benchmark')
     # OPTION 1 - batching (to be implemented in the new code, right now it will do just one batch)
     _, _, instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
-                                                                            n_instances=n_instances,
-                                                                            batch_size=batch_size)
+                                                                            n_instances=n_instances)
 
     defTrees_mean_elapsed_time = defTrees_elapsed_time / len(labels)
 

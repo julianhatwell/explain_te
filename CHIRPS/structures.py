@@ -118,23 +118,23 @@ class data_split_container:
 
         return(instances, instances_matrix, instances_enc, instances_enc_matrix, labels)
 
-    def get_next(self, batch_size = 1, which_split='train'):
+    def get_next(self, n_instances = 1, which_split='train'):
 
         instances, instances_matrix, instances_enc, instances_enc_matrix, labels = \
                                             self.get_which_split(which_split)
 
         if which_split == 'test':
             current_row = self.current_row_test
-            self.current_row_test += batch_size
+            self.current_row_test += n_instances
         else:
             current_row = self.current_row_train
-            self.current_row_train += batch_size
+            self.current_row_train += n_instances
 
-        instances = instances[current_row:current_row + batch_size]
-        instances_matrix = instances_matrix[current_row:current_row + batch_size]
-        instances_enc = instances_enc[current_row:current_row + batch_size]
-        instances_enc_matrix = instances_enc_matrix[current_row:current_row + batch_size]
-        labels = labels[current_row:current_row + batch_size]
+        instances = instances[current_row:current_row + n_instances]
+        instances_matrix = instances_matrix[current_row:current_row + n_instances]
+        instances_enc = instances_enc[current_row:current_row + n_instances]
+        instances_enc_matrix = instances_enc_matrix[current_row:current_row + n_instances]
+        labels = labels[current_row:current_row + n_instances]
 
         return(instances, instances_matrix, instances_enc, instances_enc_matrix, labels)
 
@@ -1147,6 +1147,8 @@ class CHIRPS_explainer(rule_evaluator):
         sample_instances = sample_instances[idx]
         n_instances = sample_instances.shape[0]
 
+        print(sum(idx))
+
         # reproducibility
         random_state = self.default_if_none_random_state(random_state)
         np.random.seed(random_state)
@@ -1261,6 +1263,8 @@ class CHIRPS_explainer(rule_evaluator):
             except ValueError: # no coverage for rule comp - need to fall back to a distribution that doesn't respect covariance
                 # first will contain a distribution of values for the feature that is reversed in the rule complement
                 # using the distribution from only the flipped term
+                print('in except')
+                print(rc)
                 flipped_rule_term = [item for item in rc if item[0] in var_dict[feature]['labels_enc']]
                 instance_specific_mask = self.mask_by_instance(instance=instance,
                                                             sample_instances=sample_instances,

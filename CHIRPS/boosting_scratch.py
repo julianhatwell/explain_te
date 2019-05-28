@@ -29,3 +29,45 @@ def calculate_weights(arr):
     vweight = np.vectorize(weight)
 
     return(vweight(arr))
+
+# def _samme_proba(estimator, n_classes, X):
+#     """Calculate algorithm 4, step 2, equation c) of Zhu et al [1].
+#     References
+#     ----------
+#     .. [1] J. Zhu, H. Zou, S. Rosset, T. Hastie, "Multi-class AdaBoost", 2009.
+#     """
+#     proba = estimator.predict_proba(X)
+#
+#     # Displace zero probabilities so the log is defined.
+#     # Also fix negative elements which may occur with
+#     # negative sample weights.
+#     proba[proba < np.finfo(proba.dtype).eps] = np.finfo(proba.dtype).eps
+#     log_proba = np.log(proba)
+#
+#     return (n_classes - 1) * (log_proba - (1. / n_classes)
+#                               * log_proba.sum(axis=1)[:, np.newaxis])
+#
+#
+#
+#
+#             if self.algorithm == 'SAMME.R':
+#             # The weights are all 1. for SAMME.R
+#             pred = sum(_samme_proba(estimator, n_classes, X)
+#                        for estimator in self.estimators_)
+#         else:   # self.algorithm == "SAMME"
+#             pred = sum((estimator.predict(X) == classes).T * w
+#                        for estimator, w in zip(self.estimators_,
+#                                                self.estimator_weights_))
+#
+#         pred /= self.estimator_weights_.sum()
+#         if n_classes == 2:
+#             pred[:, 0] *= -1
+#             return pred.sum(axis=1)
+#         return pred
+
+# SAMME.R get weights
+
+# SAMME - use existing weights
+
+# weights and taking into account the discriminative power of the base learner
+# in SAMME.R thiis is directly related
