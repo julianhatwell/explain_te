@@ -150,7 +150,7 @@ def do_ada_tuning(X, y,
 
     best_params = rf.best_params_
     best_params.update({'score' : rf.best_score_})
-    
+
     forest_performance = {'score' : rf.best_score_,
                         'fitting_time' : elapsed_time}
 
@@ -425,7 +425,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                             if alt_labels['feature'] == rcr['feature']:
                                 print('predictions for this rule complement')
                                 if not alt_labels['mask_cover']:
-                                    print('note: this combination does not exist in the original data \
+                                    print('note: this combination does not exist in the unseen data sample \
                                     \nexercise caution when interpreting the results.')
                                 print('instance specific. expected class: ' + str(np.argmax(alt_labels['is_mask']['p_counts'])) + \
                                         ' (' + c.get_label(c.class_col, [np.argmax(alt_labels['is_mask']['p_counts'])]) + ')')
