@@ -124,10 +124,6 @@ def tune_rf(X, y,
                                                             random_state=random_state,
                                                             save_path=save_path)
 
-    print('Best OOB Accuracy Estimate during tuning: ' '{:0.4f}'.format(forest_performance['score']))
-    print('Best parameters:', best_params)
-    print()
-
     return(best_params, forest_performance)
 
 def do_ada_tuning(X, y,
@@ -137,7 +133,7 @@ def do_ada_tuning(X, y,
 
     start_time = timeit.default_timer()
     print('Finding best params with 10-fold CV')
-    rf = GridSearchCV(AdaBoostClassifier(random_state=random_state), grid, cv=5)
+    rf = GridSearchCV(AdaBoostClassifier(random_state=random_state), grid, cv=10)
     rf.fit(X, y)
     means = rf.cv_results_['mean_test_score']
     stds = rf.cv_results_['std_test_score']
@@ -154,6 +150,7 @@ def do_ada_tuning(X, y,
     forest_performance = {'score' : rf.best_score_,
                         'fitting_time' : elapsed_time}
 
+    best_params.update({'base_estimator' : str(best_params['base_estimator'])})
     save_tuning_results(save_path, random_state, best_params, forest_performance, model='AdaBoost')
 
     return(best_params, forest_performance)
@@ -187,10 +184,6 @@ def tune_ada(X, y,
                                                             grid=grid,
                                                             random_state=random_state,
                                                             save_path=save_path)
-
-    print('Best Accuracy Estimate during CV: ' '{:0.4f}'.format(forest_performance['score']))
-    print('Best parameters:', best_params)
-    print()
 
     return(best_params, forest_performance)
 

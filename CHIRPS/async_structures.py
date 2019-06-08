@@ -14,28 +14,29 @@ from scipy.stats import chi2_contingency
 def as_tree_walk(tree_idx, instances, labels, n_instances,
                 tree_pred, tree_pred_labels,
                 tree_pred_proba, tree_agree_maj_vote,
-                feature, threshold, path, features):
+                feature, threshold, path, features, est_wt):
 
     # object for the results
     tree_paths = [{}] * n_instances
 
-    # rare case that tree is a single node stub
+    # case that tree is a single node stump (rare in RF, normal in AdaBoost)
     if len(feature) == 1:
         for ic in range(n_instances):
             if labels is None:
                 pred_class = None
             else:
                 pred_class = labels[ic]
-            tree_paths[ic] = {'pred_class' : tree_pred[ic].astype(np.int64)
-                                    , 'pred_class_label' : tree_pred_labels[ic]
-                                    , 'pred_proba' : tree_pred_proba[ic].tolist()
-                                    , 'forest_pred_class' : pred_class
-                                    , 'agree_maj_vote' : tree_agree_maj_vote[ic]
-                                    , 'path' : {'feature_idx' : []
-                                                            , 'feature_name' : []
-                                                            , 'feature_value' : []
-                                                            , 'threshold' : []
-                                                            , 'leq_threshold' : []
+            tree_paths[ic] = {'estimator_weight' : est_wt,
+                                    'pred_class' : tree_pred[ic].astype(np.int64),
+                                    'pred_class_label' : tree_pred_labels[ic],
+                                    'pred_proba' : tree_pred_proba[ic].tolist(),
+                                    'forest_pred_class' : pred_class,
+                                    'agree_maj_vote' : tree_agree_maj_vote[ic],
+                                    'path' : {'feature_idx' : [],
+                                                            'feature_name' : [],
+                                                            'feature_value' : [],
+                                                            'threshold' : [],
+                                                            'leq_threshold' : []
                                                 }
                                     }
     # usual case
@@ -59,16 +60,17 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
                     pred_class = None
                 else:
                     pred_class = labels[ic]
-                tree_paths[ic] = {'pred_class' : tree_pred[ic].astype(np.int64)
-                                        , 'pred_class_label' : tree_pred_labels[ic]
-                                        , 'pred_proba' : tree_pred_proba[ic].tolist()
-                                        , 'forest_pred_class' : pred_class
-                                        , 'agree_maj_vote' : tree_agree_maj_vote[ic]
-                                        , 'path' : {'feature_idx' : [feature[p]]
-                                                                , 'feature_name' : [feature_name]
-                                                                , 'feature_value' : [feature_value]
-                                                                , 'threshold' : [threshold[p]]
-                                                                , 'leq_threshold' : [leq_threshold]
+                tree_paths[ic] = {'estimator_weight' : est_wt,
+                                        'pred_class' : tree_pred[ic].astype(np.int64),
+                                        'pred_class_label' : tree_pred_labels[ic],
+                                        'pred_proba' : tree_pred_proba[ic].tolist(),
+                                        'forest_pred_class' : pred_class,
+                                        'agree_maj_vote' : tree_agree_maj_vote[ic],
+                                        'path' : {'feature_idx' : [feature[p]],
+                                                                'feature_name' : [feature_name],
+                                                                'feature_value' : [feature_value],
+                                                                'threshold' : [threshold[p]],
+                                                                'leq_threshold' : [leq_threshold]
                                                     }
                                         }
             else:

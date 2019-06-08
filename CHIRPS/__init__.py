@@ -2,6 +2,7 @@ import numpy as np
 from pathlib import Path as pth
 from os import makedirs as mkdir
 from scipy.stats import chi2_contingency, entropy
+from collections import defaultdict
 
 # helper function determines if we're in a jup notebook
 def in_ipynb():
@@ -17,25 +18,23 @@ def in_ipynb():
     except NameError:
         return(False)
 
-# helper function for returning counts and proportions of unique values in an array
-# also returns the stability calculation (numerator / (denominator + 1))
-def p_count(arr):
-    labels, counts = np.unique(arr, return_counts = True)
-    return(
-    {'labels' : labels,
-    'counts' : counts,
-    'p_counts' : counts / len(arr)})
+def p_count_corrected(arr, classes, weights=None):
+    # initialise weights to ones if necessary
+    if weights is None:
+        weights = np.ones(len(arr))
+    else:
+        weights = np.array(weights)
+    dict_counts = defaultdict(lambda: 0.0)
+    for label, weight in zip(arr, weights):
+        dict_counts[label] += weight
 
-# insert any zeros for unrepresented classes
-def p_count_corrected(arr, classes):
+    # insert any zeros for unrepresented classes
     n_classes = len(classes)
-    p_counts = p_count(arr)
     pc = np.zeros(n_classes)
-    c = np.zeros(n_classes, dtype=np.int64)
+    c = np.zeros(n_classes)
     for i, cn in enumerate(classes):
-        if cn in p_counts['labels']:
-            pc[i] = p_counts['p_counts'][np.where(p_counts['labels'] == cn)][0]
-            c[i] = p_counts['counts'][np.where(p_counts['labels'] == cn)][0]
+        pc[i] = dict_counts[cn] / weights.sum()
+        c[i] = dict_counts[cn]
     return({'labels' : classes,
     'counts' : c,
     'p_counts' : pc})

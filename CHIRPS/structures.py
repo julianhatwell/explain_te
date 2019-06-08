@@ -16,7 +16,7 @@ from itertools import chain
 from CHIRPS import config as cfg
 from CHIRPS.async_structures import *
 
-class default_encoder:
+class default_encoder(object):
 
     def transform(x):
         return(sparse.csr_matrix(x))
@@ -24,7 +24,7 @@ class default_encoder:
         return(x)
 
 # this is inherited by CHIRPS_runner and data_container
-class non_deterministic:
+class non_deterministic(object):
 
     def __init__(self, random_state=None):
         if random_state is None:
@@ -43,7 +43,7 @@ class non_deterministic:
             return(random_state)
 
 # convenience class with more than just train_test_split
-class data_split_container:
+class data_split_container(object):
 
     def __init__(self, X_train, X_train_enc,
                 X_test, X_test_enc,
@@ -402,7 +402,7 @@ class data_container(non_deterministic):
                 })
 
 # classes and functions for the parallelisable tree_walk
-class batch_paths_container:
+class batch_paths_container(object):
     def __init__(self,
     target_classes,
     path_detail,
@@ -475,15 +475,15 @@ class batch_paths_container:
 
         # tree performance stats
         if self.by_tree:
-            tree_preds = [self.path_detail[t][batch_idx]['pred_class_label'] for t in range(n_paths)]
+            tree_preds, estimator_weights = [i for i in map(list, zip(*[itemgetter('pred_class', 'estimator_weight')(self.path_detail[t][batch_idx]) for t in range(n_paths)]))]
         else:
-            tree_preds = [self.path_detail[batch_idx][t]['pred_class_label'] for t in range(n_paths)]
+            tree_preds, estimator_weights = [i for i in map(list, zip(*[itemgetter('pred_class', 'estimator_weight')(self.path_detail[batch_idx][t]) for t in range(n_paths)]))]
 
         # return an object for requested instance
-        c_runner = CHIRPS_runner(meta_data, paths, tree_preds, self.major_class_from_paths(batch_idx), self.target_class_from_paths(batch_idx))
+        c_runner = CHIRPS_runner(meta_data, paths, tree_preds, estimator_weights, self.major_class_from_paths(batch_idx), self.target_class_from_paths(batch_idx))
         return(c_runner)
 
-class forest_walker:
+class forest_walker(object):
 
     def __init__(self
     , forest
@@ -492,6 +492,10 @@ class forest_walker:
         self.features = meta_data['features_enc']
         self.n_features = len(self.features)
         self.class_col = meta_data['class_col']
+
+        # weights for AdaBoosted models
+        if not hasattr(forest, 'estimator_weights_'):
+            self.forest.estimator_weights_ = np.ones(len(forest.estimators_))
 
         meta_le_dict = meta_data['le_dict']
         meta_get_label = meta_data['get_label']
@@ -505,9 +509,6 @@ class forest_walker:
         self.root_features = np.zeros(len(self.features)) # set up a 1d feature array to count features appearing as root nodes
         self.child_features = np.zeros(len(self.features))
         self.lower_features = np.zeros(len(self.features))
-        self.structure = {'root_features' : self.root_features
-                         , 'child_features' : self.child_features
-                         , 'lower_features' : self.lower_features}
 
         # walk through each tree to get the structure
         for t, tree in enumerate(self.forest.estimators_):
@@ -717,7 +718,7 @@ class forest_walker:
             n_cores = mp.cpu_count()-2
             pool = mp.Pool(processes=n_cores)
 
-            for i, t in enumerate(self.forest.estimators_):
+            for i, (t, est_wt) in enumerate(zip(self.forest.estimators_, self.forest.estimator_weights_)):
 
                 # process the tree
                 tree_pred, tree_pred_labels, \
@@ -728,7 +729,7 @@ class forest_walker:
                                                 (i, instances, labels, n_instances,
                                                 tree_pred, tree_pred_labels,
                                                 tree_pred_proba, tree_agree_maj_vote,
-                                                feature, threshold, path, features)
+                                                feature, threshold, path, features, est_wt)
                                                 ))
 
             # block and collect the pool
@@ -742,7 +743,7 @@ class forest_walker:
 
         else:
             tree_paths = [[]] * len(self.forest.estimators_)
-            for i, t in enumerate(self.forest.estimators_):
+            for i, (t, est_wt) in enumerate(zip(self.forest.estimators_, self.forest.estimator_weights_)):
 
                 # process the tree
                 tree_pred, tree_pred_labels, \
@@ -759,7 +760,7 @@ class forest_walker:
 # classes and functions for the parallelisable CHIRPS algorithm
 
 # this is to have the evaluator function inherited from one place
-class evaluator:
+class evaluator(object):
 
     def evaluate(self, prior_labels, post_idx, class_names=None):
 
@@ -1251,7 +1252,6 @@ class CHIRPS_explainer(rule_evaluator):
         for j, f in enumerate(features): # by column
             if f in to_unmask: # binary encoded feature
                 mask_matrix_is[:, j] = rule_covered_dists[:, j].todense()
-                print(rule_covered_dists[:, j].todense().reshape((-1,)))
 
         # prepare additional set of columns to unmask
         parent_features = self.categorise_rule_features(rule=rule,
@@ -1367,6 +1367,7 @@ class CHIRPS_runner(rule_evaluator):
 
     def __init__(self, meta_data,
                 paths, tree_preds,
+                estimator_weights,
                 major_class=None,
                 target_class=None,
                 patterns=None):

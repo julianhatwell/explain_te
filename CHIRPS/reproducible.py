@@ -12,6 +12,7 @@ from CHIRPS import config as cfg
 from lime import lime_tabular as limtab
 from anchor import anchor_tabular as anchtab
 from defragTrees.defragTrees import DefragModel
+from sklearn.tree import DecisionTreeClassifier
 
 penalise_bad_prediction = lambda mc, tc, value : value if mc == tc else 0 # for global interp methods
 
@@ -55,7 +56,7 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
 
     if model == 'RandomForest':
 
-        best_params, _ = rt.tune_rf(
+        best_params, forest_performance = rt.tune_rf(
          X=X_train,
          y=y_train,
          grid=tuning_grid,
@@ -71,7 +72,7 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
         rf.fit(X=X_train, y=y_train)
 
     else:
-        best_params, _ = rt.tune_ada(
+        best_params, forest_performance = rt.tune_ada(
          X=X_train,
          y=y_train,
          grid=tuning_grid,
@@ -79,6 +80,8 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
          override_tuning=override_tuning,
          random_state=random_state)
 
+        # convert this back from a text string
+        best_params.update({'base_estimator' : eval(best_params['base_estimator'])})
         best_params.update({'random_state' : random_state})
         del(best_params['score'])
 
@@ -86,6 +89,9 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
         rf.set_params(**best_params)
         rf.fit(X=X_train, y=y_train)
 
+    print('Best OOB Accuracy Estimate during tuning: ' '{:0.4f}'.format(forest_performance['score']))
+    print('Best parameters:', best_params)
+    print()
     # the outputs of this function are:
     # cm - confusion matrix as 2d array
     # acc - accuracy of model = correctly classified instance / total number instances
