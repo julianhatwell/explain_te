@@ -12,7 +12,7 @@ from scipy import sparse
 from scipy.stats import sem
 from collections import defaultdict
 from operator import itemgetter
-from itertools import chain
+from itertools import chain, repeat
 from CHIRPS import config as cfg
 from CHIRPS.async_structures import *
 
@@ -443,27 +443,27 @@ class batch_paths_container(object):
         if self.by_tree:
             n_paths = len(self.path_detail)
             if which_trees == 'correct':
-                paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths) if self.path_detail[pd][batch_idx]['agree_maj_vote']]
+                paths_info, paths_weights = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[pd][batch_idx]['agree_maj_vote']]))]
             elif which_trees == 'majority':
                 major_class = self.major_class_from_paths(batch_idx, return_counts=False)
-                paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths) if self.path_detail[pd][batch_idx]['pred_class'] == major_class]
+                paths_info, paths_weights = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[pd][batch_idx]['pred_class'] == major_class]))]
             elif which_trees == 'minority':
                 major_class = self.major_class_from_paths(batch_idx, return_counts=False)
-                paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths) if self.path_detail[pd][batch_idx]['pred_class'] != major_class]
+                paths_info, paths_weights = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[pd][batch_idx]['pred_class'] != major_class]))]
             else:
-                paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths)]
+                paths_info, paths_weights = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) for pd in range(n_paths)]))]
         else:
             n_paths = len(self.path_detail[batch_idx])
             if which_trees == 'correct':
-                paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths) if self.path_detail[batch_idx][pd]['agree_maj_vote']]
+                paths_info, paths_weights = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['agree_maj_vote']]))]
             elif which_trees == 'majority':
                 major_class = self.major_class_from_paths(batch_idx, return_counts=False)
-                paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == major_class]
+                paths_info, paths_weights = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == major_class]))]
             elif which_trees == 'minority':
                 major_class = self.major_class_from_paths(batch_idx, return_counts=False)
-                paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] != major_class]
+                paths_info, paths_weights = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] != major_class]))]
             else:
-                paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths)]
+                paths_info, paths_weights = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight')(self.path_detail[batch_idx][pd]) for pd in range(n_paths)]))]
 
         # path formatting - should it be on values level or features level
         if feature_values:
@@ -480,7 +480,7 @@ class batch_paths_container(object):
             tree_preds, estimator_weights = [i for i in map(list, zip(*[itemgetter('pred_class', 'estimator_weight')(self.path_detail[batch_idx][t]) for t in range(n_paths)]))]
 
         # return an object for requested instance
-        c_runner = CHIRPS_runner(meta_data, paths, tree_preds, estimator_weights, self.major_class_from_paths(batch_idx), self.target_class_from_paths(batch_idx))
+        c_runner = CHIRPS_runner(meta_data, paths, paths_weights, tree_preds, estimator_weights, self.major_class_from_paths(batch_idx), self.target_class_from_paths(batch_idx))
         return(c_runner)
 
 class forest_walker(object):
@@ -1049,7 +1049,7 @@ class CHIRPS_explainer(rule_evaluator):
                 features, features_enc, class_names,
                 class_col, get_label,
                 var_dict, var_dict_enc,
-                paths, patterns,
+                paths, paths_weights, patterns,
                 rule, pruned_rule,
                 target_class, target_class_label,
                 major_class, major_class_label,
@@ -1080,6 +1080,7 @@ class CHIRPS_explainer(rule_evaluator):
         self.var_dict = var_dict
         self.var_dict_enc = var_dict_enc
         self.paths = paths
+        self.paths_weights = paths_weights
         self.patterns = patterns
         self.rule = rule
         self.pruned_rule = pruned_rule
@@ -1366,7 +1367,8 @@ class CHIRPS_explainer(rule_evaluator):
 class CHIRPS_runner(rule_evaluator):
 
     def __init__(self, meta_data,
-                paths, tree_preds,
+                paths, paths_weights,
+                tree_preds,
                 estimator_weights,
                 major_class=None,
                 target_class=None,
@@ -1377,6 +1379,7 @@ class CHIRPS_runner(rule_evaluator):
             self.random_state = meta_random_state # otherwise there is a default
 
         self.paths = paths
+        self.paths_weights = paths_weights
         self.tree_preds = tree_preds
         self.major_class = major_class
         self.target_class = target_class
@@ -1398,7 +1401,7 @@ class CHIRPS_runner(rule_evaluator):
             self.get_label = None
             self.class_names = meta_class_names
 
-        self.model_votes = p_count_corrected(self.tree_preds, self.class_names)
+        self.model_votes = p_count_corrected(self.tree_preds, self.class_names, estimator_weights)
 
         for item in self.var_dict:
             if self.var_dict[item]['class_col']:
@@ -1504,8 +1507,15 @@ class CHIRPS_runner(rule_evaluator):
         # normalise support score
         self.patterns = {patt : self.patterns[patt]/len(self.paths) for patt in self.patterns}
 
+    def repeat_weighted_paths(self):
+        weighted_counts = np.round(self.paths_weights * 1/min(self.paths_weights)).astype('int')
+        self.paths = list(chain.from_iterable(map(repeat, self.paths, weighted_counts)))
+
     def mine_path_segments(self, support_paths=0.1,
                             disc_path_bins=4, disc_path_eqcounts=False):
+
+        # repeat paths according to path weights
+        self.repeat_weighted_paths()
 
         # discretize any numeric features
         self.discretize_paths(bins=disc_path_bins,
@@ -1562,7 +1572,6 @@ class CHIRPS_runner(rule_evaluator):
 
                 # rf+hc score or no
                 else: #
-                    weights = [1] * len(self.patterns) # default if no valid combo
                     if target_class is not None:
                         cc = p_counts_covered['counts'][target_class]
                         ic = sum([c for c, l in zip(p_counts_covered['counts'], p_counts_covered['labels']) if l != target_class])
@@ -1573,7 +1582,7 @@ class CHIRPS_runner(rule_evaluator):
                             weights.append((cc-ic) / (cc+ic) + cc / (ic + 1) + cc / len(wp[0]))
                             weights = [w + abs(min(weights)) for w in weights]
                         else:
-                            pass
+                            weights = [1] * len(self.patterns) # default if no valid combo
 
 
             # correct any uncalculable weights
@@ -2005,7 +2014,7 @@ class CHIRPS_runner(rule_evaluator):
         self.features, self.features_enc, self.class_names,
         self.class_col, self.get_label,
         self.var_dict, self.var_dict_enc,
-        self.paths, self.patterns,
+        self.paths, self.paths_weights, self.patterns,
         self.rule, self.pruned_rule,
         self.target_class, self.target_class_label,
         self.major_class, self.major_class_label,

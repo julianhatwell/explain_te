@@ -25,16 +25,16 @@ def p_count_corrected(arr, classes, weights=None):
     else:
         weights = np.array(weights)
     dict_counts = defaultdict(lambda: 0.0)
-    for label, weight in zip(arr, weights):
-        dict_counts[label] += weight
+    for cl, wt in zip(arr, weights):
+        dict_counts[cl] += wt
 
     # insert any zeros for unrepresented classes
     n_classes = len(classes)
     pc = np.zeros(n_classes)
     c = np.zeros(n_classes)
-    for i, cn in enumerate(classes):
-        pc[i] = dict_counts[cn] / weights.sum()
-        c[i] = dict_counts[cn]
+    for cl in range(n_classes):
+        pc[cl] = dict_counts[cl] / weights.sum()
+        c[cl] = dict_counts[cl]
     return({'labels' : classes,
     'counts' : c,
     'p_counts' : pc})
