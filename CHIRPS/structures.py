@@ -1753,7 +1753,12 @@ class CHIRPS_runner(rule_evaluator):
                         random_state=None):
 
         self.unapplied_rules = [i for i in range(len(self.patterns))]
-        self.total_points = sum([scrs[2] for scrs in self.patterns])
+        if len(self.unapplied_rules) == 0:
+            default_rule = []
+            self.total_points = 0
+        else:
+            # default_rule will be set in the loop
+            self.total_points = sum([scrs[2] for scrs in self.patterns])
 
         # basic setup
         # pointless to receive a None for algorithm
@@ -1828,8 +1833,8 @@ class CHIRPS_runner(rule_evaluator):
             and self.accumulated_points <= self.total_points * self.stopping_param \
             and (fixed_length is None or rule_length_counter < max(1, fixed_length)) \
             and len(self.unapplied_rules) > 0:
-            self.merge_rule_iter += 1
 
+            self.merge_rule_iter += 1
             candidate = self.add_rule_term()
             eval_rule = self.evaluate_rule(sample_instances=sample_instances,
                                     sample_labels=sample_labels)

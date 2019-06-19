@@ -119,7 +119,7 @@ def unseen_data_prep(ds_container, n_instances=1, which_split='test'):
     return(instances, instances_matrix, instances_enc, instances_enc_matrix, labels)
 
 # function to manage the whole run and evaluation
-def CHIRPS_benchmark(forest, ds_container, meta_data,
+def CHIRPS_benchmark(forest, ds_container, meta_data, model,
                     batch_size=100, n_instances=100,
                     forest_walk_async=True,
                     chirps_explanation_async=True,
@@ -194,6 +194,8 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
 
     # iterate over all the test instances (based on the ids in the index)
     # scoring will leave out the specific instance by this id.
+
+    save_results_file = model + '_CHIRPS_rnst_' + str(random_state)
     rt.evaluate_CHIRPS_explainers(CHIRPS, ds_container, labels.index,
                                   forest=forest,
                                   meta_data=meta_data,
@@ -201,7 +203,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data,
                                   print_to_screen=False, # set True when running single instances
                                   save_results_path=save_sensitivity_path,
                                   dataset_name=dataset_name,
-                                  save_results_file='CHIRPS' + '_rnst_' + str(random_state),
+                                  save_results_file=save_results_file,
                                   save_CHIRPS=False)
 
     results_end_time = timeit.default_timer()
