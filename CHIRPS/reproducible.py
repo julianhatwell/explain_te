@@ -203,6 +203,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model,
                                   print_to_screen=False, # set True when running single instances
                                   save_results_path=save_sensitivity_path,
                                   dataset_name=dataset_name,
+                                  model=model,
                                   save_results_file=save_results_file,
                                   save_CHIRPS=False)
 

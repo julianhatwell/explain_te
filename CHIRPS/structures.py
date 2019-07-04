@@ -4,7 +4,7 @@ import multiprocessing as mp
 # import traceback
 import numpy as np
 from pandas import DataFrame, Series
-from CHIRPS import p_count_corrected, if_nexists_make_dir, chisq_indep_test, entropy_corrected
+from CHIRPS import p_count_corrected, if_nexists_make_dir, chisq_indep_test, entropy_corrected, contingency_test
 from pyfpgrowth import find_frequent_patterns
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.model_selection import train_test_split
@@ -15,6 +15,8 @@ from operator import itemgetter
 from itertools import chain, repeat
 from CHIRPS import config as cfg
 from CHIRPS.async_structures import *
+
+import warnings
 
 class default_encoder(object):
 
@@ -174,22 +176,24 @@ class data_split_container(object):
 
     def indexes_to_csv(self, save_path = ''):
         if_nexists_make_dir(save_path)
-        Series(self.train_index).to_csv(path = save_path + 'train_index.csv', index=False)
-        Series(self.test_index).to_csv(path = save_path + 'test_index.csv', index=False)
+        Series(self.train_index).to_csv(path_or_buf = save_path + 'train_index.csv', index=False, header=False)
+        Series(self.test_index).to_csv(path_or_buf = save_path + 'test_index.csv', index=False, header=False)
 
     def data_to_csv(self, save_path = '', encoded_features = None):
         if_nexists_make_dir(save_path)
-        self.X_train.to_csv(path_or_buf = save_path + 'X_train.csv')
+        self.X_train.to_csv(path_or_buf = save_path + 'X_train.csv', header=False)
         if encoded_features:
             DataFrame(self.X_train_enc.todense(),
                     columns=encoded_features).to_csv(
-                                                    path_or_buf = save_path + 'X_train_enc.csv')
+                                                    path_or_buf = save_path + 'X_train_enc.csv',
+                                                    header=False)
             DataFrame(self.X_test_enc.todense(),
                     columns=encoded_features).to_csv(
-                                                    path_or_buf = save_path + 'X_test_enc.csv')
-        self.y_train.to_csv(path = save_path + 'y_train.csv')
-        self.X_test.to_csv(path_or_buf = save_path + 'X_test.csv')
-        self.y_test.to_csv(path = save_path + 'y_test.csv')
+                                                    path_or_buf = save_path + 'X_test_enc.csv',
+                                                    header=False)
+        self.y_train.to_csv(path_or_buf = save_path + 'y_train.csv', header=False)
+        self.X_test.to_csv(path_or_buf = save_path + 'X_test.csv', header=False)
+        self.y_test.to_csv(path_or_buf = save_path + 'y_test.csv', header=False)
 
     def to_csv(self, save_path = '', encoded_features = None):
         self.data_to_csv(save_path = save_path, encoded_features = encoded_features)
@@ -753,7 +757,7 @@ class forest_walker(object):
                 _, tree_paths[i] = as_tree_walk(i, instances, labels, n_instances,
                                                 tree_pred, tree_pred_labels,
                                                 tree_pred_proba, tree_agree_maj_vote,
-                                                feature, threshold, path, features)
+                                                feature, threshold, path, features, est_wt)
 
         return(batch_paths_container(labels, tree_paths, by_tree=True))
 
@@ -937,8 +941,9 @@ class rule_evaluator(non_deterministic, evaluator):
         idx = np.full(instances.shape[0], 1, dtype='bool')
         for r in rule:
             idx = np.logical_and(idx, lt_gt(instances.getcol(features.index(r[0])).toarray().flatten(), r[2], r[1]))
+            if np.isnan(r[2]):
+                print('nan:', str(rule))
         return(idx)
-
     # score a rule on an instance space
     def evaluate_rule(self, rule=None, features=None, class_names=None,
                         sample_instances=None, sample_labels=None, target_class=None):
@@ -1141,14 +1146,15 @@ class CHIRPS_explainer(rule_evaluator):
 
         # should usually get the feature list internally from init_values
         rule, features, _ = self.init_values(rule=rule, features=features)
+        instances, _ = self.init_instances(instances=sample_instances)
         if size is None:
-            size = sample_instances.shape[0]
+            size = instances.shape[0]
 
         # get instances covered by rule
-        idx = self.apply_rule(rule=rule, instances=sample_instances, features=features)
+        idx = self.apply_rule(rule=rule, instances=instances, features=features)
 
-        sample_instances = sample_instances[idx]
-        n_instances = sample_instances.shape[0]
+        instances = instances[idx]
+        n_instances = instances.shape[0]
 
         # reproducibility
         random_state = self.default_if_none_random_state(random_state)
@@ -1156,7 +1162,7 @@ class CHIRPS_explainer(rule_evaluator):
 
         # get a distribution for those instances covered by rule
         idx = np.random.choice(n_instances, size = size, replace=True)
-        distributions = sample_instances[idx]
+        distributions = instances[idx]
 
         return(distributions)
 
@@ -1167,13 +1173,14 @@ class CHIRPS_explainer(rule_evaluator):
         # should usually get the feature list internally from init_values
         _, features, _ = self.init_values(rule=rule, features=features)
         var_dict, var_dict_enc = self.init_dicts(var_dict=var_dict, var_dict_enc=var_dict_enc)
+        instances, _ = self.init_instances(instances=sample_instances)
         if size is None:
-            size = sample_instances.shape[0]
+            size = instances.shape[0]
 
         try: # get a distribution given rule
             # first will contain a distribution of values for the feature that is reversed in the rule complement
             # the remaining features will be masked by the current instance
-            rule_covered_dists = self.get_distribution_by_rule(sample_instances,
+            rule_covered_dists = self.get_distribution_by_rule(instances,
                                                         size=size,
                                                         rule=rule,
                                                         features=None,
@@ -1190,7 +1197,7 @@ class CHIRPS_explainer(rule_evaluator):
                 # get a distribution given rule
                 # first will contain a distribution of values for the feature that is reversed in the rule complement
                 # the remaining features will be masked by the current instance
-                rule_covered_dists = self.get_distribution_by_rule(sample_instances,
+                rule_covered_dists = self.get_distribution_by_rule(instances,
                                                             size=size,
                                                             rule=flipped_rule_term,
                                                             features=None,
@@ -1204,7 +1211,7 @@ class CHIRPS_explainer(rule_evaluator):
                 for j, f in enumerate(features):
                     if f == feature:
                         if var_dict[f]['data_type'] == 'continuous':
-                            columnvec = sample_instances[:, j].todense()
+                            columnvec = instances[:, j].todense()
                             if np.issubdtype(columnvec.dtype, np.integer): # for integers, extend with integer series
                                 for item in flipped_rule_term:
                                     if item[1]: # less than thresh
@@ -1230,7 +1237,7 @@ class CHIRPS_explainer(rule_evaluator):
                         else: # nominal
                             print('failed to find/synthesise cover on a nominal feature')
                             # fails to create dist - should error until fixed
-                rule_covered_dists = deepcopy(sample_instances)
+                rule_covered_dists = deepcopy(instances)
                 for j, f in enumerate(features):
                     if f == feature: # binary encoded feature
                         rule_covered_dists[:, j] = dist
@@ -1282,15 +1289,16 @@ class CHIRPS_explainer(rule_evaluator):
                             var_dict=None,
                             sample_labels=None):
         # general setup
+        instances, _ = self.init_instances(instances=sample_instances)
         if rule_complements is None:
             rule_complements = self.get_rule_complements()
-        size = sample_instances.shape[0]
+        size = instances.shape[0]
         alt_labelings_results = []
         # for each rule comp, create datasets of the same size as the leave-one-out test set
         for feature in rule_complements:
             rc = rule_complements[feature]
             instance_specific_mask, allowed_values_mask, mask_cover = self.mask_by_instance(instance=instance,
-                                                                                                            sample_instances=sample_instances,
+                                                                                                            sample_instances=instances,
                                                                                                             rule=rc, feature=feature,
                                                                                                             size=size)
             ism_preds = forest.predict(instance_specific_mask)
@@ -1390,6 +1398,7 @@ class CHIRPS_runner(rule_evaluator):
         self.var_dict = meta_data['var_dict']
         self.var_dict_enc = meta_data['var_dict_enc']
         self.class_col = meta_data['class_col']
+        self.n_classes = len(meta_data['class_names'])
 
         meta_le_dict = meta_data['le_dict']
         meta_get_label = meta_data['get_label']
@@ -1422,7 +1431,6 @@ class CHIRPS_runner(rule_evaluator):
         self.sample_instances = None
         self.sample_labels = None
         self.n_instances = None
-        self.n_classes = None
         self.target_class = None
         self.target_class_label = None
         self.major_class = None
@@ -1452,38 +1460,48 @@ class CHIRPS_runner(rule_evaluator):
         var_dict, _ = self.init_dicts(var_dict=var_dict)
 
         if equal_counts:
-            def hist_func(x, bins):
+            def hist_func(x, bins, weights=None):
                 npt = len(x)
-                return np.interp(np.linspace(0, npt, bins + 1),
+                bns = np.interp(np.linspace(0, npt, bins + 1),
                                  np.arange(npt),
                                  np.sort(x))
+                return(np.histogram(x, bns, weights=weights))
         else:
-            def hist_func(x, bins):
-                return(np.histogram(x, bins))
+            def hist_func(x, bins, weights=None):
+                return(np.histogram(x, bins, weights=weights))
 
         cont_vars = [vn for vn in var_dict if var_dict[vn]['data_type'] == 'continuous' and var_dict[vn]['class_col'] == False]
         for feature in cont_vars:
-        # nan warnings OK, it just means the less than or greater than test was never used
+
             # lower bound, greater than
             lowers = [item[2] for nodes in self.paths for item in nodes if item[0] == feature and item[1] == False]
 
             # upper bound, less than
             uppers = [item[2] for nodes in self.paths for item in nodes if item[0] == feature and item[1] == True]
 
-            upper_bins = np.histogram(uppers, bins=bins)[1]
-            lower_bins = np.histogram(lowers, bins=bins)[1]
+            if uppers:
+                upper_bins = hist_func(uppers, bins=bins)[1]
+            else:
+                upper_bins = np.repeat(np.nan, bins)
 
-            # upper_bin_midpoints = pd.Series(upper_bins).rolling(window=2, center=False).mean().values[1:]
+            if lowers:
+                lower_bins = hist_func(lowers, bins=bins)[1]
+            else:
+                lower_bins = np.repeat(np.nan, bins)
+
+            upper_bin_midpoints = Series(upper_bins).rolling(window=2, center=False).mean().values[1:]
             upper_bin_means = (np.histogram(uppers, upper_bins, weights=uppers)[0] /
-                                np.histogram(uppers, upper_bins)[0]).round(5)
+                                np.histogram(uppers, upper_bins)[0]).round(5) # can result in nans if no value falls into bin
+            upper_bin_mids = [i if not np.isnan(i) else j for i, j in zip(upper_bin_means, upper_bin_midpoints)]
 
-            # lower_bin_midpoints = pd.Series(lower_bins).rolling(window=2, center=False).mean().values[1:]
+            lower_bin_midpoints = Series(lower_bins).rolling(window=2, center=False).mean().values[1:]
             lower_bin_means = (np.histogram(lowers, lower_bins, weights=lowers)[0] /
-                                np.histogram(lowers, lower_bins)[0]).round(5)
+                                np.histogram(lowers, lower_bins)[0]).round(5) # can result in nans
+            lower_bin_mids = [i if not np.isnan(i) else j for i, j in zip(lower_bin_means, lower_bin_midpoints)]
 
-            # discretize functions from histogram means
-            upper_discretize = lambda x: upper_bin_means[np.max([np.min([np.digitize(x, upper_bins), len(upper_bin_means)]), 1]) - 1]
-            lower_discretize = lambda x: lower_bin_means[np.max([np.min([np.digitize(x, lower_bins, right= True), len(upper_bin_means)]), 1]) - 1]
+                        # discretize functions from histogram means
+            upper_discretize = lambda x: upper_bin_mids[np.max([np.min([np.digitize(x, upper_bins), len(upper_bin_mids)]), 1]) - 1]
+            lower_discretize = lambda x: lower_bin_mids[np.max([np.min([np.digitize(x, lower_bins, right= True), len(upper_bin_mids)]), 1]) - 1]
 
             paths_discretized = []
             for nodes in self.paths:
@@ -1499,38 +1517,78 @@ class CHIRPS_runner(rule_evaluator):
             # at the end of each loop, update the instance variable
             self.paths = paths_discretized
 
-    def mine_patterns(self, support=0.1):
-        # convert to an absolute number of instances rather than a fraction
-        if support < 1:
-            support = round(support * len(self.paths))
-        self.patterns = find_frequent_patterns(self.paths, support)
-        # normalise support score
-        self.patterns = {patt : self.patterns[patt]/len(self.paths) for patt in self.patterns}
+    def mine_patterns(self, paths_lengths_threshold=2, support=0.1):
 
-    def repeat_weighted_paths(self):
-        weighted_counts = np.round(self.paths_weights * 1/min(self.paths_weights)).astype('int')
-        self.paths = list(chain.from_iterable(map(repeat, self.paths, weighted_counts)))
+        # repeat paths if max length > path length threshold
+        # e.g. for boosted models with stumps of depth 1 or 2, it doesn't make much sense
+        # for longer paths, the boosting weight is used to increase the support count
+        if len(max(self.paths, key=len)) >= paths_lengths_threshold:
 
-    def mine_path_segments(self, support_paths=0.1,
+            # ensure support to an absolute number of instances rather than a fraction
+            if support <= 1:
+                support = round(support * len(self.paths))
+
+            # normalise the weights so min(weights) = 1.0
+            weighted_counts = np.round(self.paths_weights * 1/min(self.paths_weights)).astype('int')
+
+            # replicate the paths a number of times according to weighted counts
+            self.paths = list(chain.from_iterable(map(repeat, self.paths, weighted_counts)))
+
+            # FP mining
+            self.patterns = find_frequent_patterns(self.paths, support)
+            # normalise support score
+            self.patterns = {patt : self.patterns[patt]/len(self.paths) for patt in self.patterns}
+
+        # otherwise, convert paths to patterns giving weights as support
+        else:
+            # ensure support to a fraction
+            if support > 1:
+                support = support / len(self.paths)
+            # convert weights with a margin function
+            # paths_margins = [math.exp(w)/(1 + math.exp(w)) - 1/self.n_classes for w in self.paths_weights]
+            # # consider if we need to prune the items with the lowest weights, using the margin "support" for cutoff
+            # self.patterns = {tuple(p) : w for p, w in zip(self.paths, paths_margins) if w >= support}
+            # print(self.patterns)
+
+            # ALTERNATIVE
+            entropy_weighted_patterns = defaultdict(np.float32)
+            instances, labels = self.init_instances()
+            for j, p in enumerate(self.paths):
+                items = []
+                entropies = []
+                for item in p:
+                    # [item] because it's one long and therefore iterates into a list otherwise
+                    idx = self.apply_rule(rule=[item], instances=instances, features=self.features_enc)
+                    p_counts_covered = p_count_corrected(labels[idx], [i for i in range(len(self.class_names))])
+                    covered = p_counts_covered['counts']
+                    not_covered = p_count_corrected(labels[~idx], [i for i in range(len(self.class_names))])['counts']
+                    all_instances = p_count_corrected(labels, [i for i in range(len(self.class_names))])['counts']
+                    entropy = contingency_test(covered, all_instances, 'kldiv')
+                    entropies.append(entropy)
+                    items.append(item)
+                for e, item in zip(entropies, items):
+                    entropy_weighted_patterns[item] += e / sum(entropies) * self.paths_weights[j]
+            # normalise the partial weighted entropy
+            self.patterns = {((p), ) : w / sum(dict(entropy_weighted_patterns).values()) for p, w in dict(entropy_weighted_patterns).items() if w >= support}
+
+    def mine_path_snippets(self, paths_lengths_threshold=2, support_paths=0.1,
                             disc_path_bins=4, disc_path_eqcounts=False):
-
-        # repeat paths according to path weights
-        self.repeat_weighted_paths()
 
         # discretize any numeric features
         self.discretize_paths(bins=disc_path_bins,
                                 equal_counts=disc_path_eqcounts)
+
         # the patterns are found but not scored and sorted yet
-        self.mine_patterns(support=support_paths)
+        self.mine_patterns(paths_lengths_threshold=paths_lengths_threshold, support=support_paths)
 
     def sort_patterns(self, alpha=0.0, weights=None, score_func=1):
         alpha = float(alpha)
         if weights is None:
             weights = [1] * len(self.patterns)
-        fp_scope = self.patterns.copy()
+        # fp_scope = self.patterns.copy()
 
         # to shrink the support of shorter freq_patterns
-        # formula is sqrt(weight) * log(sup * (len - alpha) / len)
+        # formula is sqrt(weight) * sup * ()(len - alpha) / len)
         if score_func == 1:
             score_function = lambda x, w: (x[0], x[1], w * x[1] * (len(x[0]) - alpha) / len(x[0]))
         # alternatives
@@ -1542,33 +1600,34 @@ class CHIRPS_runner(rule_evaluator):
             score_function = lambda x, w: (x[0], x[1], w * (len(x[0]) - alpha) / (len(x[0])**2))
         else: # weights only
             score_function = lambda x, w: (x[0], x[1], w)
-        fp_scope = [fp for fp in map(score_function, fp_scope.items(), weights)]
+        fp_scope = [fp for fp in map(score_function, self.patterns.items(), weights)]
         # score is now at position 2 of tuple
         self.patterns = sorted(fp_scope, key=itemgetter(2), reverse = True)
 
-    def score_sort_path_segments(self, sample_instances, sample_labels, target_class=None,
+    def score_sort_path_snippets(self, sample_instances, sample_labels, target_class=None,
                                     alpha_paths=0.0, score_func=1, weighting='chisq'):
         # best at -1 < alpha < 1
         # now the patterns are scored and sorted. alpha > 0 favours longer patterns. 0 neutral. < 0 shorter.
-        # the patterns can be weighted by chi**2 for independence test, p-values
+        # the patterns can be weighted by chi**2 for independence test, p-values # TODO KL-div, log odds
         if weighting is None:
             self.sort_patterns(alpha=alpha_paths, score_func=score_func) # with only support/alpha sorting
         else:
-            weights = []
-            for wp in self.patterns:
+            weights = [1] * len(self.patterns) # default neutral if no valid combo
+            for j, wp in enumerate(self.patterns):
 
-                idx = self.apply_rule(rule=wp, instances=sample_instances, features=self.features_enc)
+                instances, labels = self.init_instances(instances=sample_instances, labels=sample_labels)
+                idx = self.apply_rule(rule=wp, instances=instances, features=self.features_enc)
                 p_counts_covered = p_count_corrected(sample_labels[idx], [i for i in range(len(self.class_names))])
                 covered = p_counts_covered['counts']
-                not_covered = p_count_corrected(sample_labels[~idx], [i for i in range(len(self.class_names))])['counts']
+                not_covered = p_count_corrected(labels[~idx], [i for i in range(len(self.class_names))])['counts']
+                all_instances = p_count_corrected(labels, [i for i in range(len(self.class_names))])['counts']
 
-                if weighting == 'chisq':
-                    observed = np.array((covered, not_covered))
-                    # this is the chisq based weighting. can add other options
-                    if covered.sum() > 0 and not_covered.sum() > 0: # previous_counts.sum() == 0 is impossible
-                        weights.append(math.sqrt(chisq_indep_test(covered, not_covered)[0]))
-                    else:
-                        weights.append(np.nan)
+                # observed = np.array((covered, not_covered))
+                observed = np.array((covered, all_instances))
+
+                if weighting in ['chisq', 'kldiv', 'lodds']:
+                    print('in weighting: ', weighting)
+                    weights[j] = contingency_test(covered, all_insances, weighting)
 
                 # rf+hc score or no
                 else: #
@@ -1576,17 +1635,19 @@ class CHIRPS_runner(rule_evaluator):
                         cc = p_counts_covered['counts'][target_class]
                         ic = sum([c for c, l in zip(p_counts_covered['counts'], p_counts_covered['labels']) if l != target_class])
                         if weighting == 'rf+hc1':
-                            weights.append((cc-ic) / (cc+ic) + cc / (ic + 1)) # 4 is given in the paper. it can be anything to prevent div by zero
-                            weights = [w + abs(min(weights)) for w in weights] # shift to zero or above
+                            weights[j] = (cc-ic) / (cc+ic) + cc / (ic + 1) # 4 is given in the paper. it can be anything to prevent div by zero
                         elif weighting == 'rf+hc2':
-                            weights.append((cc-ic) / (cc+ic) + cc / (ic + 1) + cc / len(wp[0]))
-                            weights = [w + abs(min(weights)) for w in weights]
+                            weights[j] = (cc-ic) / (cc+ic) + cc / (ic + 1) + cc / len(wp[0])
                         else:
-                            weights = [1] * len(self.patterns) # default if no valid combo
-
+                            pass
+                    else:
+                        pass
 
             # correct any uncalculable weights
-            weights = [w if not n else min(weights) for w, n in zip(weights, np.isnan(weights))]
+            if any(w < 0 for w in weights):
+                weights = [w + abs(min(weights)) for w in weights] # shift to zero or above
+            weights = [w if not n else min(weights) for w, n in zip(weights, np.isnan(weights))] # clean up any nans
+            # normalise
             weights = [w/max(weights) for w in weights]
             # final application of weights
             self.sort_patterns(alpha=alpha_paths, score_func=score_func, weights=weights)
@@ -1752,11 +1813,14 @@ class CHIRPS_runner(rule_evaluator):
                         delta = 0.1,
                         random_state=None):
 
+        instances, labels = self.init_instances(instances=sample_instances, labels=sample_labels)
         self.unapplied_rules = [i for i in range(len(self.patterns))]
+        default_rule = []
+
         if len(self.unapplied_rules) == 0:
-            default_rule = []
             self.total_points = 0
         else:
+            default_rule = self.patterns[0][0]
             # default_rule will be set in the loop
             self.total_points = sum([scrs[2] for scrs in self.patterns])
 
@@ -1772,10 +1836,8 @@ class CHIRPS_runner(rule_evaluator):
             stopping_param = 1
             print('warning: stopping_param should be 0 <= p <= 1. Value was reset to 1')
         self.stopping_param = stopping_param
-        self.sample_instances = sample_instances
-        self.sample_labels = sample_labels
-        self.n_classes = len(np.unique(self.sample_labels))
-        self.n_instances = len(self.sample_labels)
+        self.n_classes = len(np.unique(labels))
+        self.n_instances = len(labels)
 
         # model posterior
         # model votes collected in constructor
@@ -1801,7 +1863,7 @@ class CHIRPS_runner(rule_evaluator):
             self.target_class_label = self.get_label(self.class_col, [self.target_class])
 
         # prior - empty rule
-        prior_eval = self.evaluate(sample_labels, np.full(len(sample_labels), True))
+        prior_eval = self.evaluate(labels, np.full(self.n_instances, True))
         # p_counts = p_count_corrected(sample_labels, [i for i in range(len(self.class_names))])
         self.posterior = np.array([prior_eval['posterior'].tolist()])
         self.counts = np.array([prior_eval['counts'].tolist()])
@@ -1836,8 +1898,8 @@ class CHIRPS_runner(rule_evaluator):
 
             self.merge_rule_iter += 1
             candidate = self.add_rule_term()
-            eval_rule = self.evaluate_rule(sample_instances=sample_instances,
-                                    sample_labels=sample_labels)
+            eval_rule = self.evaluate_rule(sample_instances=instances,
+                                    sample_labels=labels)
             # confirm rule, or revert to previous
             # choosing from a range of possible metrics and learning improvement
             # e.g if there was no change, or a decrease then reject, roll back and take the next one
@@ -1871,8 +1933,8 @@ class CHIRPS_runner(rule_evaluator):
 
                     idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
 
-                    b_sample_instances = sample_instances[idx]
-                    b_sample_labels = sample_labels[idx]
+                    b_sample_instances = instances[idx]
+                    b_sample_labels = labels[idx]
 
                     b_eval_rule = self.evaluate_rule(sample_instances=b_sample_instances,
                                                 sample_labels=b_sample_labels)
@@ -1964,8 +2026,8 @@ class CHIRPS_runner(rule_evaluator):
                 b_current = np.full(pruning_bootstraps, np.nan)
                 for b in range(pruning_bootstraps):
                     idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
-                    b_sample_instances = sample_instances[idx]
-                    b_sample_labels = sample_labels[idx]
+                    b_sample_instances = instances[idx]
+                    b_sample_labels = labels[idx]
 
                     eval_current = self.evaluate_rule(rule=current_rule, sample_instances=b_sample_instances, sample_labels=b_sample_labels)
                     eval_current_post = eval_current['posterior']
@@ -2061,6 +2123,7 @@ class batch_CHIRPS_explainer:
                         **kwargs):
         # defaults
         options = {
+            'paths_lengths_threshold' : 2,
             'support_paths' : 0.05,
             'alpha_paths' : 0.0,
             'disc_path_bins' : 4,
@@ -2106,7 +2169,7 @@ class batch_CHIRPS_explainer:
                     (c_runner, target_classes[i],
                     self.sample_instances, self.sample_labels,
                     self.forest, self.fwmet,
-                    options['support_paths'], options['alpha_paths'],
+                    options['paths_lengths_threshold'], options['support_paths'], options['alpha_paths'],
                     options['disc_path_bins'], options['disc_path_eqcounts'], options['score_func'],
                     options['weighting'], options['algorithm'], options['merging_bootstraps'], options['pruning_bootstraps'],
                     options['delta'], options['precis_threshold'], i)
@@ -2134,7 +2197,7 @@ class batch_CHIRPS_explainer:
                     as_CHIRPS(c_runner, target_classes[i],
                     self.sample_instances, self.sample_labels,
                     self.forest, self.fwmet,
-                    options['support_paths'], options['alpha_paths'],
+                    options['paths_lengths_threshold'], options['support_paths'], options['alpha_paths'],
                     options['disc_path_bins'], options['disc_path_eqcounts'], options['score_func'],
                     options['weighting'], options['algorithm'], options['merging_bootstraps'], options['pruning_bootstraps'],
                     options['delta'], options['precis_threshold'], i)

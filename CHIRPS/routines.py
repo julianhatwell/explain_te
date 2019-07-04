@@ -445,11 +445,19 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         f_perf = forest_performance['main']['test_accuracy']
         p_perf = f_perf # for CHIRPS, forest pred and CHIRPS target are always the same
         fid = 1 # for CHIRPS, forest pred and CHIRPS target are always the same
+
+        # calculate the sd, avoiding div by zeros
+        if f_perf == 1.0:
+            sd_f_perf = 0.0
+        else:
+            sd_f_perf = sqrt((f_perf/(1-f_perf))/len(b_CHIRPS_exp.CHIRPS_explainers))
+
+        # save summary results
         summary_results = [[dataset_name, results[0][2], len(b_CHIRPS_exp.CHIRPS_explainers), 1, \
                             1, 1, 1, 0, \
                             np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
                             eval_start_time, time.asctime( time.localtime(time.time()) ), \
-                            f_perf, sqrt((f_perf/(1-f_perf))/len(b_CHIRPS_exp.CHIRPS_explainers)), \
+                            f_perf, sd_f_perf, \
                             1, 0, \
                             1, 1, 0]]
 
