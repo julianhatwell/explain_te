@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from pathlib import Path as pth
 from os import makedirs as mkdir
@@ -19,6 +20,13 @@ def in_ipynb():
         return(False)
 
 def p_count_corrected(arr, classes, weights=None):
+    # quick out if nothing is passed in
+    if len(arr) == 0:
+        return({'labels' : classes,
+        'counts' : np.zeros(len(classes)),
+        'p_counts' : np.zeros(len(classes))})
+
+    # otherwise
     # initialise weights to ones if necessary
     if weights is None:
         weights = np.ones(len(arr))
@@ -35,6 +43,7 @@ def p_count_corrected(arr, classes, weights=None):
     for cl in range(n_classes):
         pc[cl] = dict_counts[cl] / weights.sum()
         c[cl] = dict_counts[cl]
+
     return({'labels' : classes,
     'counts' : c,
     'p_counts' : pc})
@@ -77,3 +86,19 @@ def if_nexists_make_file(save_path, init_text='None'):
         f = open(save_path, 'w+')
         f.write(init_text)
         f.close()
+
+def confidence_weight(proba, what='conf_weight'):
+
+    if what=='proba':
+        return(proba)
+    # Displace zero probabilities so the log is defined.
+    # Also fix negative elements which may occur with
+    # negative sample weights.
+    proba[proba < np.finfo(proba.dtype).eps] = np.finfo(proba.dtype).eps
+    log_proba = np.log(proba)
+    if what=='log_proba':
+        return(log_proba)
+    n_classes = len(proba[0])
+    # conf_weight
+    return( (n_classes - 1.0) * (log_proba - (1. / n_classes)
+                              * log_proba.sum(axis=1)[:, np.newaxis]) )

@@ -323,6 +323,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             c.target_class,
             c.target_class_label[0],
             c.forest_vote_share,
+            c.accumulated_weights,
             c.prior[tc],
             c.est_prec,
             c.est_stab,

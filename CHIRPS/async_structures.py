@@ -13,7 +13,8 @@ from scipy.stats import chi2_contingency
 # parallelisable function for the forest_walker class
 def as_tree_walk(tree_idx, instances, labels, n_instances,
                 tree_pred, tree_pred_labels,
-                tree_pred_proba, tree_agree_maj_vote,
+                tree_pred_proba, tree_confidence_weights,
+                tree_agree_maj_vote,
                 feature, threshold, path, features, est_wt):
 
     # object for the results
@@ -30,6 +31,7 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
                                     'pred_class' : tree_pred[ic].astype(np.int64),
                                     'pred_class_label' : tree_pred_labels[ic],
                                     'pred_proba' : tree_pred_proba[ic].tolist(),
+                                    'conf_weight' : tree_confidence_weights[ic].tolist(),
                                     'forest_pred_class' : pred_class,
                                     'agree_maj_vote' : tree_agree_maj_vote[ic],
                                     'path' : {'feature_idx' : [],
@@ -64,6 +66,7 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
                                         'pred_class' : tree_pred[ic].astype(np.int64),
                                         'pred_class_label' : tree_pred_labels[ic],
                                         'pred_proba' : tree_pred_proba[ic].tolist(),
+                                        'confidence_weight' : tree_confidence_weights[ic].tolist(),
                                         'forest_pred_class' : pred_class,
                                         'agree_maj_vote' : tree_agree_maj_vote[ic],
                                         'path' : {'feature_idx' : [feature[p]],

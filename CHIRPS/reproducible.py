@@ -318,6 +318,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
             tc[0],
             tc_lab[0],
             np.array([tree.predict(instances_enc[i]) == tc for tree in forest.estimators_]).mean(), # majority vote share
+            0, # accumulated weight not meaningful for Anchors
             test_metrics['prior']['p_counts'][tc][0],
             train_metrics['posterior'][tc][0],
             train_metrics['stability'][tc][0],
@@ -511,6 +512,7 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
         tc[0],
         tc_lab[0],
         np.array([tree.predict(instances_enc[i]) == mc for tree in forest.estimators_]).mean(), # majority vote share
+        0, # accumulated weight not meaningful for dfrgtrs
         metrics['prior']['p_counts'][mc][0],
         metrics['posterior'][tc][0],
         metrics['stability'][tc][0],
