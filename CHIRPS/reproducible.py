@@ -432,7 +432,7 @@ def which_rule(rule_list, X, features):
     rules_idx = rules_idx.astype(int)
     return(rules_idx)
 
-def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
+def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
                             eval_start_time, defTrees_elapsed_time,
                             batch_size=100, n_instances=100,
                             save_path='', dataset_name='',
@@ -440,21 +440,21 @@ def defragTrees_benchmark(forest, ds_container, meta_data, dfrgtrs,
 
     identifier = 'defragTrees'
     print('defragTrees benchmark')
-    # OPTION 1 - batching (to be implemented in the new code, right now it will do just one batch)
+
     _, _, instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
                                                                             n_instances=n_instances)
+    forest_preds = forest.predict(instances_enc)
+    dfrgtrs_preds = dfrgtrs.predict(np.array(instances_enc_matrix))
 
     defTrees_mean_elapsed_time = defTrees_elapsed_time / len(labels)
 
-    eval_model = rt.evaluate_model(y_true=labels, y_pred=dfrgtrs.predict(np.array(instances_enc_matrix)),
+    eval_model = rt.evaluate_model(y_true=labels, y_pred=dfrgtrs_preds,
                         class_names=meta_data['class_names_label_order'],
+                        model=model,
                         plot_cm=False, plot_cm_norm=False, # False here will output the metrics and suppress the plots
                         save_path=save_path,
                         identifier=identifier,
                         random_state=random_state)
-
-    forest_preds = forest.predict(instances_enc)
-    dfrgtrs_preds = dfrgtrs.predict(np.array(instances_enc_matrix))
 
     rule_list = rule_list_from_dfrgtrs(dfrgtrs)
 

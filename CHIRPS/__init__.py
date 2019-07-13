@@ -27,19 +27,26 @@ def p_count_corrected(arr, classes, weights=None):
         'p_counts' : np.zeros(len(classes))})
 
     # otherwise
-    # initialise weights to ones if necessary
+    n_classes = len(classes)
+    pc = np.zeros(n_classes)
+    c = np.zeros(n_classes)
+
+    # initialise weights to ones, accept a vector of weights, or extract per row weights from a 2D array
     if weights is None:
         weights = np.ones(len(arr))
     else:
-        weights = np.array(weights)
+        try:
+            n_weights = np.shape(weights)[0]
+            weights = np.array(weights)
+            weights = weights[range(n_weights), arr] # this will fail if there is no second dimension
+            weights = weights / (n_weights * n_classes) # this is the formula for SAMME.R and scikit
+        except:
+            weights = np.array(weights)
     dict_counts = defaultdict(lambda: 0.0)
     for cl, wt in zip(arr, weights):
         dict_counts[cl] += wt
 
     # insert any zeros for unrepresented classes
-    n_classes = len(classes)
-    pc = np.zeros(n_classes)
-    c = np.zeros(n_classes)
     for cl in range(n_classes):
         pc[cl] = dict_counts[cl] / weights.sum()
         c[cl] = dict_counts[cl]
@@ -59,11 +66,14 @@ def chisq_indep_test(counts, prior_counts):
         chisq = (np.nan, np.nan, (r - 1) * (c - 1))
     return(chisq)
 
-def entropy_corrected(p, q):
+def entropy_corrected(p, q=None):
+    if q is None:
+        return(entropy(p))
+    alpha = np.finfo(dtype='float32').eps
     p_smooth = np.random.uniform(size=len(p))
     q_smooth = np.random.uniform(size=len(p)) # convex smooth idea https://mathoverflow.net/questions/72668/how-to-compute-kl-divergence-when-pmf-contains-0s
-    p_smoothed = p_smooth * 0.01 + np.array(p) * 0.99
-    q_smoothed = q_smooth * 0.01 + np.array(q) * 0.99
+    p_smoothed = p_smooth * alpha + np.array(p) * (1-alpha)
+    q_smoothed = q_smooth * alpha + np.array(q) * (1-alpha)
     return(entropy(p_smoothed, q_smoothed))
 
 def contingency_test(p, q, statistic = 'chisq'):
@@ -72,7 +82,7 @@ def contingency_test(p, q, statistic = 'chisq'):
     elif statistic == 'kldiv':
         return(entropy_corrected(p, q))
     elif statistic == 'lodds':
-        micro_diff = np.finfo(dtype='float32').eps
+        micro_diff = np.finfo(np.dtype(p)).eps
         return(np.std(np.log((p + micro_diff)/(q + micro_diff))))
 
 # create a directory if doesn't exist
@@ -94,7 +104,7 @@ def confidence_weight(proba, what='conf_weight'):
     # Displace zero probabilities so the log is defined.
     # Also fix negative elements which may occur with
     # negative sample weights.
-    proba[proba < np.finfo(proba.dtype).eps] = np.finfo(proba.dtype).eps
+    proba[proba < np.finfo(np.dtype(proba)).eps] = np.finfo(proba.dtype).eps
     log_proba = np.log(proba)
     if what=='log_proba':
         return(log_proba)
