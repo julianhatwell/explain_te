@@ -7,7 +7,7 @@ from copy import deepcopy
 import CHIRPS.datasets as ds
 import CHIRPS.routines as rt
 import CHIRPS.structures as strcts
-from CHIRPS import p_count_corrected
+from CHIRPS import p_count_corrected, o_print
 from CHIRPS import config as cfg
 from lime import lime_tabular as limtab
 from anchor import anchor_tabular as anchtab
@@ -43,8 +43,9 @@ def export_data_splits(datasets, project_dir=None, random_state_splits=123):
 
 def forest_prep(ds_container, meta_data, model='RandomForest',
                 save_path=None, override_tuning=False,
-                tuning_grid=None, identifier='main',
-                plot_cm=False, plot_cm_norm=False):
+                tuning_grid=None, method='main',
+                plot_cm=False, plot_cm_norm=False,
+                verbose=True):
 
     X_train=ds_container.X_train_enc
     X_test=ds_container.X_test_enc
@@ -54,44 +55,47 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
     class_names=meta_data['class_names_label_order']
     random_state=meta_data['random_state']
 
+    best_params, forest_performance = rt.tune_wrapper(
+     X=X_train,
+     y=y_train,
+     model=model,
+     grid=tuning_grid,
+     save_path=save_path,
+     override_tuning=override_tuning,
+     random_state=random_state, verbose=verbose)
+
     if model == 'RandomForest':
-
-        best_params, forest_performance = rt.tune_rf(
-         X=X_train,
-         y=y_train,
-         grid=tuning_grid,
-         save_path=save_path,
-         override_tuning=override_tuning,
-         random_state=random_state)
-
         best_params.update({'oob_score' : True, 'random_state' : random_state})
         del(best_params['score'])
-
         rf = rt.RandomForestClassifier()
         rf.set_params(**best_params)
         rf.fit(X=X_train, y=y_train)
 
-    else:
-        best_params, forest_performance = rt.tune_ada(
-         X=X_train,
-         y=y_train,
-         grid=tuning_grid,
-         save_path=save_path,
-         override_tuning=override_tuning,
-         random_state=random_state)
-
+    elif model in ['AdaBoost1', 'AdaBoost2']:
         # convert this back from a text string
         best_params.update({'base_estimator' : eval(best_params['base_estimator'])})
         best_params.update({'random_state' : random_state})
         del(best_params['score'])
-
         rf = rt.AdaBoostClassifier()
         rf.set_params(**best_params)
         rf.fit(X=X_train, y=y_train)
 
-    print('Best OOB Accuracy Estimate during tuning: ' '{:0.4f}'.format(forest_performance['score']))
-    print('Best parameters:', best_params)
-    print()
+    elif model == 'GBM':
+        # convert this back from a text string
+        best_params.update({'random_state' : random_state})
+        del(best_params['score'])
+
+        rf = rt.GradientBoostingClassifier()
+        rf.set_params(**best_params)
+        rf.fit(X=X_train, y=y_train)
+
+    else:
+        print('not implemented')
+        return()
+
+    o_print('Best OOB Accuracy Estimate during tuning: ' '{:0.4f}'.format(forest_performance['score']), verbose)
+    o_print('Best parameters:' + str(best_params), verbose)
+    o_print('', verbose)
     # the outputs of this function are:
     # cm - confusion matrix as 2d array
     # acc - accuracy of model = correctly classified instance / total number instances
@@ -102,7 +106,7 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
                         class_names=class_names, model=model,
                         plot_cm=plot_cm, plot_cm_norm=plot_cm_norm, # False here will output the metrics and suppress the plots
                         save_path=save_path,
-                        identifier=identifier,
+                        method=method,
                         random_state=random_state)
 
     return(rf)
@@ -125,13 +129,16 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model,
                     chirps_explanation_async=True,
                     save_path='', save_sensitivity_path=None,
                     dataset_name='',
-                    random_state=123, **kwargs):
+                    random_state=123, verbose=True, **kwargs):
 
     if save_sensitivity_path is None:
         save_sensitivity_path=save_path
     # 2. Prepare Unseen Data and Predictions
+    o_print('Beginning benchmark for ' + dataset_name + ' data and ' + str(n_instances) + ' instances.', verbose)
+    o_print('Hyper-parameter settings: ' + str(kwargs), verbose)
+    o_print('', verbose)
 
-    print('Prepare Unseen Data and Predictions for CHIRPS benchmark')
+    o_print('Prepare Unseen Data and Predictions for CHIRPS benchmark', verbose)
     # OPTION 1 - batching (to be implemented in the new code, right now it will do just one batch)
     instances, _, instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
                                                                                 n_instances=n_instances)
@@ -139,7 +146,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model,
     preds = forest.predict(instances_enc)
 
     # 3.1 - Extract Tree Prediction Paths
-    print('Walking forest for ' + str(len(labels)) + ' instances... (please wait)')
+    o_print('Walking forest for ' + str(len(labels)) + ' instances... (please wait)', verbose)
 
     # wrapper object needs the decision forest itself and the dataset meta data (we have a convenience function for this)
     f_walker = strcts.forest_walker(forest = forest, meta_data=meta_data)
@@ -159,9 +166,9 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model,
     forest_walk_elapsed_time = forest_walk_end_time - forest_walk_start_time
     forest_walk_mean_elapsed_time = forest_walk_elapsed_time/len(labels)
 
-    print('Forest Walk with async = ' + str(forest_walk_async))
-    print('Forest Walk time elapsed:', "{:0.4f}".format(forest_walk_elapsed_time), 'seconds')
-    print()
+    o_print('Forest Walk with async = ' + str(forest_walk_async), verbose)
+    o_print('Forest Walk time elapsed: ' + '{:0.4f}'.format(forest_walk_elapsed_time) + ' seconds', verbose)
+    o_print('', verbose)
 
     # 3.2-3.4 - Freqent pattern mining of paths, Score and sort mined path segments, Merge path segments into one rule
     # get what the model predicts on the training sample
@@ -175,20 +182,20 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model,
                                     meta_data=meta_data,
                                     forest_walk_mean_elapsed_time=forest_walk_mean_elapsed_time)
 
-    print('Running CHIRPS on a batch of ' + str(len(labels)) + ' instances... (please wait)')
+    o_print('Running CHIRPS on a batch of ' + str(len(labels)) + ' instances... (please wait)', verbose)
     # start a timer
     ce_start_time = timeit.default_timer()
 
-    CHIRPS.batch_run_CHIRPS(chirps_explanation_async=chirps_explanation_async, **kwargs)
+    CHIRPS.batch_run_CHIRPS(chirps_explanation_async=chirps_explanation_async, random_state=random_state, **kwargs)
 
     ce_end_time = timeit.default_timer()
     ce_elapsed_time = ce_end_time - ce_start_time
-    print('CHIRPS time elapsed:', "{:0.4f}".format(ce_elapsed_time), 'seconds')
-    print('CHIRPS with async = ' + str(chirps_explanation_async))
-    print()
+    o_print('CHIRPS time elapsed: ' + "{:0.4f}".format(ce_elapsed_time) + ' seconds', verbose)
+    o_print('CHIRPS with async = ' + str(chirps_explanation_async), verbose)
+    o_print('', verbose)
 
     # 4. Evaluating CHIRPS Explanations
-    print('Evaluating found explanations')
+    o_print('Evaluating found explanations', verbose)
 
     results_start_time = timeit.default_timer()
 
@@ -209,13 +216,16 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model,
 
     results_end_time = timeit.default_timer()
     results_elapsed_time = results_end_time - results_start_time
-    print('CHIRPS batch results eval time elapsed:', "{:0.4f}".format(results_elapsed_time), 'seconds')
+    o_print('Results save to ' + save_sensitivity_path + save_results_file)
+    o_print('CHIRPS batch results eval time elapsed: ' + "{:0.4f}".format(results_elapsed_time) + ' seconds', verbose)
+    o_print('', verbose)
     # this completes the CHIRPS runs
 
 def Anchors_preproc(ds_container, meta_data):
 
+    ds_cont = deepcopy(ds_container)
     # create the discretise function from LIME tabular
-    disc = limtab.QuartileDiscretizer(np.array(ds_container.X_train),
+    disc = limtab.QuartileDiscretizer(np.array(ds_cont.X_train),
                                       categorical_features=meta_data['categorical_features'],
                                       feature_names=meta_data['features'])
 
@@ -230,20 +240,20 @@ def Anchors_preproc(ds_container, meta_data):
                                         for vk in var_dict_anch.keys() if not var_dict_anch[vk]['class_col']}
 
     # create discretised versions of the training and test data
-    ds_container.X_train_matrix = disc.discretize(np.array(ds_container.X_train))
-    ds_container.X_test_matrix = disc.discretize(np.array(ds_container.X_test))
+    ds_cont.X_train_matrix = disc.discretize(np.array(ds_cont.X_train))
+    ds_cont.X_test_matrix = disc.discretize(np.array(ds_cont.X_test))
 
         # fit the Anchors explainer. Onehot encode the data. Replace the data in the ds_container
-    explainer = anchtab.AnchorTabularExplainer(meta_data['class_names'], meta_data['features'], ds_container.X_train_matrix, var_dict_anch['categorical_names'])
-    explainer.fit(ds_container.X_train_matrix, ds_container.y_train, ds_container.X_test_matrix, ds_container.y_test)
+    explainer = anchtab.AnchorTabularExplainer(meta_data['class_names'], meta_data['features'], ds_cont.X_train_matrix, var_dict_anch['categorical_names'])
+    explainer.fit(ds_cont.X_train_matrix, ds_cont.y_train, ds_cont.X_test_matrix, ds_cont.y_test)
 
-    ds_container.X_train_enc = explainer.encoder.transform(ds_container.X_train_matrix)
-    ds_container.X_test_enc = explainer.encoder.transform(ds_container.X_test_matrix)
+    ds_cont.X_train_enc = explainer.encoder.transform(ds_cont.X_train_matrix)
+    ds_cont.X_test_enc = explainer.encoder.transform(ds_cont.X_test_matrix)
 
-    ds_container.X_train_enc_matrix = ds_container.X_train_enc.todense()
-    ds_container.X_test_enc_matrix = ds_container.X_test_enc.todense()
+    ds_cont.X_train_enc_matrix = ds_cont.X_train_enc.todense()
+    ds_cont.X_test_enc_matrix = ds_cont.X_test_enc.todense()
 
-    return(ds_container, explainer)
+    return(ds_cont, explainer)
 
 def Anchors_explanation(instance, explainer, forest, random_state=123, threshold=0.95):
     np.random.seed(random_state)
@@ -253,15 +263,18 @@ def Anchors_explanation(instance, explainer, forest, random_state=123, threshold
 # function to manage the whole run and evaluation
 def Anchors_benchmark(forest, ds_container, meta_data,
                     anchors_explainer,
+                    model,
                     batch_size=100, n_instances=100,
                     save_path='',
                     dataset_name='',
                     precis_threshold=0.95,
-                    random_state=123):
+                    random_state=123,
+                    verbose=True):
 
-    identifier = 'Anchors'
+    method = 'Anchors'
+    file_stem = rt.get_file_stem(model)
     # 2. Prepare Unseen Data and Predictions
-    print('Prepare Unseen Data and Predictions for Anchors benchmark')
+    o_print('Prepare Unseen Data and Predictions for Anchors benchmark', verbose)
     # OPTION 1 - batching (to be implemented in the new code, right now it will do just one batch)
     _, instances_matrix, instances_enc, _, labels = unseen_data_prep(ds_container,
                                             n_instances=n_instances)
@@ -269,14 +282,14 @@ def Anchors_benchmark(forest, ds_container, meta_data,
     preds = forest.predict(instances_enc)
     sample_labels = forest.predict(ds_container.X_train_enc) # for train estimates
 
-    print('Running Anchors on each instance and collecting results')
+    o_print('Running Anchors on each instance and collecting results', verbose)
     eval_start_time = time.asctime( time.localtime(time.time()) )
     # iterate through each instance to generate the anchors explanation
     results = [[]] * len(labels)
     evaluator = strcts.evaluator()
     for i in range(len(labels)):
         instance_id = labels.index[i]
-        if i % 10 == 0: print('Working on ' + identifier + ' for instance ' + str(instance_id))
+        if i % 10 == 0: o_print('Working on ' + method + ' for instance ' + str(instance_id), verbose)
 
         # get test sample by leave-one-out on current instance
         _, loo_instances_matrix, loo_instances_enc, _, loo_true_labels = ds_container.get_loo_instances(instance_id, which_split='test')
@@ -310,7 +323,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
 
         results[i] = [dataset_name,
             instance_id,
-            identifier,
+            method,
             ' AND '.join(explanation.names()),
             len(explanation.names()),
             tc[0],
@@ -351,18 +364,18 @@ def Anchors_benchmark(forest, ds_container, meta_data,
             anch_elapsed_time]
 
     if save_path is not None:
-        save_results_file = identifier + '_rnst_' + str(random_state)
+        save_results_file = method + '_rnst_' + str(random_state)
         # save to file between each loop, in case of crashes/restarts
         rt.save_results(cfg.results_headers, results, save_results_path=save_path,
                         save_results_file=save_results_file)
 
         # collect summary_results
-        with open(meta_data['get_save_path']() + 'forest_performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
+        with open(meta_data['get_save_path']() + file_stem + 'performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
             forest_performance = json.load(infile)
         f_perf = forest_performance['Anchors']['test_accuracy']
         p_perf = f_perf # for Anchors, forest pred and Anchors target are always the same
         fid = 1 # for Anchors, forest pred and Anchors target are always the same
-        summary_results = [[dataset_name, identifier, len(labels), 1, \
+        summary_results = [[dataset_name, method, len(labels), 1, \
                             1, 1, 1, 0, \
                             np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
                             eval_start_time, time.asctime( time.localtime(time.time()) ), \
@@ -374,7 +387,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
 
 def defragTrees_prep(forest, meta_data, ds_container,
                         Kmax=10, maxitr=100, restart=10,
-                        identifier='defragTrees', save_path=''):
+                        save_path='', verbose=True):
 
     X_train=ds_container.X_train_enc_matrix
     y_train=ds_container.y_train
@@ -385,8 +398,8 @@ def defragTrees_prep(forest, meta_data, ds_container,
     class_names = meta_data['class_names_label_order']
     random_state = meta_data['random_state']
 
-    print('Running defragTrees')
-    print()
+    o_print('Running defragTrees', verbose)
+    o_print('', verbose)
     eval_start_time = time.asctime( time.localtime(time.time()) )
     defTrees_start_time = timeit.default_timer()
 
@@ -397,14 +410,14 @@ def defragTrees_prep(forest, meta_data, ds_container,
 
     defTrees_end_time = timeit.default_timer()
     defTrees_elapsed_time = defTrees_end_time - defTrees_start_time
-    print('Fit defragTrees time elapsed:', "{:0.4f}".format(defTrees_elapsed_time), 'seconds')
-    print()
+    o_print('Fit defragTrees time elapsed:' + "{:0.4f}".format(defTrees_elapsed_time) + 'seconds', verbose)
+    o_print('', verbose)
 
     score, cover, coll = mdl.evaluate(np.array(X_test), y_test)
-    print('defragTrees test accuracy')
-    print('Accuracy = %f' % (1 - score,))
-    print('Coverage = %f' % (cover,))
-    print('Overlap = %f' % (coll,))
+    o_print('defragTrees test accuracy', verbose)
+    o_print('Accuracy = %f' % (1 - score,), verbose)
+    o_print('Coverage = %f' % (cover,), verbose)
+    o_print('Overlap = %f' % (coll,), verbose)
 
     return(mdl, eval_start_time, defTrees_elapsed_time)
 
@@ -436,10 +449,12 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
                             eval_start_time, defTrees_elapsed_time,
                             batch_size=100, n_instances=100,
                             save_path='', dataset_name='',
-                            random_state=123):
+                            random_state=123,
+                            verbose=True):
 
-    identifier = 'defragTrees'
-    print('defragTrees benchmark')
+    method = 'defragTrees'
+    file_stem = rt.get_file_stem(model)
+    o_print('defragTrees benchmark', verbose)
 
     _, _, instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
                                                                             n_instances=n_instances)
@@ -453,7 +468,7 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
                         model=model,
                         plot_cm=False, plot_cm_norm=False, # False here will output the metrics and suppress the plots
                         save_path=save_path,
-                        identifier=identifier,
+                        method=method,
                         random_state=random_state)
 
     rule_list = rule_list_from_dfrgtrs(dfrgtrs)
@@ -463,7 +478,7 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
     evaluator = strcts.evaluator()
     for i in range(len(labels)):
         instance_id = labels.index[i]
-        if i % 10 == 0: print('Working on ' + identifier + ' for instance ' + str(instance_id))
+        if i % 10 == 0: o_print('Working on ' + method + ' for instance ' + str(instance_id), verbose)
 
         # get test sample by leave-one-out on current instance
         _, _, loo_instances_enc, loo_instances_enc_matrix, loo_true_labels = ds_container.get_loo_instances(instance_id,
@@ -504,7 +519,7 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
 
         results[i] = [dataset_name,
         instance_id,
-        identifier,
+        method,
         pretty_rule,
         len(rule),
         mc[0],
@@ -545,19 +560,19 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
         dt_elapsed_time]
 
     if save_path is not None:
-        save_results_file=identifier + '_rnst_' + str(random_state)
+        save_results_file=method + '_rnst_' + str(random_state)
 
         rt.save_results(cfg.results_headers, results,
                         save_results_path=save_path,
                         save_results_file=save_results_file)
 
         # collect summary_results
-        with open(meta_data['get_save_path']() + 'forest_performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
+        with open(meta_data['get_save_path']() + file_stem + 'performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
             forest_performance = json.load(infile)
         f_perf = forest_performance['main']['test_accuracy']
         p_perf = np.mean(dfrgtrs_preds == labels)
         fid = np.mean(dfrgtrs_preds == forest_preds)
-        summary_results = [[dataset_name, identifier, len(labels), len(rule_list), \
+        summary_results = [[dataset_name, method, len(labels), len(rule_list), \
                             len(np.unique(rule_idx)), np.median(np.array(rule_idx) + 1), np.mean(np.array(rule_idx) + 1), np.std(np.array(rule_idx) + 1), \
                             np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
                             eval_start_time, time.asctime( time.localtime(time.time()) ), \
@@ -568,3 +583,103 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
         rt.save_results(cfg.summary_results_headers, summary_results,
                         save_results_path=save_path,
                         save_results_file=save_results_file + '_summary')
+
+def benchmarking_prep(datasets, model, tuning, project_dir, random_state, random_state_splits, verbose=True):
+    benchmark_items = {}
+    for d_constructor in datasets:
+        dataset_name = d_constructor.__name__
+        o_print('Preprocessing ' + dataset_name + ' data and model for ' + d_constructor.__name__ + ' with random state = ' + str(random_state), verbose)
+        # 1. Data and Forest prep
+        o_print('Split data into main train-test and build RF', verbose)
+        mydata = d_constructor(random_state=random_state, project_dir=project_dir)
+        meta_data = mydata.get_meta()
+        save_path = meta_data['get_save_path']()
+        train_index, test_index = mydata.get_tt_split_idx(random_state=random_state_splits)
+        tt = mydata.tt_split(train_index, test_index)
+
+        # this will train and score the model, mathod='main' (default)
+        rf = forest_prep(ds_container=tt,
+                    meta_data=meta_data,
+                    model=model,
+                    override_tuning=tuning['override'],
+                    tuning_grid=tuning['grid'],
+                    save_path=save_path, verbose=verbose)
+
+        o_print('Discretise data and train model for Anchors', verbose)
+        # preprocessing - discretised continuous X matrix has been added and also needs an updated var_dict
+        # plus returning the fitted explainer that holds the data distribution
+        tt_anch, anchors_explainer = Anchors_preproc(ds_container=tt, meta_data=meta_data)
+
+        # no tuning grid because we want to take best params from a previous run (see try/except above)
+        rf_anch = forest_prep(ds_container=tt_anch,
+            meta_data=meta_data,
+            model=model,
+            save_path=save_path,
+            method='Anchors', verbose=verbose)
+
+        # collect
+        benchmark_items[dataset_name] = {'main' : {'forest' : rf, 'ds_container' : tt},
+                                        'anchors' : {'forest' : rf_anch, 'ds_container' : tt_anch, 'explainer' : anchors_explainer},
+                                        'meta_data' : meta_data}
+        o_print('', verbose)
+    return(benchmark_items)
+
+def do_benchmarking(benchmark_items, verbose=True, **control):
+    for b in benchmark_items:
+        save_path = benchmark_items[b]['meta_data']['get_save_path']()
+        try:
+            save_sensitivity_path = control['save_sensitivity_path']
+            save_sensitivity_path = rt.extend_path(stem=save_path, extensions=[save_sensitivity_path, \
+                        'sp_' + str(control['kwargs']['support_paths']) + \
+                        '_ap_' + str(control['kwargs']['alpha_paths']) + \
+                        '_dpb_' + str(control['kwargs']['disc_path_bins']) + \
+                        '_sf_' + str(control['kwargs']['score_func']) + \
+                        '_w_' + str(control['kwargs']['weighting']) + '_'])
+
+        except:
+            print('in_except')
+            save_sensitivity_path = None
+        if control['method'] == 'CHIRPS':
+            CHIRPS_benchmark(forest=benchmark_items[b]['main']['forest'],
+                                ds_container=benchmark_items[b]['main']['ds_container'],
+                                meta_data=benchmark_items[b]['meta_data'],
+                                model=control['model'],
+                                n_instances=control['n_instances'],
+                                forest_walk_async=control['forest_walk_async'],
+                                chirps_explanation_async=control['chirps_explanation_async'],
+                                save_path=save_path,
+                                save_sensitivity_path=save_sensitivity_path,
+                                dataset_name=b,
+                                random_state=control['random_state'],
+                                verbose=verbose,
+                                **control['kwargs'])
+        if control['method'] == 'Anchors':
+            Anchors_benchmark(forest=benchmark_items[b]['anchors']['forest'],
+                                ds_container=benchmark_items[b]['anchors']['ds_container'],
+                                meta_data=benchmark_items[b]['meta_data'],
+                                anchors_explainer=benchmark_items[b]['anchors']['explainer'],
+                                model=control['model'],
+                                n_instances=control['n_instances'],
+                                save_path=save_path,
+                                dataset_name=b,
+                                random_state=control['random_state'],
+                                verbose=verbose)
+        if control['method'] == 'defragTrees':
+            dfrgtrs, eval_start_time, defTrees_elapsed_time = defragTrees_prep(ds_container=benchmark_items[b]['main']['ds_container'],
+                                                                    meta_data=benchmark_items[b]['meta_data'],
+                                                                    forest=benchmark_items[b]['main']['forest'],
+                                                                    Kmax=control['Kmax'],
+                                                                    restart=control['restart'],
+                                                                    maxitr=control['maxitr'],
+                                                                    save_path=save_path,
+                                                                    verbose=verbose)
+            defragTrees_benchmark(forest=benchmark_items[b]['main']['forest'],
+                                    ds_container=benchmark_items[b]['main']['ds_container'],
+                                    meta_data=benchmark_items[b]['meta_data'],
+                                    model=control['model'],
+                                    dfrgtrs=dfrgtrs, eval_start_time=eval_start_time,
+                                    defTrees_elapsed_time=defTrees_elapsed_time,
+                                    n_instances=control['n_instances'],
+                                    save_path=save_path, dataset_name=b,
+                                    random_state=control['random_state'],
+                                    verbose=verbose)

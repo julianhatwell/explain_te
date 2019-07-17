@@ -335,7 +335,6 @@ class data_container(non_deterministic):
         train_idx = np.array(train_pos.index[train_pos], dtype=np.int32)
         # train are currently in given order, the test are not
         if shuffle:
-            np.random.seed(random_state)
             np.random.shuffle(train_idx)
 
         return(train_idx, test_idx)
@@ -438,7 +437,7 @@ class batch_paths_container(object):
             return(unique[np.argmax(counts)], dict(zip(unique, counts)))
         else: return(unique[np.argmax(counts)])
 
-    def get_CHIRPS_runner(self, batch_idx, meta_data, which_trees='majority', feature_values=True):
+    def get_CHIRPS_runner(self, batch_idx, meta_data, which_trees='majority', random_state=123, feature_values=True):
 
         batch_idx = math.floor(batch_idx) # make sure it's an integer
         true_to_lt = lambda x: '<' if x == True else '>'
@@ -469,6 +468,9 @@ class batch_paths_container(object):
             else:
                 paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths)]))]
 
+        # support for SAMME.R
+
+
         # path formatting - should it be on values level or features level
         if feature_values:
             paths = [[]] * len(paths_info)
@@ -486,9 +488,11 @@ class batch_paths_container(object):
         # simply determine the count and proportion of trees according to votes
         model_votes = p_count_corrected(tree_preds, [i for i in range(len(meta_data['class_names']))], weights=estimator_weights)
 
-        # determine the weighted count of trees, based on predicted probabilities (support for SAMME.R)
+        # determine the weighted count of trees  (support for SAMME.R)
+        # based on SAMME.R quantities
         # confidence_weights = confidence_weight(np.array(pred_probas), 'conf_weight')
         # confidence_weights = np.mean(confidence_weights + abs(confidence_weights.min(axis=1).reshape(-1, 1)), axis=0)
+        # based on predicted probabilities
         confidence_weights = np.sum(pred_probas, axis=0)
         confidence_weights = p_count_corrected([i for i in range(len(meta_data['class_names']))], [i for i in range(len(meta_data['class_names']))], confidence_weights)
 
@@ -497,7 +501,8 @@ class batch_paths_container(object):
         c_runner = CHIRPS_runner(meta_data, paths, paths_weights, paths_pred_proba,
                                     tree_preds, model_votes, confidence_weights,
                                     self.major_class_from_paths(batch_idx),
-                                    self.target_class_from_paths(batch_idx))
+                                    self.target_class_from_paths(batch_idx),
+                                    random_state)
         return(c_runner)
 
 class forest_walker(object):
@@ -1188,7 +1193,6 @@ class CHIRPS_explainer(rule_evaluator):
 
         # reproducibility
         random_state = self.default_if_none_random_state(random_state)
-        np.random.seed(random_state)
 
         # get a distribution for those instances covered by rule
         idx = np.random.choice(n_instances, size = size, replace=True)
@@ -1416,12 +1420,10 @@ class CHIRPS_runner(rule_evaluator):
                 confidence_weights,
                 major_class=None,
                 target_class=None,
+                random_state=123,
                 patterns=None):
 
-        meta_random_state = meta_data.get('random_state')
-        if meta_random_state is not None:
-            self.random_state = meta_random_state # otherwise there is a default
-
+        self.random_state = random_state
         self.paths = paths
         self.paths_weights = paths_weights
         self.paths_pred_proba = paths_pred_proba
@@ -1876,6 +1878,7 @@ class CHIRPS_runner(rule_evaluator):
             self.algorithm = algorithm
         # common default setting: see class non_deterministic
         random_state = self.default_if_none_random_state(random_state)
+        np.random.seed(random_state) # for bootstrap pruning
         if stopping_param > 1 or stopping_param < 0:
             stopping_param = 1
             print('warning: stopping_param should be 0 <= p <= 1. Value was reset to 1')
@@ -2161,6 +2164,7 @@ class batch_CHIRPS_explainer(object):
 
     def batch_run_CHIRPS(self, target_classes=None,
                         chirps_explanation_async=False,
+                        random_state=123,
                         **kwargs):
         # defaults
         options = {
@@ -2204,7 +2208,7 @@ class batch_CHIRPS_explainer(object):
                 # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
                 # use deepcopy to ensure by_value, not by_reference instantiation
-                c_runner = self.bp_container.get_CHIRPS_runner(i, deepcopy(self.meta_data), which_trees=options['which_trees'])
+                c_runner = self.bp_container.get_CHIRPS_runner(i, deepcopy(self.meta_data), which_trees=options['which_trees'], random_state=random_state)
                 # run the chirps process on each instance paths
                 async_out.append(pool.apply_async(as_CHIRPS,
                     (c_runner, target_classes[i],
@@ -2232,7 +2236,7 @@ class batch_CHIRPS_explainer(object):
                 # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
                 # use deepcopy to ensure by_value, not by_reference instantiation
-                c_runner = self.bp_container.get_CHIRPS_runner(i, deepcopy(self.meta_data), which_trees=options['which_trees'])
+                c_runner = self.bp_container.get_CHIRPS_runner(i, deepcopy(self.meta_data), which_trees=options['which_trees'], random_state=random_state)
                 # run the chirps process on each instance paths
                 _, CHIRPS_exp = \
                     as_CHIRPS(c_runner, target_classes[i],

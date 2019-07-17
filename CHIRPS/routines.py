@@ -13,7 +13,7 @@ from sklearn.model_selection import ParameterGrid, GridSearchCV
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support, accuracy_score
 
-from CHIRPS import if_nexists_make_dir, if_nexists_make_file, chisq_indep_test, p_count_corrected
+from CHIRPS import if_nexists_make_dir, if_nexists_make_file, chisq_indep_test, p_count_corrected, o_print
 from CHIRPS.plotting import plot_confusion_matrix
 
 from CHIRPS import config as cfg
@@ -25,8 +25,12 @@ warnings.filterwarnings(module='sklearn*', action='ignore', category=Deprecation
 def get_file_stem(model='RandomForest'):
     if model=='RandomForest':
         return('rf_')
+    elif model=='AdaBoost1':
+        return('samme_')
+    elif model=='AdaBoost2':
+        return('samme.r_')
     else:
-        return('ada_')
+        return('gbm_')
 
 def save_tuning_results(save_path, random_state, best_params, forest_performance, model):
     file_stem = get_file_stem(model)
@@ -36,7 +40,6 @@ def save_tuning_results(save_path, random_state, best_params, forest_performance
             json.dump(best_params, outfile)
         with open(save_path + file_stem + 'performance_rnst_' + str(random_state) + '.json', 'w') as outfile:
             json.dump(forest_performance, outfile)
-
 
 def extend_path(stem, extensions, is_dir=False):
     # add the extension and the path separator
@@ -94,39 +97,7 @@ def do_rf_tuning(X, y,
 
     return(best_params, forest_performance)
 
-def tune_rf(X, y,
-            grid = None, random_state=123,
-            save_path = None, override_tuning=False):
-
-    # to do - test allowable structure of grid input
-    if override_tuning:
-        print('Over-riding previous tuning parameters. New grid tuning... (please wait)')
-        print()
-        tun_start_time = timeit.default_timer()
-        best_params, forest_performance = do_rf_tuning(X, y,
-                                                    grid=grid,
-                                                    random_state=random_state,
-                                                    save_path=save_path)
-        tun_elapsed_time = timeit.default_timer() - tun_start_time
-        print('Tuning time elapsed:', "{:0.4f}".format(tun_elapsed_time), 'seconds')
-    else:
-        try:
-            with open(save_path + 'rf_best_params_rnst_' + str(random_state) + '.json', 'r') as infile:
-                print('using previous tuning parameters')
-                best_params = json.load(infile)
-            with open(save_path + 'rf_performance_rnst_' + str(random_state) + '.json', 'r') as infile:
-                forest_performance = json.load(infile)
-            return(best_params, forest_performance)
-        except:
-            print('New grid tuning... (please wait)')
-            best_params, forest_performance = do_rf_tuning(X, y,
-                                                            grid=grid,
-                                                            random_state=random_state,
-                                                            save_path=save_path)
-
-    return(best_params, forest_performance)
-
-def do_ada_tuning(X, y,
+def do_ada_tuning(X, y, model,
             grid = None, random_state=123, save_path = None):
     if grid is None:
         grid = default_param_grid(output='asis')
@@ -151,55 +122,99 @@ def do_ada_tuning(X, y,
                         'fitting_time' : elapsed_time}
 
     best_params.update({'base_estimator' : str(best_params['base_estimator'])})
-    save_tuning_results(save_path, random_state, best_params, forest_performance, model='AdaBoost')
+    save_tuning_results(save_path, random_state, best_params, forest_performance, model=model)
 
     return(best_params, forest_performance)
 
-def tune_ada(X, y,
-            grid = None, random_state=123,
-            save_path = None, override_tuning=False):
+def do_gbm_tuning(X, y, model,
+            grid = None, random_state=123, save_path = None, verbose=True):
+    if grid is None:
+        grid = default_param_grid(output='asis')
 
+    start_time = timeit.default_timer()
+    o_print('Finding best params with 10-fold CV', verbose)
+    rf = GridSearchCV(GradientBoostingClassifier(random_state=random_state), grid, cv=10)
+    rf.fit(X, y)
+    means = rf.cv_results_['mean_test_score']
+    stds = rf.cv_results_['std_test_score']
+    for mean, std, params in zip(means, stds, rf.cv_results_['params']):
+        o_print("%0.3f (+/-%0.03f) for %r"
+              % (mean, std * 2, params), verbose)
+    elapsed_time = timeit.default_timer() - start_time
+    o_print('CV time: ' + str(elapsed_time), verbose)
+    o_print('', verbose)
+
+    best_params = rf.best_params_
+    best_params.update({'score' : rf.best_score_})
+
+    forest_performance = {'score' : rf.best_score_,
+                        'fitting_time' : elapsed_time}
+
+    save_tuning_results(save_path, random_state, best_params, forest_performance, model=model)
+
+    return(best_params, forest_performance)
+
+def tune_wrapper(X, y, model,
+            grid = None,
+            random_state=123,
+            save_path = None,
+            override_tuning=False,
+            verbose=True):
+
+    file_stem = get_file_stem(model)
     # to do - test allowable structure of grid input
     if override_tuning:
-        print('Over-riding previous tuning parameters. New grid tuning... (please wait)')
+        o_print('Over-riding previous tuning parameters. New grid tuning... (please wait)', verbose)
         print()
         tun_start_time = timeit.default_timer()
-        best_params, forest_performance = do_ada_tuning(X, y,
-                                                    grid=grid,
-                                                    random_state=random_state,
-                                                    save_path=save_path)
+        if model == 'RandomForest':
+            best_params, forest_performance = do_rf_tuning(X, y, model,
+                                                        grid=grid,
+                                                        random_state=random_state,
+                                                        save_path=save_path)
+        elif model in ('AdaBoost1', 'AdaBoost2'):
+            best_params, forest_performance = do_ada_tuning(X, y, model,
+                                                        grid=grid,
+                                                        random_state=random_state,
+                                                        save_path=save_path)
+        elif model == 'GBM':
+            best_params, forest_performance = do_gbm_tuning(X, y, model,
+                                                        grid=grid,
+                                                        random_state=random_state,
+                                                        save_path=save_path)
+        else:
+            print('not implemented')
+            return()
         tun_elapsed_time = timeit.default_timer() - tun_start_time
-        print('Tuning time elapsed:', "{:0.4f}".format(tun_elapsed_time), 'seconds')
+        o_print('Tuning time elapsed:', "{:0.4f}".format(tun_elapsed_time) + 'seconds', verbose)
     else:
         try:
-            with open(save_path + 'ada_best_params_rnst_' + str(random_state) + '.json', 'r') as infile:
-                print('using previous tuning parameters')
+            with open(save_path + file_stem + 'best_params_rnst_' + str(random_state) + '.json', 'r') as infile:
+                o_print('using previous tuning parameters', verbose)
                 best_params = json.load(infile)
-            with open(save_path + 'ada_performance_rnst_' + str(random_state) + '.json', 'r') as infile:
+            with open(save_path + file_stem + 'performance_rnst_' + str(random_state) + '.json', 'r') as infile:
                 forest_performance = json.load(infile)
             return(best_params, forest_performance)
         except:
-            print('New grid tuning... (please wait)')
-            best_params, forest_performance = do_ada_tuning(X, y,
+            o_print('New grid tuning... (please wait)', verbose)
+            best_params, forest_performance = do_ada_tuning(X, y, model,
                                                             grid=grid,
                                                             random_state=random_state,
                                                             save_path=save_path)
 
-    return(best_params, forest_performance)
-
-def update_model_performance(model, save_path, test_metrics, identifier, random_state):
+def update_model_performance(model, save_path, test_metrics, method, random_state):
 
     file_stem = get_file_stem(model)
 
     with open(save_path + file_stem + 'performance_rnst_' + str(random_state) + '.json', 'r') as infile:
         forest_performance = json.load(infile)
-    forest_performance.update({identifier : test_metrics})
+    forest_performance.update({method : test_metrics})
     with open(save_path + file_stem + 'performance_rnst_' + str(random_state) + '.json', 'w') as outfile:
         json.dump(forest_performance, outfile)
 
 def evaluate_model(y_true, y_pred, class_names=None, model='RandomForest',
                     print_metrics=False, plot_cm=True, plot_cm_norm=True,
-                    save_path=None, identifier = 'main', random_state=123):
+                    save_path=None, method = 'main', random_state=123):
 
     # view the confusion matrix
     cm = confusion_matrix(y_true, y_pred)
@@ -219,7 +234,7 @@ def evaluate_model(y_true, y_pred, class_names=None, model='RandomForest',
         print(test_metrics)
 
     if save_path is not None:
-        update_model_performance(model, save_path, test_metrics, identifier, random_state)
+        update_model_performance(model, save_path, test_metrics, method, random_state)
 
     if plot_cm:
         plot_confusion_matrix(cm, class_names=class_names,
@@ -463,7 +478,6 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                             1, 1, 0]]
 
         save_results(cfg.summary_results_headers, summary_results, save_results_path, save_results_file + '_summary')
-        print(save_results_path)
 
     if save_CHIRPS:
         # save the batch_CHIRPS_explainer object

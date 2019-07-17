@@ -112,3 +112,7 @@ def confidence_weight(proba, what='conf_weight'):
     # conf_weight
     return( (n_classes - 1.0) * (log_proba - (1. / n_classes)
                               * log_proba.sum(axis=1)[:, np.newaxis]) )
+
+def o_print(text, verbose=True):
+    if verbose == True:
+        print(text)
