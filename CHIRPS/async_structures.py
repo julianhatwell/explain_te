@@ -112,13 +112,13 @@ def as_CHIRPS(c_runner, target_class,
     # if len(c_runner.patterns) > 1000:
     #      print('a long wait for label ' + str(batch_idx))
     #      print([cp for i, cp in enumerate(c_runner.patterns) if i < 50])
-    c_runner.score_sort_path_snippets(sample_instances, sample_labels,
-                                    target_class, alpha_paths, score_func, weighting)
+    c_runner.score_sort_path_snippets(target_class=target_class,
+                                        alpha_paths=alpha_paths,
+                                        score_func=score_func,
+                                        weighting=weighting)
 
     # greedily add terms to create rule
-    c_runner.merge_rule(sample_instances=sample_instances,
-                sample_labels=sample_labels,
-                forest=forest,
+    c_runner.merge_rule(forest=forest,
                 algorithm=algorithm,
                 merging_bootstraps=merging_bootstraps,
                 pruning_bootstraps=pruning_bootstraps,

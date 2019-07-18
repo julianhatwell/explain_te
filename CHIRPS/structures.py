@@ -6,7 +6,7 @@ import numpy as np
 from pandas import DataFrame, Series
 from CHIRPS import p_count_corrected, if_nexists_make_dir, chisq_indep_test, entropy_corrected, contingency_test, confidence_weight
 from pyfpgrowth import find_frequent_patterns
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, MinMaxScaler
 from sklearn.model_selection import train_test_split
 from scipy import sparse
 from scipy.stats import sem
@@ -1556,7 +1556,7 @@ class CHIRPS_runner(rule_evaluator):
             # at the end of each loop, update the instance variable
             self.paths = paths_discretized
 
-    def mine_patterns(self, paths_lengths_threshold=2, support=0.1):
+    def mine_patterns(self, sample_instances=None, paths_lengths_threshold=2, support=0.1):
 
         # repeat paths if max length > path length threshold
         # e.g. for boosted models with stumps of depth 1 or 2, it doesn't make much sense
@@ -1585,7 +1585,7 @@ class CHIRPS_runner(rule_evaluator):
                 support = support / len(self.paths)
 
             entropy_weighted_patterns = defaultdict(np.float32)
-            instances, labels = self.init_instances()
+            instances, labels = self.init_instances(instances=sample_instances)
             prior = p_count_corrected(labels, [i for i in range(len(self.class_names))])
             prior_counts = prior['counts']
 
@@ -1600,6 +1600,7 @@ class CHIRPS_runner(rule_evaluator):
             for j, p in enumerate(self.paths):
                 items = []
                 kldivs = []
+                # collect
                 for item in p:
                     # [item] because it's length is one and therefore would iterates into a character list
                     idx = self.apply_rule(rule=[item], instances=instances, features=self.features_enc)
@@ -1612,10 +1613,10 @@ class CHIRPS_runner(rule_evaluator):
                     # running sum of the normalised then tree-weighted entropy for any node found in the ensemble
                     entropy_weighted_patterns[item] += e / sum(kldivs) * paths_weights[j]
             # normalise the partial weighted entropy so it can be filtered by suppert (support takes on a slightly different meaning here)
-            self.patterns = {((p), ) : w / sum(dict(entropy_weighted_patterns).values()) \
-                                        for p, w in dict(entropy_weighted_patterns).items() \
-                                        if w / sum(dict(entropy_weighted_patterns).values()) >= support }
-
+            scaler = MinMaxScaler()
+            scaler.fit([[w] for w in dict(entropy_weighted_patterns).values()])
+            self.patterns = {((p), ) : scaler.transform([[w]])[0][0] for p, w in dict(entropy_weighted_patterns).items() \
+                                        if scaler.transform([[w]]) >= support }
 
     def mine_path_snippets(self, paths_lengths_threshold=2, support_paths=0.1,
                             disc_path_bins=4, disc_path_eqcounts=False):
@@ -1649,7 +1650,7 @@ class CHIRPS_runner(rule_evaluator):
         # score is now at position 2 of tuple
         self.patterns = sorted(fp_scope, key=itemgetter(2), reverse = True)
 
-    def score_sort_path_snippets(self, sample_instances, sample_labels, target_class=None,
+    def score_sort_path_snippets(self, sample_instances=None, sample_labels=None, target_class=None,
                                     alpha_paths=0.0, score_func=1, weighting='chisq'):
         # best at -1 < alpha < 1
         # now the patterns are scored and sorted. alpha > 0 favours longer patterns. 0 neutral. < 0 shorter.
@@ -1662,7 +1663,7 @@ class CHIRPS_runner(rule_evaluator):
 
                 instances, labels = self.init_instances(instances=sample_instances, labels=sample_labels)
                 idx = self.apply_rule(rule=wp, instances=instances, features=self.features_enc)
-                p_counts_covered = p_count_corrected(sample_labels[idx], [i for i in range(len(self.class_names))])
+                p_counts_covered = p_count_corrected(labels[idx], [i for i in range(len(self.class_names))])
                 covered = p_counts_covered['counts']
                 not_covered = p_count_corrected(labels[~idx], [i for i in range(len(self.class_names))])['counts']
                 all_instances = p_count_corrected(labels, [i for i in range(len(self.class_names))])['counts']
@@ -1847,7 +1848,9 @@ class CHIRPS_runner(rule_evaluator):
             self.__reverted.append(False)
             return(False)
 
-    def merge_rule(self, sample_instances, sample_labels, forest,
+    def merge_rule(self, forest,
+                        sample_instances=None,
+                        sample_labels=None,
                         stopping_param = 1,
                         precis_threshold = 0.95,
                         fixed_length = None,
@@ -2044,10 +2047,11 @@ class CHIRPS_runner(rule_evaluator):
 
         # case no solution was found
         if rule_length_counter == 0:
-            print("no solution")
+            print('no solution')
             self.rule = default_rule
-        if len(self.kl_div) == 0:
-            self.kl_div = np.append(self.kl_div, [0], axis=0 )
+            if len(self.kl_div) == 0:
+                self.kl_div = np.append(self.kl_div, [0], axis=0)
+            return()
 
         # first time major_class is isolated
         if any(np.argmax(self.posterior, axis=1) == self.target_class):
@@ -2057,8 +2061,7 @@ class CHIRPS_runner(rule_evaluator):
         # set up the rule for clean up
         self.prune_rule()
 
-        # rule complement testing to remove any redundant rule terms
-
+        # rule complement testing to remove any redundant rule terms - TODO fix this to do a non- bootsrapped version
         if pruning_bootstraps > 0:
             curr_len = len(self.pruned_rule) + 1
             new_len = curr_len - 1
@@ -2103,19 +2106,7 @@ class CHIRPS_runner(rule_evaluator):
                 self.pruned_rule = [(f, t, v) for f, t, v in self.pruned_rule if f not in to_remove]
                 curr_len = new_len
                 new_len = len(self.pruned_rule)
-        # else: do nothing
-
-        # belt and braces - if rule pruning drops everything
-        if len(self.pruned_rule) == 0:
-            print("solution pruned away. defaulting")
-            self.pruned_rule = [self.__previous_rule[np.argmin(np.mean(b_rcr, axis=0))]] # keep the one that drops precision the most
-
-            # self.rule = self.pruned_rule[0]
-            # print("solution pruned away. defaulting")
-            # print(default_rule)
-            # self.rule = default_rule
-            # self.pruned_rule = default_rule
-
+        # else: TODO non bootstrapped version
 
     def get_CHIRPS_explainer(self, elapsed_time=0):
 

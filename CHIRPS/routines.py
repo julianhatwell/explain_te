@@ -163,31 +163,7 @@ def tune_wrapper(X, y, model,
 
     file_stem = get_file_stem(model)
     # to do - test allowable structure of grid input
-    if override_tuning:
-        o_print('Over-riding previous tuning parameters. New grid tuning... (please wait)', verbose)
-        print()
-        tun_start_time = timeit.default_timer()
-        if model == 'RandomForest':
-            best_params, forest_performance = do_rf_tuning(X, y, model,
-                                                        grid=grid,
-                                                        random_state=random_state,
-                                                        save_path=save_path)
-        elif model in ('AdaBoost1', 'AdaBoost2'):
-            best_params, forest_performance = do_ada_tuning(X, y, model,
-                                                        grid=grid,
-                                                        random_state=random_state,
-                                                        save_path=save_path)
-        elif model == 'GBM':
-            best_params, forest_performance = do_gbm_tuning(X, y, model,
-                                                        grid=grid,
-                                                        random_state=random_state,
-                                                        save_path=save_path)
-        else:
-            print('not implemented')
-            return()
-        tun_elapsed_time = timeit.default_timer() - tun_start_time
-        o_print('Tuning time elapsed:', "{:0.4f}".format(tun_elapsed_time) + 'seconds', verbose)
-    else:
+    if not override_tuning:
         try:
             with open(save_path + file_stem + 'best_params_rnst_' + str(random_state) + '.json', 'r') as infile:
                 o_print('using previous tuning parameters', verbose)
@@ -197,10 +173,34 @@ def tune_wrapper(X, y, model,
             return(best_params, forest_performance)
         except:
             o_print('New grid tuning... (please wait)', verbose)
-            best_params, forest_performance = do_ada_tuning(X, y, model,
-                                                            grid=grid,
-                                                            random_state=random_state,
-                                                            save_path=save_path)
+
+    else:
+        o_print('Over-riding previous tuning parameters. New grid tuning... (please wait)', verbose)
+        o_print('', verbose)
+
+    # all of this will run in the try: existing parameters went to except
+    tun_start_time = timeit.default_timer()
+    if model == 'RandomForest':
+        best_params, forest_performance = do_rf_tuning(X, y, model,
+                                                    grid=grid,
+                                                    random_state=random_state,
+                                                    save_path=save_path)
+    elif model in ('AdaBoost1', 'AdaBoost2'):
+        best_params, forest_performance = do_ada_tuning(X, y, model,
+                                                    grid=grid,
+                                                    random_state=random_state,
+                                                    save_path=save_path)
+    elif model == 'GBM':
+        best_params, forest_performance = do_gbm_tuning(X, y, model,
+                                                    grid=grid,
+                                                    random_state=random_state,
+                                                    save_path=save_path)
+    else:
+        print('not implemented')
+        return()
+    tun_elapsed_time = timeit.default_timer() - tun_start_time
+    o_print('Tuning time elapsed: ' + "{:0.4f}".format(tun_elapsed_time) + 'seconds', verbose)
+    return(best_params, forest_performance)
 
 def update_model_performance(model, save_path, test_metrics, method, random_state):
 

@@ -134,7 +134,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model,
     if save_sensitivity_path is None:
         save_sensitivity_path=save_path
     # 2. Prepare Unseen Data and Predictions
-    o_print('Beginning benchmark for ' + dataset_name + ' data and ' + str(n_instances) + ' instances.', verbose)
+    o_print('Beginning benchmark for ' + dataset_name + ' data.', verbose)
     o_print('Hyper-parameter settings: ' + str(kwargs), verbose)
     o_print('', verbose)
 
@@ -216,7 +216,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model,
 
     results_end_time = timeit.default_timer()
     results_elapsed_time = results_end_time - results_start_time
-    o_print('Results save to ' + save_sensitivity_path + save_results_file)
+    o_print('Results saved to ' + save_sensitivity_path + save_results_file, verbose)
     o_print('CHIRPS batch results eval time elapsed: ' + "{:0.4f}".format(results_elapsed_time) + ' seconds', verbose)
     o_print('', verbose)
     # this completes the CHIRPS runs
