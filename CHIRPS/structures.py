@@ -8,6 +8,7 @@ from CHIRPS import p_count_corrected, if_nexists_make_dir, chisq_indep_test, ent
 from pyfpgrowth import find_frequent_patterns
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, MinMaxScaler
 from sklearn.model_selection import train_test_split
+from sklearn.ensemble import GradientBoostingClassifier
 from scipy import sparse
 from scipy.stats import sem
 from collections import defaultdict
@@ -32,10 +33,6 @@ class non_deterministic(object):
         if random_state is None:
             self.random_state = 123
         else:
-            self.random_state = random_state
-
-    def set_random_state(self, random_state=None):
-        if random_state is not None:
             self.random_state = random_state
 
     def default_if_none_random_state(self, random_state=None):
@@ -468,9 +465,6 @@ class batch_paths_container(object):
             else:
                 paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths)]))]
 
-        # support for SAMME.R
-
-
         # path formatting - should it be on values level or features level
         if feature_values:
             paths = [[]] * len(paths_info)
@@ -516,10 +510,6 @@ class forest_walker(object):
         self.class_col = meta_data['class_col']
         self.n_classes = len(meta_data['class_names'])
 
-        # weights for standard Boosted models
-        if not hasattr(forest, 'estimator_weights_'):
-            self.forest.estimator_weights_ = np.ones(len(forest.estimators_))
-
         meta_le_dict = meta_data['le_dict']
         meta_get_label = meta_data['get_label']
 
@@ -528,30 +518,9 @@ class forest_walker(object):
         else:
             self.get_label = None
 
-        # base counts for all trees
-        self.root_features = np.zeros(len(self.features)) # set up a 1d feature array to count features appearing as root nodes
-        self.child_features = np.zeros(len(self.features))
-        self.lower_features = np.zeros(len(self.features))
-
-        # walk through each tree to get the structure
-        for t, tree in enumerate(self.forest.estimators_):
-
-            # root, child and lower counting, one time only (first class)
-            structure = tree.tree_
-            feature = structure.feature
-            children_left = structure.children_left
-            children_right = structure.children_right
-
-            self.root_features[feature[0]] += 1
-            if children_left[0] >= 0:
-                self.child_features[feature[children_left[0]]] +=1
-            if children_right[0] >= 0:
-                self.child_features[feature[children_right[0]]] +=1
-
-            for j, f in enumerate(feature):
-                if j < 3: continue # root and children
-                if f < 0: continue # leaf nodes
-                self.lower_features[f] += 1
+        # weights for standard Boosted models
+        if not hasattr(forest, 'estimator_weights_'):
+            self.forest.estimator_weights_ = np.ones(len(forest.estimators_))
 
     def full_survey(self
         , instances
@@ -565,147 +534,87 @@ class forest_walker(object):
             if len(labels) != self.n_instances:
                 raise ValueError("number of labels and instances does not match")
 
-        trees = self.forest.estimators_
-        self.n_trees = len(trees)
+        # base counts for all trees
+        self.root_child_lower = {}
 
-        self.feature_depth = np.full((self.n_instances, self.n_trees, self.n_features), np.nan) # set up a 1d feature array for counting
-        self.tree_predictions = np.full((self.n_instances, self.n_trees), np.nan)
-        self.tree_performance = np.full((self.n_instances, self.n_trees), np.nan)
-        self.path_lengths = np.zeros((self.n_instances, self.n_trees))
+        # walk through each tree to get the structure
+        for t, trees in enumerate(self.forest.estimators_):
+            # because gbm does one versus all for multiclass
+            if type(self.forest) == GradientBoostingClassifier:
+                class_trees = trees
+            else:
+                class_trees = [trees]
+            for ct, ctree in enumerate(class_trees): # this is an individual estimator
+                if t == 0:
+                    self.root_child_lower[ct] = {'root_features' : np.zeros(len(self.features)),  # set up a 1d feature array to count features appearing as root nodes
+                    'child_features' : np.zeros(len(self.features)),
+                    'lower_features' : np.zeros(len(self.features))}
+
+                # root, child and lower counting, one time only (first class)
+                structure = ctree.tree_
+                feature = structure.feature
+                children_left = structure.children_left
+                children_right = structure.children_right
+
+                self.root_child_lower[ct]['root_features'][feature[0]] += 1
+                if children_left[0] >= 0:
+                    self.root_child_lower[ct]['child_features'][feature[children_left[0]]] +=1
+                if children_right[0] >= 0:
+                    self.root_child_lower[ct]['child_features'][feature[children_right[0]]] +=1
+
+                for j, f in enumerate(feature):
+                    if j < 3: continue # root and children
+                    if f < 0: continue # leaf nodes
+                    self.root_child_lower[ct]['lower_features'][f] += 1
+        self.tree_outputs = {}
 
         # walk through each tree
-        for t, tree in enumerate(trees):
-            # get the feature vector out of the tree object
-            feature = tree.tree_.feature
+        self.n_trees = len(self.forest.estimators_)
+        for t, trees in enumerate(self.forest.estimators_):
+            # because gbm does one versus all for multiclass
+            if type(self.forest) == GradientBoostingClassifier:
+                class_trees = trees
+            else:
+                class_trees = [trees]
+            for ct, ctree in enumerate(class_trees): # this is an individual estimator
+                if t == 0: # initialise the dictionary
+                    self.tree_outputs[ct] = {'feature_depth' : np.full((self.n_instances, self.n_trees, self.n_features), np.nan), # set up a 1d feature array for counting
+                    'tree_predictions' : np.full((self.n_instances, self.n_trees), np.nan),
+                    'tree_pred_labels' : np.full((self.n_instances, self.n_trees), np.nan),
+                    'tree_performance' : np.full((self.n_instances, self.n_trees), np.nan),
+                    'path_lengths' : np.zeros((self.n_instances, self.n_trees))
+                    }
 
-            self.tree_predictions[:, t] = tree.predict(self.instances)
-            self.tree_performance[:, t] = self.tree_predictions[:, t] == self.labels
+                # get the feature vector out of the tree object
+                feature = ctree.tree_.feature
 
-            # extract path and get path lengths
-            path = tree.decision_path(self.instances).indices
-            paths_begin = np.where(path == 0)
-            paths_end = np.append(np.where(path == 0)[0][1:], len(path))
-            self.path_lengths[:, t] = paths_end - paths_begin
-
-            depth = 0
-            instance = -1
-            for p in path:
-                if feature[p] < 0: # leaf node
-                    # TO DO: what's in a leaf node
-                    continue
-                if p == 0: # root node
-                    instance += 1 # a new instance
-                    depth = 0 # a new path
+                self.tree_outputs[ct]['tree_predictions'][:, t] = ctree.predict(self.instances)
+                if type(self.forest) == GradientBoostingClassifier:
+                    tpr = np.sign(self.tree_outputs[ct]['tree_predictions'][:, t])
+                    tpr[tpr < 0] = 0
+                    self.tree_outputs[ct]['tree_pred_labels'][:, t] = tpr
                 else:
-                    depth += 1 # same instance, descends tree one more node
-                self.feature_depth[instance][t][feature[p]] = depth
+                    self.tree_outputs[ct]['tree_pred_labels'][:, t] = self.tree_outputs[ct]['tree_predictions'][:, t]
+                self.tree_outputs[ct]['tree_performance'][:, t] = self.tree_outputs[ct]['tree_pred_labels'][:, t] == self.labels
 
-    def forest_stats_by_label(self, label = None):
-        if label is None:
-            idx = Series([True] * self.n_instances) # it's easier if has the same type as the labels
-            label = 'all_classes'
-        else:
-            idx = self.labels == label
-        idx = idx.values
+                # extract path and get path lengths
+                path = ctree.decision_path(self.instances).indices
+                paths_begin = np.where(path == 0)
+                paths_end = np.append(np.where(path == 0)[0][1:], len(path))
+                self.tree_outputs[ct]['path_lengths'][:, t] = paths_end - paths_begin
 
-        n_instances_lab = sum(idx) # number of instances having the current label
-        if n_instances_lab == 0: return
-
-        # object to hold all the statistics
-        statistics = {}
-        statistics['n_trees'] = self.n_trees
-        statistics['n_instances'] = n_instances_lab
-
-        # get a copy of the arrays, containing only the required instances
-        feature_depth_lab = self.feature_depth[idx]
-        path_lengths_lab = self.path_lengths[idx]
-        tree_performance_lab = self.tree_performance[idx]
-
-        # gather statistics from the feature_depth array, for each class label
-        # shape is instances, trees, features, so [:,:,fd]
-        depth_counts = [np.unique(feature_depth_lab[:,:,fd][~np.isnan(feature_depth_lab[:,:,fd])], return_counts = True) for fd in range(self.n_features)]
-
-        # number of times each feature node was visited
-        statistics['n_node_traversals'] = np.array([np.nansum(dcz[1]) for dcz in depth_counts], dtype=np.float32)
-        # number of times feature was a root node (depth == 0)
-        statistics['n_root_traversals'] = np.array([depth_counts[dc][1][np.where(depth_counts[dc][0] == 0)][0] if depth_counts[dc][1][np.where(depth_counts[dc][0] == 0)] else 0 for dc in range(len(depth_counts))], dtype=np.float32)
-        # number of times feature was a root-child (depth == 1)
-        statistics['n_child_traversals'] = np.array([depth_counts[dc][1][np.where(depth_counts[dc][0] == 1)][0] if depth_counts[dc][1][np.where(depth_counts[dc][0] == 1)] else 0 for dc in range(len(depth_counts))], dtype=np.float32)
-        # number of times feature was a lower node (depth > 1)
-        statistics['n_lower_traversals'] = np.array([np.nansum(depth_counts[dc][1][np.where(depth_counts[dc][0] > 1)] if any(depth_counts[dc][1][np.where(depth_counts[dc][0] > 1)]) else 0) for dc in range(len(depth_counts))], dtype=np.float32)
-        # number of times feature was not a root
-        statistics['n_nonroot_traversals'] = statistics['n_node_traversals'] - statistics['n_root_traversals'] # total feature visits - number of times feature was a root
-
-        # number of correct predictions
-        statistics['n_correct_preds'] = np.sum(tree_performance_lab) # total number of correct predictions
-        statistics['n_path_length'] = np.sum(path_lengths_lab) # total path length accumulated by each feature
-
-        # above measures normalised over all features
-        p_ = lambda x : x / np.nansum(x)
-
-        statistics['p_node_traversals'] = p_(statistics['n_node_traversals'])
-        statistics['p_root_traversals'] = p_(statistics['n_root_traversals'])
-        statistics['p_nonroot_traversals'] = p_(statistics['n_nonroot_traversals'])
-        statistics['p_child_traversals'] = p_(statistics['n_child_traversals'])
-        statistics['p_lower_traversals'] = p_(statistics['n_lower_traversals'])
-        statistics['p_correct_preds'] = np.mean(tree_performance_lab) # accuracy
-
-        statistics['m_node_traversals'] = np.mean(np.sum(~np.isnan(feature_depth_lab), axis = 1), axis = 0) # mean number of times feature appeared over all instances
-        statistics['m_root_traversals'] = np.mean(np.sum(feature_depth_lab == 0, axis = 1), axis = 0) # mean number of times feature appeared as a root node, over all instances
-        statistics['m_nonroot_traversals'] = np.mean(np.sum(np.nan_to_num(feature_depth_lab) > 0, axis = 1), axis = 0)
-        statistics['m_child_traversals'] = np.mean(np.sum(np.nan_to_num(feature_depth_lab) == 1, axis = 1), axis = 0)
-        statistics['m_lower_traversals'] = np.mean(np.sum(np.nan_to_num(feature_depth_lab) > 1, axis = 1), axis = 0)
-        statistics['m_feature_depth'] = np.mean(np.nanmean(feature_depth_lab, axis = 1), axis = 0) # mean depth of each feature when it appears
-        statistics['m_path_length'] = np.mean(np.nanmean(path_lengths_lab, axis = 1), axis = 0) # mean path length of each instance in the forest
-        statistics['m_correct_preds'] = np.mean(np.mean(tree_performance_lab, axis = 1)) # mean prop. of trees voting correctly per instance
-
-        if n_instances_lab > 1: # can't compute these on just one example
-            statistics['sd_node_traversals'] = np.std(np.sum(~np.isnan(feature_depth_lab), axis = 1), axis = 0, ddof = 1) # sd of number of times... over all instances and trees
-            statistics['sd_root_traversals'] = np.std(np.sum(feature_depth_lab == 0, axis = 1), axis = 0, ddof = 1) # sd of number of times feature appeared as a root node, over all instances
-            statistics['sd_nonroot_traversals'] = np.std(np.sum(np.nan_to_num(feature_depth_lab) > 0, axis = 1), axis = 0, ddof = 1) # sd of number of times feature appeared as a nonroot node, over all instances
-            statistics['sd_child_traversals'] = np.std(np.sum(np.nan_to_num(feature_depth_lab) == 1, axis = 1), axis = 0, ddof = 1)
-            statistics['sd_lower_traversals'] = np.std(np.sum(np.nan_to_num(feature_depth_lab) > 1, axis = 1), axis = 0, ddof = 1)
-            statistics['sd_feature_depth'] = np.std(np.nanmean(feature_depth_lab, axis = 1), axis = 0, ddof = 1) # sd depth of each feature when it appears
-            statistics['sd_path_length'] = np.std(np.nanmean(path_lengths_lab, axis = 1), axis = 0, ddof = 1)
-            statistics['sd_correct_preds'] = np.std(np.mean(tree_performance_lab, axis = 1), ddof = 1) # std prop. of trees voting correctly per instance
-            statistics['se_node_traversals'] = sem(np.sum(~np.isnan(feature_depth_lab), axis = 1), axis = 0, ddof = 1, nan_policy = 'omit') # se of mean number of times feature appeared over all instances
-            statistics['se_root_traversals'] = sem(np.sum(feature_depth_lab == 0, axis = 1), axis = 0, ddof = 1, nan_policy = 'omit') # se of mean of number of times feature appeared as a root node, over all instances
-            statistics['se_nonroot_traversals'] = sem(np.sum(np.nan_to_num(feature_depth_lab) > 0, axis = 1), axis = 0, ddof = 1, nan_policy = 'omit') # sd of number of times feature appeared as a nonroot node, over all instances
-            statistics['se_child_traversals'] = sem(np.sum(np.nan_to_num(feature_depth_lab) == 1, axis = 1), axis = 0, ddof = 1, nan_policy = 'omit')
-            statistics['se_lower_traversals'] = sem(np.sum(np.nan_to_num(feature_depth_lab) > 1, axis = 1), axis = 0, ddof = 1, nan_policy = 'omit')
-            statistics['se_feature_depth'] = sem(np.nanmean(feature_depth_lab, axis = 1), axis = 0, ddof = 1, nan_policy = 'omit') # se depth of each feature when it appears
-            statistics['se_path_length'] = sem(np.nanmean(path_lengths_lab, axis = 1), axis = 0, ddof = 1, nan_policy = 'omit')
-            statistics['se_correct_preds'] = sem(np.mean(tree_performance_lab, axis = 1), ddof = 1, nan_policy = 'omit') # se prop. of trees voting correctly per instance
-        else:
-            statistics['sd_node_traversals'] = np.full(self.n_features, np.nan)
-            statistics['sd_root_traversals'] = np.full(self.n_features, np.nan)
-            statistics['sd_nonroot_traversals'] = np.full(self.n_features, np.nan)
-            statistics['sd_child_traversals'] = np.full(self.n_features, np.nan)
-            statistics['sd_lower_traversals'] = np.full(self.n_features, np.nan)
-            statistics['sd_feature_depth'] = np.full(self.n_features, np.nan)
-            statistics['sd_path_length'] = np.full(self.n_features, np.nan)
-            statistics['sd_correct_preds'] = np.full(self.n_features, np.nan)
-            statistics['se_node_traversals'] = np.full(self.n_features, np.nan)
-            statistics['se_root_traversals'] = np.full(self.n_features, np.nan)
-            statistics['se_nonroot_traversals'] = np.full(self.n_features, np.nan)
-            statistics['se_child_traversals'] = np.full(self.n_features, np.nan)
-            statistics['se_lower_traversals'] = np.full(self.n_features, np.nan)
-            statistics['se_feature_depth'] = np.full(self.n_features, np.nan)
-            statistics['se_path_length'] = np.full(self.n_features, np.nan)
-            statistics['se_correct_preds'] = np.full(self.n_features, np.nan)
-        return(statistics)
-
-    def forest_stats(self, class_labels = None):
-
-        statistics = {}
-
-        if class_labels is None:
-            class_labels = np.unique(self.labels)
-        for cl in class_labels:
-            statistics[cl] = self.forest_stats_by_label(cl)
-
-        statistics['all_classes'] = self.forest_stats_by_label()
-        return(statistics)
+                depth = 0
+                instance = -1
+                for p in path:
+                    if feature[p] < 0: # leaf node
+                        # TO DO: what's in a leaf node
+                        continue
+                    if p == 0: # root node
+                        instance += 1 # a new instance
+                        depth = 0 # a new path
+                    else:
+                        depth += 1 # same instance, descends tree one more node
+                    self.tree_outputs[ct]['feature_depth'][instance][t][feature[p]] = depth
 
     def tree_structures(self, tree, instances, labels, n_instances):
 
@@ -1144,7 +1053,7 @@ class CHIRPS_explainer(rule_evaluator):
         self.prior = self.posterior[0]
         self.forest_vote_share = self.model_votes['p_counts'][self.target_class]
         self.conf_weight_forest_vote_share = self.confidence_weights['p_counts'][self.target_class]
-        remaining_values = self.model_votes['p_counts'][np.where(self.model_votes['p_counts'] != self.forest_vote_share)]
+        remaining_values = self.model_votes['p_counts'][[i for i in range(len(self.class_names)) if i != self.target_class]]
         second_greatest = remaining_values[np.argmax(remaining_values)]
         self.forest_vote_margin = self.forest_vote_share - second_greatest
         remaining_values = self.confidence_weights['p_counts'][np.where(self.confidence_weights['p_counts'] != self.conf_weight_forest_vote_share)]
@@ -1521,12 +1430,12 @@ class CHIRPS_runner(rule_evaluator):
             if uppers:
                 upper_bins = hist_func(uppers, bins=bins)[1]
             else:
-                upper_bins = np.repeat(np.nan, bins)
+                upper_bins = np.zeros(bins)
 
             if lowers:
                 lower_bins = hist_func(lowers, bins=bins)[1]
             else:
-                lower_bins = np.repeat(np.nan, bins)
+                lower_bins = np.zeros(bins)
 
             upper_bin_midpoints = Series(upper_bins).rolling(window=2, center=False).mean().values[1:]
             upper_bin_means = (np.histogram(uppers, upper_bins, weights=uppers)[0] /
@@ -1589,25 +1498,29 @@ class CHIRPS_runner(rule_evaluator):
             prior = p_count_corrected(labels, [i for i in range(len(self.class_names))])
             prior_counts = prior['counts']
 
-            # neutral estimator weights - not AdaBoost
+            # neutral estimator weights - SAMME.R
             if np.all([i == 1.0 for i in self.paths_weights]):
                 # weight by how well it discriminates - how different from prior, based on kl-div
                 paths_weights = [contingency_test(ppp, prior['p_counts'], 'kldiv') for ppp in self.paths_pred_proba]
             else:
-                # otherwise the weights from AdaBoost
+                # otherwise the weights from classic AdaBoost or SAMME
                 paths_weights = self.paths_weights
 
             for j, p in enumerate(self.paths):
                 items = []
                 kldivs = []
                 # collect
+                rule = [] # [item] otherwise when length is one it would iterate into a character list
+                current_kldiv = 0
                 for item in p:
-                    # [item] because it's length is one and therefore would iterates into a character list
-                    idx = self.apply_rule(rule=[item], instances=instances, features=self.features_enc)
+                    rule.append(item)
+                    idx = self.apply_rule(rule=rule, instances=instances, features=self.features_enc)
                     p_counts = p_count_corrected(labels[idx], [i for i in range(len(self.class_names))])
                     covered = p_counts['counts']
-                    # collect the entropy for each node in the tree/stump: how well does individual node discriminate?
-                    kldivs.append(contingency_test(covered, prior_counts, 'kldiv'))
+                    # collect the (conditional) information for each node in the tree/stump: how well does individual node discriminate? given node hierarchy
+                    kldiv = contingency_test(covered, prior_counts, 'kldiv') - current_kldiv
+                    current_kldiv = kldiv
+                    kldivs.append(kldiv)
                     items.append(item)
                 for e, item in zip(kldivs, items):
                     # running sum of the normalised then tree-weighted entropy for any node found in the ensemble
@@ -1690,10 +1603,10 @@ class CHIRPS_runner(rule_evaluator):
 
             # correct any uncalculable weights
             weights = [w if not n else min(weights) for w, n in zip(weights, np.isnan(weights))] # clean up any nans
-            # shift to zero or above
-            weights = [w + abs(min(weights)) for w in weights]
             # normalise
-            weights = [w/max(weights) for w in weights]
+            scaler = MinMaxScaler()
+            scaler.fit([[w] for w in weights])
+            weights = [scaler.transform([[w]])[0][0] for w in weights]
             # final application of weights
             self.sort_patterns(alpha=alpha_paths, score_func=score_func, weights=weights)
 
@@ -2066,7 +1979,7 @@ class CHIRPS_runner(rule_evaluator):
             curr_len = len(self.pruned_rule) + 1
             new_len = curr_len - 1
             current_rule = self.pruned_rule
-            while curr_len > new_len and new_len > 1: # repeat until no more improvement, stop before removing last rule
+            while curr_len > new_len and new_len > 1: # repeat until no more improvement, stop before removing last rule or replace previous best (at the end)
                 # get a bootstrapped evaluation
                 b_current = np.full(pruning_bootstraps, np.nan)
                 for b in range(pruning_bootstraps):
@@ -2104,8 +2017,12 @@ class CHIRPS_runner(rule_evaluator):
 
                 self.__previous_rule = self.pruned_rule
                 self.pruned_rule = [(f, t, v) for f, t, v in self.pruned_rule if f not in to_remove]
+
                 curr_len = new_len
                 new_len = len(self.pruned_rule)
+                if new_len == 0:
+                    print('pruned away: restoring previous rule')
+                    self.pruned_rule = self.__previous_rule
         # else: TODO non bootstrapped version
 
     def get_CHIRPS_explainer(self, elapsed_time=0):

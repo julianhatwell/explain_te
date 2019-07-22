@@ -123,8 +123,7 @@ def unseen_data_prep(ds_container, n_instances=1, which_split='test'):
     return(instances, instances_matrix, instances_enc, instances_enc_matrix, labels)
 
 # function to manage the whole run and evaluation
-def CHIRPS_benchmark(forest, ds_container, meta_data, model,
-                    batch_size=100, n_instances=100,
+def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
                     forest_walk_async=True,
                     chirps_explanation_async=True,
                     save_path='', save_sensitivity_path=None,
@@ -243,7 +242,7 @@ def Anchors_preproc(ds_container, meta_data):
     ds_cont.X_train_matrix = disc.discretize(np.array(ds_cont.X_train))
     ds_cont.X_test_matrix = disc.discretize(np.array(ds_cont.X_test))
 
-        # fit the Anchors explainer. Onehot encode the data. Replace the data in the ds_container
+    # fit the Anchors explainer. Onehot encode the data. Replace the data in the ds_container
     explainer = anchtab.AnchorTabularExplainer(meta_data['class_names'], meta_data['features'], ds_cont.X_train_matrix, var_dict_anch['categorical_names'])
     explainer.fit(ds_cont.X_train_matrix, ds_cont.y_train, ds_cont.X_test_matrix, ds_cont.y_test)
 
@@ -264,7 +263,7 @@ def Anchors_explanation(instance, explainer, forest, random_state=123, threshold
 def Anchors_benchmark(forest, ds_container, meta_data,
                     anchors_explainer,
                     model,
-                    batch_size=100, n_instances=100,
+                    n_instances=100,
                     save_path='',
                     dataset_name='',
                     precis_threshold=0.95,
@@ -447,7 +446,7 @@ def which_rule(rule_list, X, features):
 
 def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
                             eval_start_time, defTrees_elapsed_time,
-                            batch_size=100, n_instances=100,
+                            n_instances=100,
                             save_path='', dataset_name='',
                             random_state=123,
                             verbose=True):
@@ -584,18 +583,21 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
                         save_results_path=save_path,
                         save_results_file=save_results_file + '_summary')
 
-def benchmarking_prep(datasets, model, tuning, project_dir, random_state, random_state_splits, verbose=True):
+def benchmarking_prep(datasets, model, tuning, project_dir, random_state, random_state_splits, start_instance=0, verbose=True):
     benchmark_items = {}
     for d_constructor in datasets:
         dataset_name = d_constructor.__name__
         o_print('Preprocessing ' + dataset_name + ' data and model for ' + d_constructor.__name__ + ' with random state = ' + str(random_state), verbose)
         # 1. Data and Forest prep
-        o_print('Split data into main train-test and build RF', verbose)
+        o_print('Split data into main train-test and build forest', verbose)
         mydata = d_constructor(random_state=random_state, project_dir=project_dir)
         meta_data = mydata.get_meta()
         save_path = meta_data['get_save_path']()
         train_index, test_index = mydata.get_tt_split_idx(random_state=random_state_splits)
         tt = mydata.tt_split(train_index, test_index)
+
+        # diagnostic for starting on a specific instance
+        tt.current_row_test = start_instance
 
         # this will train and score the model, mathod='main' (default)
         rf = forest_prep(ds_container=tt,
@@ -637,7 +639,6 @@ def do_benchmarking(benchmark_items, verbose=True, **control):
                         '_w_' + str(control['kwargs']['weighting']) + '_'])
 
         except:
-            print('in_except')
             save_sensitivity_path = None
         if control['method'] == 'CHIRPS':
             CHIRPS_benchmark(forest=benchmark_items[b]['main']['forest'],
