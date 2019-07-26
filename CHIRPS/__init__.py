@@ -98,13 +98,13 @@ def if_nexists_make_file(save_path, init_text='None'):
         f.close()
 
 def confidence_weight(proba, what='conf_weight'):
-
+    proba = np.array(proba)
     if what=='proba':
         return(proba)
     # Displace zero probabilities so the log is defined.
     # Also fix negative elements which may occur with
     # negative sample weights.
-    proba[proba < np.finfo(np.dtype(proba)).eps] = np.finfo(proba.dtype).eps
+    proba[proba < np.finfo(proba.dtype).eps] = np.finfo(proba.dtype).eps
     log_proba = np.log(proba)
     if what=='log_proba':
         return(log_proba)
