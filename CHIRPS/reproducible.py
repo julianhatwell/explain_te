@@ -633,7 +633,7 @@ def do_benchmarking(benchmark_items, verbose=True, **control):
             save_sensitivity_path = control['save_sensitivity_path']
             save_sensitivity_path = rt.extend_path(stem=save_path, extensions=[save_sensitivity_path, \
                         'wcts_' + str(control['kwargs']['which_trees']) + \
-                        'sp_' + str(control['kwargs']['support_paths']) + \
+                        '_sp_' + str(control['kwargs']['support_paths']) + \
                         '_ap_' + str(control['kwargs']['alpha_paths']) + \
                         '_dpb_' + str(control['kwargs']['disc_path_bins']) + \
                         '_dpeq_' + str(control['kwargs']['disc_path_eqcounts']) + \
