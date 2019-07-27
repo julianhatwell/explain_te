@@ -639,7 +639,6 @@ def do_benchmarking(benchmark_items, verbose=True, **control):
                         '_dpeq_' + str(control['kwargs']['disc_path_eqcounts']) + \
                         '_sf_' + str(control['kwargs']['score_func']) + \
                         '_w_' + str(control['kwargs']['weighting']) + '_'])
-
         except:
             save_sensitivity_path = None
         if control['method'] == 'CHIRPS':

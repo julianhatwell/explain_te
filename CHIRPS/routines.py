@@ -58,7 +58,7 @@ def default_param_grid(output='PG'):
     else:
         return(grid)
 
-def do_rf_tuning(X, y,
+def do_rf_tuning(X, y, model, # model redundant, just here for same interface
             grid = None, random_state=123, save_path = None):
     if grid is None:
         grid = default_param_grid()
