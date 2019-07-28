@@ -863,7 +863,7 @@ class rule_evaluator(non_deterministic, evaluator):
         if labels is None:
             try:
                 labels = self.sample_labels
-            except AttributeError:
+            except AttributeError: 
                 return(instances, None)
 
         return(instances, labels)
