@@ -864,7 +864,6 @@ class rule_evaluator(non_deterministic, evaluator):
             try:
                 labels = self.sample_labels
             except AttributeError:
-                print('No sample labels (e.g. y_train) were given. Do you plan to predict some new ones?')
                 return(instances, None)
 
         return(instances, labels)

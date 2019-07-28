@@ -248,6 +248,76 @@ def evaluate_model(y_true, y_pred, class_names=None, model='RandomForest',
 
     return(test_metrics)
 
+def forest_prep(ds_container, meta_data, model='RandomForest',
+                save_path=None, override_tuning=False,
+                tuning_grid=None, method='main',
+                plot_cm=False, plot_cm_norm=False,
+                verbose=True):
+
+    X_train=ds_container.X_train_enc
+    X_test=ds_container.X_test_enc
+    y_train=ds_container.y_train
+    y_test=ds_container.y_test
+
+    class_names=meta_data['class_names_label_order']
+    random_state=meta_data['random_state']
+
+    best_params, forest_performance = tune_wrapper(
+     X=X_train,
+     y=y_train,
+     model=model,
+     grid=tuning_grid,
+     save_path=save_path,
+     override_tuning=override_tuning,
+     random_state=random_state, verbose=verbose)
+
+    if model == 'RandomForest':
+        best_params.update({'oob_score' : True, 'random_state' : random_state})
+        del(best_params['score'])
+        rf = RandomForestClassifier()
+        rf.set_params(**best_params)
+        rf.fit(X=X_train, y=y_train)
+
+    elif model in ['AdaBoost1', 'AdaBoost2']:
+        # convert this back from a text string
+        best_params.update({'base_estimator' : eval(best_params['base_estimator'])})
+        best_params.update({'random_state' : random_state})
+        del(best_params['score'])
+        rf = AdaBoostClassifier()
+        rf.set_params(**best_params)
+        rf.fit(X=X_train, y=y_train)
+
+    elif model == 'GBM':
+        # convert this back from a text string
+        best_params.update({'random_state' : random_state})
+        del(best_params['score'])
+
+        rf = GradientBoostingClassifier()
+        rf.set_params(**best_params)
+        rf.fit(X=X_train, y=y_train)
+
+    else:
+        print('not implemented')
+        return()
+
+    o_print('Best OOB Accuracy Estimate during tuning: ' '{:0.4f}'.format(forest_performance['score']), verbose)
+    o_print('Best parameters:' + str(best_params), verbose)
+    o_print('', verbose)
+    # the outputs of this function are:
+    # cm - confusion matrix as 2d array
+    # acc - accuracy of model = correctly classified instance / total number instances
+    # coka - Cohen's kappa score. Accuracy adjusted for probability of correct by random guess. Useful for multiclass problems
+    # prfs - precision, recall, f-score, support with the following signatures as a 2d array
+    # 0 <= p, r, f <= 1. s = number of instances for each true class label (row sums of cm)
+    evaluate_model(y_true=y_test, y_pred=rf.predict(X_test),
+                        class_names=class_names, model=model,
+                        plot_cm=plot_cm, plot_cm_norm=plot_cm_norm, # False here will output the metrics and suppress the plots
+                        save_path=save_path,
+                        method=method,
+                        random_state=random_state)
+
+    return(rf)
+
 def n_instance_ceiling(ds_container, n_instances=None):
     dataset_size = len(ds_container.y_test)
     if n_instances is None:
@@ -395,7 +465,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             print('Evaluation Time: ' + str(c.elapsed_time))
             print()
             if eval_rule_complements:
-                print('RULE COMPLEMENT RESULTS')
+                print('COUNTER FACTUAL RESULTS')
                 for rcr in rule_complement_results:
                     eval_rule = rcr['eval']
                     tt_prior = eval_rule['prior']['p_counts']

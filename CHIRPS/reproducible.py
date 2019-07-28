@@ -16,18 +16,6 @@ from sklearn.tree import DecisionTreeClassifier
 
 penalise_bad_prediction = lambda mc, tc, value : value if mc == tc else 0 # for global interp methods
 
-datasets = [
-            ds.adult_small_samp,
-            ds.bankmark_samp,
-            ds.car,
-            ds.cardio,
-            ds.credit,
-            ds.german,
-            ds.lending_tiny_samp,
-            ds.nursery_samp,
-            ds.rcdv_samp
-           ]
-
 def export_data_splits(datasets, project_dir=None, random_state_splits=123):
     # general data preparation
     for dataset in datasets:
@@ -40,76 +28,6 @@ def export_data_splits(datasets, project_dir=None, random_state_splits=123):
         mydata.tt_split(train_index, test_index).to_csv(mydata.get_save_path(),
                                                                 encoded_features = mydata.features_enc)
     print('Exported train-test data for ' + str(len(datasets)) + ' datasets.')
-
-def forest_prep(ds_container, meta_data, model='RandomForest',
-                save_path=None, override_tuning=False,
-                tuning_grid=None, method='main',
-                plot_cm=False, plot_cm_norm=False,
-                verbose=True):
-
-    X_train=ds_container.X_train_enc
-    X_test=ds_container.X_test_enc
-    y_train=ds_container.y_train
-    y_test=ds_container.y_test
-
-    class_names=meta_data['class_names_label_order']
-    random_state=meta_data['random_state']
-
-    best_params, forest_performance = rt.tune_wrapper(
-     X=X_train,
-     y=y_train,
-     model=model,
-     grid=tuning_grid,
-     save_path=save_path,
-     override_tuning=override_tuning,
-     random_state=random_state, verbose=verbose)
-
-    if model == 'RandomForest':
-        best_params.update({'oob_score' : True, 'random_state' : random_state})
-        del(best_params['score'])
-        rf = rt.RandomForestClassifier()
-        rf.set_params(**best_params)
-        rf.fit(X=X_train, y=y_train)
-
-    elif model in ['AdaBoost1', 'AdaBoost2']:
-        # convert this back from a text string
-        best_params.update({'base_estimator' : eval(best_params['base_estimator'])})
-        best_params.update({'random_state' : random_state})
-        del(best_params['score'])
-        rf = rt.AdaBoostClassifier()
-        rf.set_params(**best_params)
-        rf.fit(X=X_train, y=y_train)
-
-    elif model == 'GBM':
-        # convert this back from a text string
-        best_params.update({'random_state' : random_state})
-        del(best_params['score'])
-
-        rf = rt.GradientBoostingClassifier()
-        rf.set_params(**best_params)
-        rf.fit(X=X_train, y=y_train)
-
-    else:
-        print('not implemented')
-        return()
-
-    o_print('Best OOB Accuracy Estimate during tuning: ' '{:0.4f}'.format(forest_performance['score']), verbose)
-    o_print('Best parameters:' + str(best_params), verbose)
-    o_print('', verbose)
-    # the outputs of this function are:
-    # cm - confusion matrix as 2d array
-    # acc - accuracy of model = correctly classified instance / total number instances
-    # coka - Cohen's kappa score. Accuracy adjusted for probability of correct by random guess. Useful for multiclass problems
-    # prfs - precision, recall, f-score, support with the following signatures as a 2d array
-    # 0 <= p, r, f <= 1. s = number of instances for each true class label (row sums of cm)
-    rt.evaluate_model(y_true=y_test, y_pred=rf.predict(X_test),
-                        class_names=class_names, model=model,
-                        plot_cm=plot_cm, plot_cm_norm=plot_cm_norm, # False here will output the metrics and suppress the plots
-                        save_path=save_path,
-                        method=method,
-                        random_state=random_state)
-
-    return(rf)
 
 def unseen_data_prep(ds_container, n_instances=1, which_split='test'):
     # this will normalise the above parameters to the size of the dataset
@@ -583,7 +501,10 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
                         save_results_path=save_path,
                         save_results_file=save_results_file + '_summary')
 
-def benchmarking_prep(datasets, model, tuning, project_dir, random_state, random_state_splits, start_instance=0, verbose=True):
+def benchmarking_prep(datasets, model, tuning, project_dir,
+                        random_state, random_state_splits,
+                        do_raw=True, do_discretise=False,
+                        start_instance=0, verbose=True):
     benchmark_items = {}
     for d_constructor in datasets:
         dataset_name = d_constructor.__name__
@@ -599,25 +520,34 @@ def benchmarking_prep(datasets, model, tuning, project_dir, random_state, random
         # diagnostic for starting on a specific instance
         tt.current_row_test = start_instance
 
-        # this will train and score the model, mathod='main' (default)
-        rf = forest_prep(ds_container=tt,
-                    meta_data=meta_data,
-                    model=model,
-                    override_tuning=tuning['override'],
-                    tuning_grid=tuning['grid'],
-                    save_path=save_path, verbose=verbose)
+        if do_raw:
+            o_print('Train main model', verbose)
+            # this will train and score the model, mathod='main' (default)
+            rf = rt.forest_prep(ds_container=tt,
+                        meta_data=meta_data,
+                        model=model,
+                        override_tuning=tuning['override'],
+                        tuning_grid=tuning['grid'],
+                        save_path=save_path, verbose=verbose)
+        else:
+            rf = None
 
-        o_print('Discretise data and train model for Anchors', verbose)
-        # preprocessing - discretised continuous X matrix has been added and also needs an updated var_dict
-        # plus returning the fitted explainer that holds the data distribution
-        tt_anch, anchors_explainer = Anchors_preproc(ds_container=tt, meta_data=meta_data)
+        if do_discretise:
+            o_print('Discretise data and train model, e.g. for Anchors', verbose)
+            # preprocessing - discretised continuous X matrix has been added and also needs an updated var_dict
+            # plus returning the fitted explainer that holds the data distribution
+            tt_anch, anchors_explainer = Anchors_preproc(ds_container=tt, meta_data=meta_data)
 
-        # no tuning grid because we want to take best params from a previous run (see try/except above)
-        rf_anch = forest_prep(ds_container=tt_anch,
-            meta_data=meta_data,
-            model=model,
-            save_path=save_path,
-            method='Anchors', verbose=verbose)
+            # no tuning grid because we want to take best params from a previous run (see try/except above)
+            rf_anch = rt.forest_prep(ds_container=tt_anch,
+                meta_data=meta_data,
+                model=model,
+                save_path=save_path,
+                method='Anchors', verbose=verbose)
+        else:
+            rf_anch = None
+            tt_anch = None
+            anchors_explainer = None
 
         # collect
         benchmark_items[dataset_name] = {'main' : {'forest' : rf, 'ds_container' : tt},
