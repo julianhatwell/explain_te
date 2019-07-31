@@ -9,7 +9,8 @@ project_dir = 'CHIRPS'
 
 results_headers = ['dataset_name', 'instance_id', 'algorithm',
             'pretty rule', 'rule length',
-            'pred class', 'pred class label',
+            'true class', 'true class label',
+            'predicted class', 'predicted class label',
             'target class', 'target class label',
             'forest vote share', 'accumulated weight', 'pred prior',
             'precision(tr)', 'stability(tr)', 'recall(tr)',

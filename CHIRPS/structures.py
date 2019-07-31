@@ -402,122 +402,6 @@ class data_container(non_deterministic):
                 })
 
 # classes and functions for the parallelisable tree_walk
-class batch_paths_container(object):
-    def __init__(self,
-    target_classes,
-    path_detail,
-    by_tree):
-        self.target_classes = target_classes
-        self.by_tree = by_tree # given as initial state, not used to reshape on construction. use flip() if necessary
-        self.path_detail = path_detail
-
-    def flip(self):
-        n = len(self.path_detail[0])
-        flipped_paths = [[]] * n
-        for i in range(n):
-            flipped_paths[i] =  [p[i] for p in self.path_detail]
-        self.path_detail = flipped_paths
-        self.by_tree = not self.by_tree
-
-    def target_class_from_paths(self, batch_idx):
-        return(self.target_classes[batch_idx])
-
-    def major_class_from_paths(self, batch_idx, return_counts=False):
-        if self.by_tree:
-            pred_classes = [self.path_detail[p][batch_idx]['pred_class'] for p in range(len(self.path_detail))]
-        else:
-            pred_classes = [self.path_detail[batch_idx][p]['pred_class'] for p in range(len(self.path_detail[batch_idx]))]
-
-        unique, counts = np.unique(pred_classes, return_counts=True)
-
-        if return_counts:
-            return(unique[np.argmax(counts)], dict(zip(unique, counts)))
-        else: return(unique[np.argmax(counts)])
-
-    def get_CHIRPS_runner(self, batch_idx, meta_data, which_trees='majority', random_state=123, feature_values=True):
-
-        batch_idx = math.floor(batch_idx) # make sure it's an integer
-        true_to_lt = lambda x: '<' if x == True else '>'
-
-        # extract the paths we want by filtering on tree performance
-        if self.by_tree:
-            n_paths = len(self.path_detail)
-            if which_trees == 'correct':
-                paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[pd][batch_idx]['agree_maj_vote']]))]
-            elif which_trees == 'majority':
-                major_class = self.major_class_from_paths(batch_idx, return_counts=False)
-                paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[pd][batch_idx]['pred_class'] == major_class]))]
-            elif which_trees == 'minority':
-                major_class = self.major_class_from_paths(batch_idx, return_counts=False)
-                paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[pd][batch_idx]['pred_class'] != major_class]))]
-            elif which_trees == 'conf_weighted':
-                major_class = self.major_class_from_paths(batch_idx, return_counts=False)
-                paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) for pd in range(n_paths)]))]
-                paths_pred_logproba = confidence_weight(paths_pred_proba, 'log_proba')
-                paths_pred_logproba = paths_pred_logproba - np.mean(paths_pred_logproba, axis = 1)[:, np.newaxis]
-                paths_pred_logproba = paths_pred_logproba - np.mean(paths_pred_logproba, axis = 1)[:, np.newaxis] # this is the SAMME.R formula, without the K-1 scaling which is redundant
-                positive_logproba = [True if ppl[major_class] > 0 else False for ppl in paths_pred_logproba] # index where log proba is positive
-                paths_info = np.array(paths_info)[positive_logproba]
-                paths_weights = np.array(paths_weights)[positive_logproba]
-                paths_pred_proba = np.array(paths_pred_proba)[positive_logproba]
-            else:
-                paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) for pd in range(n_paths)]))]
-        else:
-            n_paths = len(self.path_detail[batch_idx])
-            if which_trees == 'correct':
-                paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['agree_maj_vote']]))]
-            elif which_trees == 'majority':
-                major_class = self.major_class_from_paths(batch_idx, return_counts=False)
-                paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == major_class]))]
-            elif which_trees == 'minority':
-                major_class = self.major_class_from_paths(batch_idx, return_counts=False)
-                paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] != major_class]))]
-            elif which_trees == 'conf_weighted':
-                major_class = self.major_class_from_paths(batch_idx, return_counts=False)
-                paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths)]))]
-                paths_pred_logproba = confidence_weight(paths_pred_proba, 'log_proba')
-                paths_pred_logproba = paths_pred_logproba - np.mean(paths_pred_logproba, axis = 1)[:, np.newaxis] # this is the SAMME.R formula, without the K-1 scaling which is redundant
-                positive_logproba = [True if ppl[major_class] > 0 else False for ppl in paths_pred_logproba] # index where log proba is positive
-                paths_info = np.array(paths_info)[positive_logproba]
-                paths_weights = np.array(paths_weights)[positive_logproba]
-                paths_pred_proba = np.array(paths_pred_proba)[positive_logproba]
-            else:
-                paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths)]))]
-
-        # path formatting - should it be on values level or features level
-        if feature_values:
-            paths = [[]] * len(paths_info)
-            for i, p in enumerate(paths_info):
-                paths[i] = [(f, leq, t) for f, leq, t in zip(p['feature_name'], p['leq_threshold'], p['threshold'])]
-        else:
-            paths = [p['feature_name'] for p in paths_info]
-
-        # per tree performance stats for the whole ensemble (not filtered)
-        if self.by_tree:
-            tree_preds, estimator_weights, pred_probas = [i for i in map(list, zip(*[itemgetter('pred_class', 'estimator_weight', 'pred_proba')(self.path_detail[t][batch_idx]) for t in range(n_paths)]))]
-        else:
-            tree_preds, estimator_weights, pred_probas = [i for i in map(list, zip(*[itemgetter('pred_class', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][t]) for t in range(n_paths)]))]
-
-        # simply determine the count and proportion of trees according to votes
-        model_votes = p_count_corrected(tree_preds, [i for i in range(len(meta_data['class_names']))], weights=estimator_weights)
-
-        # determine the weighted count of trees  (support for SAMME.R)
-        # based on SAMME.R quantities
-        # confidence_weights = confidence_weight(np.array(pred_probas), 'conf_weight')
-        # confidence_weights = np.mean(confidence_weights + abs(confidence_weights.min(axis=1).reshape(-1, 1)), axis=0)
-        # based on predicted probabilities
-        confidence_weights = np.sum(pred_probas, axis=0)
-        confidence_weights = p_count_corrected([i for i in range(len(meta_data['class_names']))], [i for i in range(len(meta_data['class_names']))], confidence_weights)
-
-        # NOT DOING ANYTHING WITH PATH LEVEL PRED PROBA YET
-        # return an object for requested instance
-        c_runner = CHIRPS_runner(meta_data, paths, paths_weights, paths_pred_proba,
-                                    tree_preds, model_votes, confidence_weights,
-                                    self.major_class_from_paths(batch_idx),
-                                    self.target_class_from_paths(batch_idx),
-                                    random_state)
-        return(c_runner)
-
 class forest_walker(object):
 
     def __init__(self
@@ -711,7 +595,9 @@ class forest_walker(object):
                                                 tree_agree_maj_vote,
                                                 feature, threshold, path, features, est_wt)
 
-        return(batch_paths_container(labels, tree_paths, by_tree=True))
+        # flip/transpose the orientation to by instance
+        self.path_detail = list(map(list, zip(*tree_paths)))
+
 
 # classes and functions for the parallelisable CHIRPS algorithm
 
@@ -863,7 +749,7 @@ class rule_evaluator(non_deterministic, evaluator):
         if labels is None:
             try:
                 labels = self.sample_labels
-            except AttributeError: 
+            except AttributeError:
                 return(instances, None)
 
         return(instances, labels)
@@ -1008,9 +894,9 @@ class CHIRPS_explainer(rule_evaluator):
                 paths, paths_weights, patterns,
                 rule, pruned_rule,
                 target_class, target_class_label,
-                major_class, major_class_label,
                 model_votes,
                 confidence_weights,
+                accumulated_points,
                 accumulated_weights,
                 isolation_pos,
                 posterior,
@@ -1044,10 +930,9 @@ class CHIRPS_explainer(rule_evaluator):
         self.pruned_rule = pruned_rule
         self.target_class = target_class
         self.target_class_label = target_class_label
-        self.major_class = major_class
-        self.major_class_label = major_class_label
         self.model_votes = model_votes
         self.confidence_weights = confidence_weights
+        self.accumulated_points = accumulated_points
         self.accumulated_weights = accumulated_weights
         self.isolation_pos = isolation_pos
         self.posterior = posterior
@@ -1285,7 +1170,8 @@ class CHIRPS_explainer(rule_evaluator):
         print()
         print('rule: ' + self.pretty_rule)
         print('rule cardinality: ' + str(self.rule_len))
-        print('accumulated weight of rule: ' + str(self.accumulated_weights))
+        print('Fraction of total points of rule: ' + str(self.accumulated_points))
+        print('Fraction of total weight of rule: ' + str(self.accumulated_weights))
         print()
         print('Estimated Results - Rule Training Sample. Algorithm: ' + self.algorithm)
         print('rule coverage (training data): ' + str(self.est_coverage))
@@ -1316,8 +1202,6 @@ class CHIRPS_explainer(rule_evaluator):
         'pruned_rule' : self.pruned_rule,
         'target_class' :self.target_class,
         'target_class_label' :self.target_class_label,
-        'major_class' : self.major_class,
-        'major_class_label' :self.major_class_label,
         'model_votes' : self.model_votes,
         'confidence_weights' : self.confidence_weights,
         'accumulated_weights' : self.accumulated_weights,
@@ -1345,8 +1229,7 @@ class CHIRPS_runner(rule_evaluator):
                 tree_preds,
                 model_votes,
                 confidence_weights,
-                major_class=None,
-                target_class=None,
+                target_class,
                 random_state=123,
                 patterns=None):
 
@@ -1357,7 +1240,6 @@ class CHIRPS_runner(rule_evaluator):
         self.tree_preds = tree_preds
         self.model_votes = model_votes
         self.confidence_weights = confidence_weights
-        self.major_class = major_class
         self.target_class = target_class
         self.patterns = patterns
 
@@ -1391,8 +1273,9 @@ class CHIRPS_runner(rule_evaluator):
         self.rule = []
         self.pruned_rule = []
         self.__previous_rule = []
-        self.__reverted = []
+        self.reverted = []
         self.total_points = None
+        self.total_weights = None
         self.accumulated_points = 0
         self.accumulated_weights = 0
         self.sample_instances = None
@@ -1414,7 +1297,6 @@ class CHIRPS_runner(rule_evaluator):
         self.chisq = []
         self.kl_div = []
         self.isolation_pos = None
-        self.stopping_param = None
         self.merge_rule_iter = None
         self.algorithm = None
 
@@ -1568,7 +1450,7 @@ class CHIRPS_runner(rule_evaluator):
         # to shrink the support of shorter freq_patterns
         # formula is sqrt(weight) * sup * ()(len - alpha) / len)
         if score_func == 1:
-            score_function = lambda x, w: (x[0], x[1], (w * 0.9 + x[1] * 0.1) * (len(x[0]) - alpha) / len(x[0])) # don't know why this just works
+            score_function = lambda x, w: (x[0], x[1], (w * 0.5 + x[1] * 0.5) * (len(x[0]) - alpha) / len(x[0])) # don't know why this just works
         # alternatives
         elif score_func == 2:
             score_function = lambda x, w: (x[0], x[1], w * x[1] * (len(x[0]) - alpha) / (len(x[0])**2))
@@ -1582,7 +1464,7 @@ class CHIRPS_runner(rule_evaluator):
         # score is now at position 2 of tuple
         self.patterns = sorted(fp_scope, key=itemgetter(2), reverse = True)
 
-    def score_sort_path_snippets(self, sample_instances=None, sample_labels=None, target_class=None,
+    def score_sort_path_snippets(self, sample_instances=None, sample_labels=None,
                                     alpha_paths=0.0, score_func=1, weighting='chisq'):
         # best at -1 < alpha < 1
         # now the patterns are scored and sorted. alpha > 0 favours longer patterns. 0 neutral. < 0 shorter.
@@ -1606,20 +1488,6 @@ class CHIRPS_runner(rule_evaluator):
                 if weighting in ['chisq', 'kldiv', 'lodds']:
                     weights[j] = contingency_test(covered, all_instances, weighting)
 
-                # rf+hc score or no
-                else: #
-                    if target_class is not None:
-                        cc = p_counts_covered['counts'][target_class]
-                        ic = sum([c for c, l in zip(p_counts_covered['counts'], p_counts_covered['labels']) if l != target_class])
-                        if weighting == 'rf+hc1':
-                            weights[j] = (cc-ic) / (cc+ic) + cc / (ic + 1) # 4 is given in the paper. it can be anything to prevent div by zero
-                        elif weighting == 'rf+hc2':
-                            weights[j] = (cc-ic) / (cc+ic) + cc / (ic + 1) + cc / len(wp[0])
-                        else:
-                            pass
-                    else:
-                        pass
-
             # correct any uncalculable weights
             weights = [w if not n else min(weights) for w, n in zip(weights, np.isnan(weights))] # clean up any nans
             # normalise
@@ -1630,17 +1498,17 @@ class CHIRPS_runner(rule_evaluator):
             self.sort_patterns(alpha=alpha_paths, score_func=score_func, weights=weights)
 
     def add_rule_term(self):
-        self.__previous_rule = deepcopy(self.rule)
-        next_rule = self.patterns[self.unapplied_rules[0]]
-        candidate = [] # to be output and can be rejected and reverted if no improvement to target function
-        for item in next_rule[0]:
+        candidate = deepcopy(self.rule)
+        next_rule_term = self.patterns[self.unapplied_rules[0]]
+        candidate_terms = [] # to be output and can be rejected and reverted if no improvement to target function
+        for item in next_rule_term[0]:
             # list of already used features
             # to be created each item iteration
             # as the order is important can be rarranged by inserts
-            feature_appears = [f for (f, _, _) in self.rule]
+            feature_appears = [f for (f, _, _) in candidate]
 
             # skip duplicates (essential for pruning reasons)
-            if item in self.rule:
+            if item in candidate:
                 continue
 
             if item[0] in self.var_dict_enc: # binary feature
@@ -1662,11 +1530,11 @@ class CHIRPS_runner(rule_evaluator):
                         categorical_feature_appears.append(f_app)
                 # insert item after last position in current rule where parent item appears
                 if parent_feature in categorical_feature_appears:
-                    self.rule.insert(max(np.where(np.array(categorical_feature_appears) == parent_feature)[0]) + 1, item)
+                    candidate.insert(max(np.where(np.array(categorical_feature_appears) == parent_feature)[0]) + 1, item)
                 # otherwise just append to current rule
                 else:
-                    self.rule.append(item)
-                candidate.append(item) # this will output the newly added terms
+                    candidate.append(item)
+                candidate_terms.append(item) # this will output the newly added terms
 
             else: # continuous feature
                 append_or_update = False
@@ -1684,34 +1552,29 @@ class CHIRPS_runner(rule_evaluator):
                         valueless_rule = [(f, t) for (f, t, _) in self.rule]
                         if (item[0], item[1]) in valueless_rule: # it's already there and needs updating
                             # print(item, 'feature values appears already')
-                            self.rule[valueless_rule.index((item[0], item[1]))] = item
+                            candidate[valueless_rule.index((item[0], item[1]))] = item
                         else: # feature has been used at the opposite end (either lower or upper bound) and needs inserting
                             # print(item, 'feature values with new discontinuity')
-                            self.rule.insert(feature_appears.index(item[0]) + 1, item)
+                            candidate.insert(feature_appears.index(item[0]) + 1, item)
                     else:
                         # print(item, 'feature first added')
-                        self.rule.append(item)
-                    candidate.append(item) # this will output the newly added terms
+                        candidate.append(item)
+                    candidate_terms.append(item) # this will output the newly added terms
 
         # accumlate points from rule and tidy up
         # remove the first item from unapplied_rules as it's just been applied or ignored for being out of range
-        self.accumulated_points += self.patterns[self.unapplied_rules[0]][2]
-        self.accumulated_weights += self.patterns[self.unapplied_rules[0]][1]
         del self.unapplied_rules[0]
         # accumlate all the freq patts that are subsets of the current rules
         # remove the index from the unapplied rules list (including the current rule just added)
         to_remove = []
         for ur in self.unapplied_rules:
             # check if all items are already part of the rule (i.e. it's a subset)
-            if all([item in self.rule for item in self.patterns[ur][0]]):
-                self.accumulated_points += self.patterns[ur][2]
-                self.accumulated_weights += self.patterns[ur][1]
+            if all([item in candidate for item in self.patterns[ur][0]]):
                 # collect up the values to remove. don't want to edit the iterator in progress
                 to_remove.append(ur)
         for rmv in reversed(to_remove):
             self.unapplied_rules.remove(rmv)
-
-        return(candidate)
+        return(candidate, candidate_terms, next_rule_term)
 
     def prune_rule(self):
         # removes all other binary items if one Greater than is found.
@@ -1771,19 +1634,9 @@ class CHIRPS_runner(rule_evaluator):
 
         self.pruned_rule = gt_pruned_rule
 
-    def __greedy_commit__(self, value, threshold):
-        if value <= threshold:
-            self.rule = deepcopy(self.__previous_rule)
-            self.__reverted.append(True)
-            return(True)
-        else:
-            self.__reverted.append(False)
-            return(False)
-
     def merge_rule(self, forest,
                         sample_instances=None,
                         sample_labels=None,
-                        stopping_param = 1,
                         precis_threshold = 0.95,
                         fixed_length = None,
                         target_class = None,
@@ -1800,10 +1653,12 @@ class CHIRPS_runner(rule_evaluator):
 
         if len(self.unapplied_rules) == 0:
             self.total_points = 0
+            self.total_weights = 0
         else:
             default_rule = self.patterns[0][0]
             # default_rule will be set in the loop
             self.total_points = sum([scrs[2] for scrs in self.patterns])
+            self.total_weights = sum([scrs[1] for scrs in self.patterns])
 
         # basic setup
         # pointless to receive a None for algorithm
@@ -1814,26 +1669,11 @@ class CHIRPS_runner(rule_evaluator):
         # common default setting: see class non_deterministic
         random_state = self.default_if_none_random_state(random_state)
         np.random.seed(random_state) # for bootstrap pruning
-        if stopping_param > 1 or stopping_param < 0:
-            stopping_param = 1
-            print('warning: stopping_param should be 0 <= p <= 1. Value was reset to 1')
-        self.stopping_param = stopping_param
         self.n_classes = len(np.unique(labels))
         self.n_instances = len(labels)
 
-        # model predicted class
-        if self.major_class is None:
-            self.major_class = np.argmax(self.model_votes['p_counts'])
-        if self.get_label is None:
-            self.major_class_label = self.major_class
-        else:
-            self.major_class_label = self.get_label(self.class_col, [self.major_class])
-
         # target class
-        if target_class is None and self.target_class is None:
-            self.target_class = self.major_class
-            self.target_class_label = self.major_class_label
-        elif target_class is not None:
+        if target_class is not None:
             self.target_class = target_class
         if self.get_label is None:
             self.target_class_label = self.target_class
@@ -1882,13 +1722,14 @@ class CHIRPS_runner(rule_evaluator):
         while current_metric != 1.0 \
             and current_metric != 0.0 \
             and current_metric < precis_threshold \
-            and self.accumulated_points <= self.total_points * self.stopping_param \
             and (fixed_length is None or rule_length_counter < max(1, fixed_length)) \
             and len(self.unapplied_rules) > 0:
 
             self.merge_rule_iter += 1
-            candidate = self.add_rule_term()
-            eval_rule = self.evaluate_rule(sample_instances=instances,
+
+            # generate candidate
+            candidate, candidate_terms, next_rule_term = self.add_rule_term()
+            eval_rule = self.evaluate_rule(rule=candidate, sample_instances=instances,
                                     sample_labels=labels)
 
             # confirm rule, or revert to previous
@@ -1897,11 +1738,13 @@ class CHIRPS_runner(rule_evaluator):
             current_metric = curr[np.where(eval_rule['labels'] == self.target_class)]
 
             if rule_length_counter == 0 and current_metric > default_metric: # we need a default rule
-                default_rule = self.rule # whatever was just set as the candidate
+                default_rule = candidate
                 default_metric = current_metric
 
             if merging_bootstraps == 0:
-                should_continue = self.__greedy_commit__(current, previous)
+                should_continue = current_metric <= previous
+                self.reverted.append(should_continue)
+
             else: # get a bootstrapped evaluation
                 b_curr = np.full(merging_bootstraps, np.nan)
                 b_prev = np.full(merging_bootstraps, np.nan)
@@ -1912,22 +1755,26 @@ class CHIRPS_runner(rule_evaluator):
                     b_sample_instances = instances[idx]
                     b_sample_labels = labels[idx]
 
-                    b_eval_rule = self.evaluate_rule(sample_instances=b_sample_instances,
+                    b_eval_rule = self.evaluate_rule(rule=candidate, sample_instances=b_sample_instances,
                                                 sample_labels=b_sample_labels)
                     b_curr[b] = b_eval_rule[metric][np.where(eval_rule['labels'] == self.target_class)]
 
-                    b_eval_prev = self.evaluate_rule(rule = self.__previous_rule,
+                    b_eval_prev = self.evaluate_rule(rule = self.rule,
                                                 sample_instances=b_sample_instances,
                                                 sample_labels=b_sample_labels)
                     b_prev[b] = b_eval_prev[metric][np.where(b_eval_prev['labels'] == self.target_class)]
 
-                should_continue = self.__greedy_commit__((b_curr > b_prev).sum(), bootstrap_confidence * merging_bootstraps)
+                should_continue = (b_curr > b_prev).sum() <= bootstrap_confidence * merging_bootstraps
+                self.reverted.append(should_continue)
                 current_metric = b_curr.mean()
 
             if should_continue:
                 continue # don't update all the metrics, just go to the next round
-            # otherwise update everything and save all the metrics
+            # otherwise accept the candidate, update everything and save all the metrics
+            self.rule = deepcopy(candidate)
             rule_length_counter += 1
+            self.accumulated_points += next_rule_term[2] / self.total_points
+            self.accumulated_weights += next_rule_term[1] / self.total_weights
 
             # check for end conditions; no target class instances
             if eval_rule['counts'][np.where(eval_rule['labels'] == self.target_class)] == 0:
@@ -1949,8 +1796,8 @@ class CHIRPS_runner(rule_evaluator):
             self.nci = np.append(self.nci, [eval_rule['nci']], axis=0 )
             self.npv = np.append(self.npv, [eval_rule['npv']], axis=0 )
 
-            # update the var_dict with the rule values
-            for item in candidate:
+            # update the var_dict with the new rule term values
+            for item in candidate_terms:
                 if item[0] in self.var_dict_enc: # binary feature
                     # find the parent feature of item
                     parent_feature = self.var_dict_enc[item[0]]
@@ -1985,7 +1832,7 @@ class CHIRPS_runner(rule_evaluator):
                 self.kl_div = np.append(self.kl_div, [0], axis=0)
             return()
 
-        # first time major_class is isolated
+        # first time target class is isolated
         if any(np.argmax(self.posterior, axis=1) == self.target_class):
             self.isolation_pos = np.min(np.where(np.argmax(self.posterior, axis=1) == self.target_class))
         else: self.isolation_pos = None
@@ -2046,7 +1893,6 @@ class CHIRPS_runner(rule_evaluator):
         # else: TODO non bootstrapped version
 
     def get_CHIRPS_explainer(self, elapsed_time=0):
-
         return(CHIRPS_explainer(self.random_state,
         self.features, self.features_enc, self.class_names,
         self.class_col, self.get_label,
@@ -2054,9 +1900,9 @@ class CHIRPS_runner(rule_evaluator):
         self.paths, self.paths_weights, self.patterns,
         self.rule, self.pruned_rule,
         self.target_class, self.target_class_label,
-        self.major_class, self.major_class_label,
         self.model_votes,
         self.confidence_weights,
+        self.accumulated_points,
         self.accumulated_weights,
         self.isolation_pos,
         self.posterior,
@@ -2076,12 +1922,12 @@ class CHIRPS_runner(rule_evaluator):
         self.algorithm,
         elapsed_time))
 
-class batch_CHIRPS_explainer(object):
+class CHIRPS_container(object):
 
-    def __init__(self, bp_container, # batch_paths_container
+    def __init__(self, path_detail, # from forest_walker
                         forest, sample_instances, sample_labels, meta_data,
                         forest_walk_mean_elapsed_time=0):
-        self.bp_container = bp_container
+        self.path_detail = path_detail
         self.data_container = data_container
         self.forest = forest
         self.sample_instances = sample_instances
@@ -2090,19 +1936,65 @@ class batch_CHIRPS_explainer(object):
         self.CHIRPS_explainers = None
         self.fwmet = forest_walk_mean_elapsed_time
 
+    def get_CHIRPS_runner(self, batch_idx, target_class, meta_data, random_state=123, feature_values=True, unweighted_trees=True):
+
+        true_to_lt = lambda x: '<' if x == True else '>'
+
+        # extract the paths we want by filtering on tree performance
+        n_paths = len(self.path_detail[batch_idx])
+        if unweighted_trees:
+            paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == target_class]))]
+        else: # confidence weighted
+            paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths)]))]
+            paths_pred_logproba = confidence_weight(paths_pred_proba, 'log_proba')
+            paths_pred_logproba = paths_pred_logproba - np.mean(paths_pred_logproba, axis = 1)[:, np.newaxis] # this is the SAMME.R formula, without the K-1 scaling which is redundant
+            positive_logproba = [True if ppl[target_class] > 0 else False for ppl in paths_pred_logproba] # index where log proba is positive
+            paths_info = np.array(paths_info)[positive_logproba]
+            paths_weights = np.array(paths_weights)[positive_logproba]
+            paths_pred_proba = np.array(paths_pred_proba)[positive_logproba]
+
+        # path formatting - should it be on values level or features level
+        if feature_values:
+            paths = [[]] * len(paths_info)
+            for i, p in enumerate(paths_info):
+                paths[i] = [(f, leq, t) for f, leq, t in zip(p['feature_name'], p['leq_threshold'], p['threshold'])]
+        else:
+            paths = [p['feature_name'] for p in paths_info]
+
+        # per tree performance stats for the whole ensemble (not filtered)
+        tree_preds, estimator_weights, pred_probas = [i for i in map(list, zip(*[itemgetter('pred_class', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][t]) for t in range(n_paths)]))]
+
+        # simply determine the count and proportion of trees according to votes
+        model_votes = p_count_corrected(tree_preds, [i for i in range(len(meta_data['class_names']))], weights=estimator_weights)
+
+        # determine the weighted count of trees  (support for SAMME.R)
+        # based on SAMME.R quantities
+        # confidence_weights = confidence_weight(np.array(pred_probas), 'conf_weight')
+        # confidence_weights = np.mean(confidence_weights + abs(confidence_weights.min(axis=1).reshape(-1, 1)), axis=0)
+        # based on predicted probabilities
+        confidence_weights = np.sum(pred_probas, axis=0)
+        confidence_weights = p_count_corrected([i for i in range(len(meta_data['class_names']))], [i for i in range(len(meta_data['class_names']))], confidence_weights)
+
+        # NOT DOING ANYTHING WITH PATH LEVEL PRED PROBA YET
+        # return an object for requested instance
+        c_runner = CHIRPS_runner(meta_data, paths, paths_weights, paths_pred_proba,
+                                    tree_preds, model_votes, confidence_weights,
+                                    target_class,
+                                    random_state)
+        return(c_runner)
+
     def batch_run_CHIRPS(self, target_classes=None,
                         chirps_explanation_async=False,
                         random_state=123,
                         **kwargs):
         # defaults
-        options = {
+        options = {'unweighted_trees' : True,
             'paths_lengths_threshold' : 2,
             'support_paths' : 0.05,
             'alpha_paths' : 0.0,
             'disc_path_bins' : 4,
             'disc_path_eqcounts' : False,
             'score_func' : 1,
-            'which_trees' : 'majority',
             'precis_threshold' : 0.95,
             'weighting' : 'chisq',
             'algorithm' : 'greedy_stab',
@@ -2116,9 +2008,7 @@ class batch_CHIRPS_explainer(object):
         # reason: rf paths quickly extracted per tree for all instances
         # so when constructed, this structure is oriented by tree
         # and we would like to easily iterate by instance
-        if self.bp_container.by_tree:
-            self.bp_container.flip()
-        n_instances = len(self.bp_container.path_detail)
+        n_instances = len(self.path_detail)
 
         if target_classes is None:
             target_classes = [None] * n_instances
@@ -2136,10 +2026,10 @@ class batch_CHIRPS_explainer(object):
                 # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
                 # use deepcopy to ensure by_value, not by_reference instantiation
-                c_runner = self.bp_container.get_CHIRPS_runner(i, deepcopy(self.meta_data), which_trees=options['which_trees'], random_state=random_state)
+                c_runner = self.get_CHIRPS_runner(i, target_classes[i], deepcopy(self.meta_data), random_state=random_state, unweighted_trees=options['unweighted_trees'])
                 # run the chirps process on each instance paths
                 async_out.append(pool.apply_async(as_CHIRPS,
-                    (c_runner, target_classes[i],
+                    (c_runner,
                     self.sample_instances, self.sample_labels,
                     self.forest, self.fwmet,
                     options['paths_lengths_threshold'], options['support_paths'], options['alpha_paths'],
@@ -2164,10 +2054,10 @@ class batch_CHIRPS_explainer(object):
                 # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
                 # use deepcopy to ensure by_value, not by_reference instantiation
-                c_runner = self.bp_container.get_CHIRPS_runner(i, deepcopy(self.meta_data), which_trees=options['which_trees'], random_state=random_state)
+                c_runner = self.get_CHIRPS_runner(i, target_classes[i], deepcopy(self.meta_data), random_state=random_state, unweighted_trees=options['unweighted_trees'])
                 # run the chirps process on each instance paths
                 _, CHIRPS_exp = \
-                    as_CHIRPS(c_runner, target_classes[i],
+                    as_CHIRPS(c_runner,
                     self.sample_instances, self.sample_labels,
                     self.forest, self.fwmet,
                     options['paths_lengths_threshold'], options['support_paths'], options['alpha_paths'],

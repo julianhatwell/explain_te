@@ -105,3 +105,12 @@
 
         statistics['all_classes'] = self.forest_stats_by_label()
         return(statistics)
+
+    def major_class_from_paths(self, batch_idx, return_counts=False): # needs to be weighted
+        pred_classes = [self.path_detail[batch_idx][p]['pred_class'] for p in range(len(self.path_detail[batch_idx]))]
+
+        unique, counts = np.unique(pred_classes, return_counts=True)
+
+        if return_counts:
+            return(unique[np.argmax(counts)], dict(zip(unique, counts)))
+        else: return(unique[np.argmax(counts)])

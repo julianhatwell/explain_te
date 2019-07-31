@@ -74,9 +74,9 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
 
     # do the walk - returns a batch_paths_container (even for just one instance)
     # requires the X instances in a matrix (dense, ordinary numpy matrix) - this is available in the data_split_container
-    bp_container = f_walker.forest_walk(instances = instances_enc_matrix
-                            , labels = preds # we're explaining the prediction, not the true label!
-                            , forest_walk_async = forest_walk_async)
+    f_walker.forest_walk(instances = instances_enc_matrix
+                        , labels = preds # we're explaining the prediction, not the true label!
+                        , forest_walk_async = forest_walk_async)
 
     # stop the timer
     forest_walk_end_time = timeit.default_timer()
@@ -92,7 +92,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
     sample_labels = forest.predict(ds_container.X_train_enc)
 
     # build CHIRPS and a rule for each instance represented in the batch paths container
-    CHIRPS = strcts.batch_CHIRPS_explainer(bp_container,
+    CHIRPS = strcts.CHIRPS_container(f_walker.path_detail,
                                     forest=forest,
                                     sample_instances=ds_container.X_train_enc, # any representative sample can be used
                                     sample_labels=sample_labels,
@@ -103,7 +103,8 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
     # start a timer
     ce_start_time = timeit.default_timer()
 
-    CHIRPS.batch_run_CHIRPS(chirps_explanation_async=chirps_explanation_async, random_state=random_state, **kwargs)
+    CHIRPS.batch_run_CHIRPS(target_classes=preds, # we're explaining the prediction, not the true label!
+                            chirps_explanation_async=chirps_explanation_async, random_state=random_state, **kwargs)
 
     ce_end_time = timeit.default_timer()
     ce_elapsed_time = ce_end_time - ce_start_time
@@ -238,11 +239,14 @@ def Anchors_benchmark(forest, ds_container, meta_data,
         tc = [preds[i]]
         tc_lab = meta_data['get_label'](meta_data['class_col'], tc)
 
+        true_class = ds_container.y_test.loc[instance_id]
         results[i] = [dataset_name,
             instance_id,
             method,
             ' AND '.join(explanation.names()),
             len(explanation.names()),
+            true_class,
+            meta_data['class_names'][true_class],
             tc[0],
             tc_lab[0],
             tc[0],
@@ -434,11 +438,14 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
         mc_lab = meta_data['get_label'](meta_data['class_col'], mc)
         tc_lab = meta_data['get_label'](meta_data['class_col'], tc)
 
+        true_class = ds_container.y_test.loc[instance_id]
         results[i] = [dataset_name,
         instance_id,
         method,
         pretty_rule,
         len(rule),
+        true_class,
+        meta_data['class_names'][true_class],
         mc[0],
         mc_lab[0],
         tc[0],

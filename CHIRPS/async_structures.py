@@ -85,7 +85,7 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
 
     return(tree_idx, tree_paths)
 
-def as_CHIRPS(c_runner, target_class,
+def as_CHIRPS(c_runner,
                 sample_instances, sample_labels, forest, forest_walk_mean_elapsed_time,
                 paths_lengths_threshold=2, support_paths=0.1, alpha_paths=0.0,
                 disc_path_bins=4, disc_path_eqcounts=False,
@@ -112,8 +112,7 @@ def as_CHIRPS(c_runner, target_class,
     # if len(c_runner.patterns) > 1000:
     #      print('a long wait for label ' + str(batch_idx))
     #      print([cp for i, cp in enumerate(c_runner.patterns) if i < 50])
-    c_runner.score_sort_path_snippets(target_class=target_class,
-                                        alpha_paths=alpha_paths,
+    c_runner.score_sort_path_snippets(alpha_paths=alpha_paths,
                                         score_func=score_func,
                                         weighting=weighting)
 

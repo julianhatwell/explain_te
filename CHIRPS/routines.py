@@ -121,6 +121,7 @@ def do_ada_tuning(X, y, model,
     forest_performance = {'score' : rf.best_score_,
                         'fitting_time' : elapsed_time}
 
+    print(best_params)
     best_params.update({'base_estimator' : str(best_params['base_estimator'])})
     save_tuning_results(save_path, random_state, best_params, forest_performance, model=model)
 
@@ -333,7 +334,7 @@ def save_results(headers, results, save_results_path, save_results_file):
     output_df = DataFrame(results, columns=headers)
     output_df.to_csv(save_results_path + save_results_file + '.csv')
 
-def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
+def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # CHIRPS_container
                                 ds_container, # data_split_container (for the test data and the LOO function
                                 instance_idx, # should match the instances in the batch
                                 forest,
@@ -348,6 +349,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                 save_results_file=None,
                                 save_CHIRPS=False):
 
+    preds = forest.predict(ds_container.X_test_enc)
     results = [[]] * len(b_CHIRPS_exp.CHIRPS_explainers)
 
     for i, c in enumerate(b_CHIRPS_exp.CHIRPS_explainers):
@@ -397,14 +399,16 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
             alt_labelings_results = c.get_alt_labelings(instance=current_instance_enc,
                                                         sample_instances=instances_enc,
                                                         forest=forest)
-
+        true_class = ds_container.y_test.loc[instance_id]
         results[i] = [dataset_name,
             instance_id,
             c.algorithm,
             c.pretty_rule,
             c.rule_len,
-            c.major_class,
-            c.major_class_label[0],
+            true_class,
+            meta_data['class_names'][true_class],
+            preds[i],
+            meta_data['class_names'][preds[i]],
             c.target_class,
             c.target_class_label[0],
             c.forest_vote_share,
@@ -512,7 +516,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
                                 print('counts: ' + str(alt_labels['is_mask']['counts']))
                                 print('proba: ' + str(alt_labels['is_mask']['p_counts']))
                                 print('allowed values. expected class: ' + str(np.argmax(alt_labels['av_mask']['p_counts'])) + \
-                                        ' (' + c.get_label(c.class_col, [np.argmax(alt_labels['is_mask']['p_counts'])]) + ')')
+                                        ' (' + c.get_label(c.class_col, [np.argmax(alt_labels['av_mask']['p_counts'])]) + ')')
                                 print('classes: ' + str(alt_labels['av_mask']['labels']))
                                 print('counts: ' + str(alt_labels['av_mask']['counts']))
                                 print('proba: ' + str(alt_labels['av_mask']['p_counts']))
@@ -550,7 +554,7 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # batch_CHIRPS_explainer
         save_results(cfg.summary_results_headers, summary_results, save_results_path, save_results_file + '_summary')
 
     if save_CHIRPS:
-        # save the batch_CHIRPS_explainer object
+        # save the CHIRPS_container object
         CHIRPS_explainers_store = open(save_results_path + save_results_file + '.pickle', "wb")
         pickle.dump(b_CHIRPS_exp.CHIRPS_explainers, CHIRPS_explainers_store)
         CHIRPS_explainers_store.close()
