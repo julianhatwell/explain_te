@@ -539,3 +539,69 @@ if True:
     samp.reset_index(drop=True, inplace=True)
     samp.to_csv('CHIRPS\\datafiles\\rcdv_samp.csv.gz', index=False, compression='gzip')
     '''
+
+if True:
+    '''
+    file = 'usoc_wv23.csv'
+    # usoc = import_usoc_file('usoc_all.csv')
+    archive = zipfile.ZipFile('CHIRPS/source_datafiles_proprietary/usoc.zip', 'r')
+    lines = archive.read(file).decode("utf-8").split('\r\n')
+    archive.close()
+    # convert strings to var lists
+    lines = [lines[i].replace('\ufeff', '').split(',') for i in range(len(lines))]
+    names = lines[0]
+    lines = lines[1:len(lines)-1]
+    usoc = pd.DataFrame(lines, columns=names)
+    #usoc = usoc[usoc.a_scghq1_dv != ' ']
+    #usoc = usoc[usoc.a_scghq1_dv.astype(np.float16) >= 0.0]
+    usoc.drop(columns=['pidp', 'pid',
+                       'b_hidp', 'b_pno', 'b_splitnum',
+                       'c_hidp', 'c_pno', 'c_splitnum',
+                       'dord', 'dory', 'dorm',
+                       'height', 'resnhi', 'bmi', 'age',
+                       'ehtch', 'ehtm', 'ehtft', 'ehtin',
+                       'weight', 'ewtkg', 'ewtst', 'ewtl',
+                       'waist1', 'waist2', 'waist3',
+                       'ag16g10', 'ag16g20', 'vpstimehh',
+                       'vpstimemm', 'strtnurhh', 'strtnurmm',
+                       'psu', 'strata', 'indns91_lw', 'indns01_lw',
+                       'indnsub_lw', 'indnsbh_xw', 'indnsub_xw'], inplace=True)
+    # remove rows with properly missing values
+    missing = set(np.array([usoc.index[usoc[c] == ' '].tolist() for c in usoc.columns if len(usoc.index[usoc[c] == ' ']) > 0]).reshape(1,-1)[0])
+    usoc.drop(index=missing, inplace=True)
+
+    # vars with . somewhere are floats
+    vtypes = {n : np.float16 if any(['.' in value for value in usoc[n]]) else np.object for n in usoc.columns}
+    usoc = usoc.astype(dtype=vtypes)
+    # nearly all vars with ten or fewer uniques are nominal
+    vtypes = {n : np.int16 if not np.issubdtype(usoc[n], np.float) and len(set([value for value in usoc[n]])) > 10 else usoc[n].dtype for n in usoc.columns}
+    # these are nominal with larger numbers of uniques - have to do manually based on dictionary
+    vtypes.update({'nuroutc' : np.object, 'lfout' : np.object,
+                  'elig' : np.object, 'ethnic' : np.object,
+                  'hhtype_dv' : np.object, 'jbstat' : np.object,
+                  'mlstat' : np.object, 'marstat' : np.object,
+                  'jbnssec8_dv' : np.object, 'jlnssec8_dv' : np.object})
+    usoc = usoc.astype(dtype=vtypes)
+
+    usoc.reset_index(inplace=True)
+    usoc.to_csv('CHIRPS\\datafiles_proprietary\\usoc.csv.gz', index=False, compression='gzip')
+    random_state = 123
+    samp = usoc.sample(frac=0.1, random_state=random_state)
+    samp.reset_index(drop=True, inplace=True)
+    samp.to_csv('CHIRPS\\datafiles_proprietary\\usoc_samp.csv.gz', index=False, compression='gzip')
+
+    # convert the general health likert to a simple class
+    usoc2 = usoc[np.logical_and(np.logical_and(usoc.scghq1_dv >=0, usoc.bmival >=0), usoc.wstval >=0)]
+    usoc2.reset_index(inplace=True)
+    mh = np.array(['neutral'] * len(usoc2.scghq1_dv))
+    mh[usoc2.scghq1_dv < 7.0] = 'unhappy'
+    mh[usoc2.scghq1_dv > 13.0] = 'happy'
+    usoc2 = usoc2.assign(mh = pd.Series(mh, index = usoc2.index))
+    usoc2.mh
+    usoc2.drop(columns='scghq1_dv', inplace=True)
+    usoc2.to_csv('CHIRPS\\datafiles_proprietary\\usoc2.csv.gz', index=False, compression='gzip')
+    random_state = 123
+    samp = usoc2.sample(frac=0.1, random_state=random_state)
+    samp.reset_index(drop=True, inplace=True)
+    samp.to_csv('CHIRPS\\datafiles_proprietary\\usoc2_samp.csv.gz', index=False, compression='gzip')
+    '''

@@ -12,6 +12,8 @@
 *.png
 /.ipynb_checkpoints
 /CHIRPS/__pycache__
+/CHIRPS/datafiles_proprietary
+/CHIRPS/source_datafiles_proprietary
 accepted_2007_to_2018Q2.csv.gz
 lending.csv.gz
 ~/whiteboxing/adult_small_samp/

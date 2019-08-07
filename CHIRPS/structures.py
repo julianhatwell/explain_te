@@ -1307,9 +1307,7 @@ class CHIRPS_runner(rule_evaluator):
         if equal_counts:
             def hist_func(x, bins, weights=None):
                 npt = len(x)
-                bns = np.interp(np.linspace(0, npt, bins + 1),
-                                 np.arange(npt),
-                                 np.sort(x))
+                bns = np.quantile(x, [0.0, .25, .5, .75, 1.0])
                 return(np.histogram(x, bns, weights=weights))
         else:
             def hist_func(x, bins, weights=None):
@@ -1478,9 +1476,9 @@ class CHIRPS_runner(rule_evaluator):
                 instances, labels = self.init_instances(instances=sample_instances, labels=sample_labels)
                 idx = self.apply_rule(rule=wp, instances=instances, features=self.features_enc)
                 p_counts_covered = p_count_corrected(labels[idx], [i for i in range(len(self.class_names))])
-                covered = p_counts_covered['counts']
-                not_covered = p_count_corrected(labels[~idx], [i for i in range(len(self.class_names))])['counts']
-                all_instances = p_count_corrected(labels, [i for i in range(len(self.class_names))])['counts']
+                covered = p_counts_covered['p_counts']
+                not_covered = p_count_corrected(labels[~idx], [i for i in range(len(self.class_names))])['p_counts']
+                all_instances = p_count_corrected(labels, [i for i in range(len(self.class_names))])['p_counts']
 
                 # observed = np.array((covered, not_covered))
                 observed = np.array((covered, all_instances))

@@ -81,9 +81,6 @@ def contingency_test(p, q, statistic = 'chisq'):
         return(math.sqrt(chisq_indep_test(p, q)[0]))
     elif statistic == 'kldiv':
         return(entropy_corrected(p, q))
-    elif statistic == 'lodds':
-        micro_diff = np.finfo(np.dtype(p)).eps
-        return(np.std(np.log((p + micro_diff)/(q + micro_diff))))
 
 # create a directory if doesn't exist
 def if_nexists_make_dir(save_path):
