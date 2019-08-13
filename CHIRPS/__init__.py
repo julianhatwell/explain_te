@@ -3,7 +3,6 @@ import numpy as np
 from pathlib import Path as pth
 from os import makedirs as mkdir
 from scipy.stats import chi2_contingency, entropy
-from collections import defaultdict
 
 # helper function determines if we're in a jup notebook
 def in_ipynb():
@@ -27,29 +26,21 @@ def p_count_corrected(arr, classes, weights=None):
         'p_counts' : np.zeros(len(classes))})
 
     # otherwise
-    n_classes = len(classes)
-    pc = np.zeros(n_classes)
-    c = np.zeros(n_classes)
-
     # initialise weights to ones, accept a vector of weights, or extract per row weights from a 2D array
     if weights is None:
         weights = np.ones(len(arr))
     else:
-        try:
+        weights = np.array(weights)
+        try: # for 2D weights, take the sum of weights where the class is listed
+            _ = np.shape(weights)[1] # 1D test
             n_weights = np.shape(weights)[0]
-            weights = np.array(weights)
             weights = weights[range(n_weights), arr] # this will fail if there is no second dimension
-            weights = weights / (n_weights * n_classes) # this is the formula for SAMME.R and scikit
+            weights = weights / (n_weights * len(classes)) # this is the formula for SAMME.R and scikit
         except:
-            weights = np.array(weights)
-    dict_counts = defaultdict(lambda: 0.0)
-    for cl, wt in zip(arr, weights):
-        dict_counts[cl] += wt
+            pass
+    c = np.bincount(arr, weights=np.array(weights))
 
-    # insert any zeros for unrepresented classes
-    for cl in range(n_classes):
-        pc[cl] = dict_counts[cl] / weights.sum()
-        c[cl] = dict_counts[cl]
+    pc = c / weights.sum()
 
     return({'labels' : classes,
     'counts' : c,

@@ -416,10 +416,11 @@ class forest_walker(object):
         meta_le_dict = meta_data['le_dict']
         meta_get_label = meta_data['get_label']
 
-        if self.class_col in meta_le_dict.keys():
-            self.get_label = meta_get_label
-        else:
-            self.get_label = None
+        # should be safe to pass, because default returns input
+        # if self.class_col in meta_le_dict.keys():
+        self.get_label = meta_get_label
+        # else:
+        #     self.get_label = None
 
         # weights for standard Boosted models
         if not hasattr(forest, 'estimator_weights_'):

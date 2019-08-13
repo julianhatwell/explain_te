@@ -6,6 +6,7 @@ import pandas as pd
 from datetime import datetime
 import math
 import julian
+import re
 
 # adult from source
 if True:
@@ -550,10 +551,8 @@ if True:
     # convert strings to var lists
     lines = [lines[i].replace('\ufeff', '').split(',') for i in range(len(lines))]
     names = lines[0]
-    lines = lines[1:len(lines)-1]
+    lines = lines[1:]
     usoc = pd.DataFrame(lines, columns=names)
-    #usoc = usoc[usoc.a_scghq1_dv != ' ']
-    #usoc = usoc[usoc.a_scghq1_dv.astype(np.float16) >= 0.0]
     usoc.drop(columns=['pidp', 'pid',
                        'b_hidp', 'b_pno', 'b_splitnum',
                        'c_hidp', 'c_pno', 'c_splitnum',
@@ -604,4 +603,157 @@ if True:
     samp = usoc2.sample(frac=0.1, random_state=random_state)
     samp.reset_index(drop=True, inplace=True)
     samp.to_csv('CHIRPS\\datafiles_proprietary\\usoc2_samp.csv.gz', index=False, compression='gzip')
+    '''
+
+if True:
+    '''
+    file = 'hospital_readmission.csv'
+    archive = zipfile.ZipFile('CHIRPS/source_datafiles/hospital_readmission.zip', 'r')
+    lines = archive.read(file).decode("utf-8").split('\n')
+    archive.close()
+    # convert strings to var lists. Replace true/false with binary
+    lines = [lines[i].replace('False', str(0)).replace('True', str(1)).split(',') for i in range(len(lines))]
+    # the last line is corrupt - must have been a newline character at the end
+    lines.pop()
+    # get the header and the lines
+    names = lines[0]
+    lines = lines[1:]
+    readmission = pd.DataFrame(lines, columns=names)
+    readmission = readmission.astype(dtype=np.int16)
+
+    readmission.to_csv('CHIRPS\\datafiles\\readmit.csv.gz', index=False, compression='gzip')
+    random_state = 123
+    samp = readmission.sample(frac=0.1, random_state=random_state)
+    samp.reset_index(drop=True, inplace=True)
+    samp.to_csv('CHIRPS\\datafiles\\readmit_samp.csv.gz', index=False, compression='gzip')
+    '''
+
+if True:
+    '''
+    file = '2014.csv'
+    archive = zipfile.ZipFile('CHIRPS/source_datafiles/mhtech.zip', 'r')
+    lines = archive.read(file).decode("utf-8").split('\n')
+    archive.close()
+
+    # convert strings to var lists - deal with some free text issues
+    lines = [lines[i].replace("Bahamas, The", "Bahamas").replace("male, unsure", "male unsure").split(',') for i in range(len(lines))]
+    names = [nm.replace('"', '') for nm in lines[0]]
+    lines = lines[1:]
+    lines.pop() # empty final row
+    mhtech = pd.DataFrame(lines, columns=names)
+
+    # not useful, turns out state only valid for USA
+    mhtech.drop(['Timestamp', 'state'], 1, inplace=True)
+
+    # rename columns for ease
+    ren = {old : new for old, new in zip(mhtech.columns, [lc.lower() for lc in mhtech.columns])}
+    mhtech.rename(columns=ren, inplace=True)
+
+    # standardise some other responses, getting rid of 'apos in "Don't know"
+    for c in mhtech.columns:
+        mhtech[c] = mhtech[c].str.replace("Don't know", 'Not sure')
+        mhtech[c] = mhtech[c].str.replace('"', '')
+        mhtech[c] = mhtech[c].str.replace('Maybe', 'Not sure')
+        mhtech[c] = mhtech[c].str.replace('not sure', 'Not sure')
+        mhtech[c] = mhtech[c].str.replace('Some of them', 'Yes')
+
+    # make no_emplyees category ordered, and integer while we're at it
+    def min_emps_map(x):
+        if x == 'More than 1000':
+            return(1000)
+        else:
+            pos = x.find('-')
+            return(int(x[:pos]))
+    mhtech['no_employees'] = mhtech['no_employees'].apply(min_emps_map)
+
+    # should be no more missing data
+    # print('missing values')
+    # print(mhtech.isnull().sum())
+    # print()
+
+    # impute a value for self-employed depending on number of employees
+    mhtech.loc[mhtech['no_employees'] == 1 & mhtech['self_employed'].isnull(), 'self_employed'] = 'Yes'
+    mhtech.loc[mhtech['no_employees'] > 1 & mhtech['self_employed'].isnull(), 'self_employed'] = 'No'
+
+    # gender has been over-loaded with free text
+    # print('gender options')
+    # print(mhtech.gender.unique())
+    # print()
+
+    # cleaning gender data for analysis
+    # no disrespect, but we have to reduce the number of categories to make a meaningful analysis
+    # a bigger dataset with greater representation would be a different story
+    def categoriseGender(Gender):
+        gender=str(Gender).lower().replace('(cis)', '').replace('cis', '').strip()
+        if re.search('not sure|-|/|\?|trans|ish', gender):
+            return('others')
+        elif re.search('fema', gender) or gender == 'f':
+            return('female')
+        elif re.search('ma', gender) or gender == 'm' or gender == 'msle':
+            return('male')
+        else:
+            return('others')
+
+    mhtech['gender'] = mhtech['gender'].apply(categoriseGender)
+
+    def likertMap(x):
+        if x == 'Very difficult' or x == 'Often':
+            return(0)
+        elif x == 'Somewhat difficult' or x == 'Sometimes':
+            return(1)
+        elif x == 'Not sure':
+            return(2)
+        elif x == 'Somewhat easy' or x == 'Rarely':
+            return(3)
+        elif x == 'Very easy' or x == 'Never':
+            return(4)
+
+    def yesnoMap(x):
+        if x == 'Yes':
+            return(1)
+        elif x == 'No':
+            return(0)
+        elif x == 'Not sure':
+            return(-1)
+
+    def regionMap(x):
+        if x in ['United States', 'Canada']:
+            return('NA')
+        elif x in ['United Kingdom', 'France', 'Netherlands', 'Switzerland',
+                    'Germany', 'Austria', 'Ireland', 'Belgium']:
+            return('CE')
+        elif x in ['Sweden', 'Finland', 'Norway', 'Denmark']:
+            return('NE')
+        elif x in ['Italy', 'Spain', 'Portugal', 'Slovenia', 'Greece', 'Bosnia and Herzegovina', 'Croatia']:
+            return('SE')
+        elif x in ['Bulgaria', 'Poland', 'Russia', 'Latvia', 'Romania', 'Hungary', 'Moldova', 'Georgia', 'Czech Republic']:
+            return('EE')
+        elif x in ['Mexico', 'Brazil', 'Costa Rica', 'Colombia', 'Uruguay', 'Bahamas, The']:
+            return('CSA')
+        elif x in ['Nigeria', 'South Africa', 'Zimbabwe', 'Israel']:
+            return('MEAF')
+        elif x in ['India', 'China', 'Philippines', 'Thailand', 'Japan', 'Singapore', 'Australia', 'New Zealand']:
+            return('APAC')
+        else:
+            return(x)
+
+    mhtech['region'] = mhtech.country.apply(regionMap)
+    mhtech.drop('country', 1, inplace=True)
+    mhtech.leave = mhtech.leave.apply(likertMap)
+    # this will also fix the missing vals
+    mhtech.work_interfere = mhtech.work_interfere.fillna('Not sure').apply(likertMap)
+
+    # code all the binary indep vars
+    for c in mhtech.columns:
+        if c in ['age', 'gender', 'country', 'leave', 'work_interfere', 'comments', 'no_employees', 'region']:
+            continue
+        else:
+            mhtech[c] = mhtech[c].apply(yesnoMap)
+
+    # should be no more missing data
+    # print('missing values')
+    # print(mhtech.isnull().sum())
+    # print()
+
+    mhtech.to_csv('CHIRPS\\datafiles\\mhtech14.csv.gz', index=False, compression='gzip')
     '''

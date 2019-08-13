@@ -728,3 +728,36 @@ def rcdv_samp(random_state=123, project_dir=None):
     ''')
 
     return(data_cont)
+
+# readmission
+def readmit(random_state=123, project_dir=None):
+    data_cont = data_container(
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'readmit.csv.gz',
+                    compression='gzip'),
+    class_col = 'readmitted',
+    project_dir = project_dir,
+    save_dir = 'readmit',
+    random_state=random_state,
+    spiel = '''
+    From Kaggle - https://www.kaggle.com/dansbecker/hospital-readmissions
+    No further information
+    ''')
+
+    return(data_cont)
+
+# readmission 0.1 sample
+def readmit_samp(random_state=123, project_dir=None):
+    data_cont = data_container(
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'readmit_samp.csv.gz',
+                    compression='gzip'),
+    class_col = 'readmitted',
+    project_dir = project_dir,
+    save_dir = 'readmit_samp',
+    random_state=random_state,
+    spiel = '''
+    From Kaggle - https://www.kaggle.com/dansbecker/hospital-readmissions
+    No further information
+    0.1 of sample
+    ''')
+
+    return(data_cont)
