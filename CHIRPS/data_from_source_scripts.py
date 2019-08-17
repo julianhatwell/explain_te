@@ -7,6 +7,7 @@ from datetime import datetime
 import math
 import julian
 import re
+from sklearn.impute import SimpleImputer
 
 # adult from source
 if True:
@@ -596,7 +597,6 @@ if True:
     mh[usoc2.scghq1_dv < 7.0] = 'unhappy'
     mh[usoc2.scghq1_dv > 13.0] = 'happy'
     usoc2 = usoc2.assign(mh = pd.Series(mh, index = usoc2.index))
-    usoc2.mh
     usoc2.drop(columns='scghq1_dv', inplace=True)
     usoc2.to_csv('CHIRPS\\datafiles_proprietary\\usoc2.csv.gz', index=False, compression='gzip')
     random_state = 123
@@ -620,6 +620,12 @@ if True:
     lines = lines[1:]
     readmission = pd.DataFrame(lines, columns=names)
     readmission = readmission.astype(dtype=np.int16)
+
+    var_names = readmission.columns.to_list()
+    var_names = [vn for vn in var_names if vn != 'readmitted']
+    var_names.append('readmitted')
+    readmission = readmission[var_names] # put the class col at the end
+
 
     readmission.to_csv('CHIRPS\\datafiles\\readmit.csv.gz', index=False, compression='gzip')
     random_state = 123
@@ -755,5 +761,100 @@ if True:
     # print(mhtech.isnull().sum())
     # print()
 
+    var_names = mhtech.columns.to_list()
+    var_names = [vn for vn in var_names if vn != 'treatment']
+    var_names.append('treatment')
+    mhtech = mhtech[var_names] # put the class col at the end
+
     mhtech.to_csv('CHIRPS\\datafiles\\mhtech14.csv.gz', index=False, compression='gzip')
+    '''
+
+if True:
+    '''
+    file = 'yps.csv'
+    archive = zipfile.ZipFile('CHIRPS/source_datafiles/yps.zip', 'r')
+    lines = archive.read(file).decode("utf-8").split('\n')
+    archive.close()
+
+    lines = [lines[i].replace(', ', ' - ').replace('"', '').
+             replace(' smoker', '').replace(' smoked', '').
+             replace(' smoking', '').replace(' drinker', '').
+             replace('drink ', '').replace('i am always ', '').
+             replace('i am often ', '').replace('running ', '').
+             replace('few hours a day', 'sometimes').replace('less than one hour a day', '<1 hours').
+             replace('most of the day', 'many hours').replace('no time at all', 'never').
+             replace('female', 'f').replace('male', 'm').replace(' handed', '').
+             replace('currently a primary school pupil', 'primary').
+             replace(' school', '').replace(' degree', '').replace('/bachelor', '').
+             replace('block of ', '').replace('/bungalow', '').
+             split(',') for i in range(len(lines))]
+    names = [nm for nm in lines[0]]
+    lines = lines[1:]
+    lines.pop() # empty final row
+    yps = pd.DataFrame(lines, columns=names)
+
+    def numericMap(x):
+        if x == '':
+            return(np.nan)
+        else:
+            return(np.float16(x))
+
+    def stringMap(x):
+        if x == '':
+            return(np.nan)
+        else:
+            return(x)
+
+    cat_vars = ['Smoking', 'Alcohol',
+                'Punctuality', 'Lying',
+                'Internet usage', 'Gender',
+                'Left - right', 'Education', 'Only child',
+                'Village - town', 'House - flats']
+
+    impnum = SimpleImputer(missing_values=np.nan, strategy='median')
+    impcat = SimpleImputer(missing_values=np.nan, strategy='most_frequent')
+    for c in yps.columns:
+        if c not in cat_vars:
+            yps[c] = yps[c].apply(numericMap)
+            impnum.fit(np.array(yps[c]).reshape(-1, 1))
+            yps[c] = impnum.transform(np.array(yps[c]).reshape(-1, 1))
+        else:
+            yps[c] = yps[c].apply(stringMap)
+            impcat.fit(np.array(yps[c]).reshape(-1, 1))
+            yps[c] = impcat.transform(np.array(yps[c]).reshape(-1, 1))
+
+    yps.to_csv('CHIRPS\\datafiles\\yps.csv.gz', index=False, compression='gzip')
+    '''
+
+if True:
+    '''
+    file = 'noshow.csv'
+    archive = zipfile.ZipFile('CHIRPS/source_datafiles/noshow.zip', 'r')
+    lines = archive.read(file).decode("utf-8").split('\r\n')
+    archive.close()
+
+    lines = [lines[i].replace(', ', ' - ').replace('"', '').
+             replace('No-show', 'no_show').split(',') for i in range(len(lines))]
+    names = [nm for nm in lines[0]]
+    lines = lines[1:]
+    lines.pop() # empty final row
+    noshow = pd.DataFrame(lines, columns=names)
+    noshow['SchedDay'] = pd.to_datetime(noshow.ScheduledDay).dt.day_name()
+    noshow['SchedMonth'] = pd.to_datetime(noshow.ScheduledDay).dt.month_name()
+    noshow['ApptDay'] = pd.to_datetime(noshow.AppointmentDay).dt.day_name()
+    noshow['ApptMonth'] = pd.to_datetime(noshow.AppointmentDay).dt.month_name()
+    # get a date difference between booking and appointment
+    noshow['LagDays'] = pd.to_datetime(noshow.AppointmentDay) - pd.to_datetime(noshow.ScheduledDay)
+    noshow.LagDays.loc[(pd.to_datetime(noshow.AppointmentDay) - pd.to_datetime(noshow.ScheduledDay)) < \
+                       (pd.to_datetime(1) - pd.to_datetime(0))] = pd.to_datetime(1) - pd.to_datetime(1)
+    noshow.LagDays = noshow.LagDays / pd.to_timedelta(1, unit='D') # convert to float of days
+    noshow.drop(columns=['PatientId', 'AppointmentID' , 'ScheduledDay', 'AppointmentDay'], inplace=True)
+    var_names = noshow.columns.to_list()
+    var_names = [vn for vn in var_names if vn != 'no_show']
+    var_names.append('no_show')
+    noshow = noshow[var_names] # put the class col at the end
+    noshow.to_csv('CHIRPS\\datafiles\\noshow.csv.gz', index=False, compression='gzip')
+    samp = noshow.sample(frac=0.2, random_state=random_state)
+    samp.reset_index(drop=True, inplace=True)
+    samp.to_csv('CHIRPS\\datafiles\\noshow_samp.csv.gz', index=False, compression='gzip')
     '''

@@ -1942,8 +1942,11 @@ class CHIRPS_container(object):
         # extract the paths we want by filtering on tree performance
         n_paths = len(self.path_detail[batch_idx])
         if unweighted_trees:
+            # get the paths that agree with the target class
             paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == target_class]))]
-        else: # confidence weighted
+        else: # confidence weighted for SAMME.R
+            # get the paths that made a positive contribution to the target class
+            # remember estimator_weights are all 1.0 for SAMME.R
             paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths)]))]
             paths_pred_logproba = confidence_weight(paths_pred_proba, 'log_proba')
             paths_pred_logproba = paths_pred_logproba - np.mean(paths_pred_logproba, axis = 1)[:, np.newaxis] # this is the SAMME.R formula, without the K-1 scaling which is redundant
