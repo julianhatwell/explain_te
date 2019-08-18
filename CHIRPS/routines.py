@@ -10,6 +10,7 @@ from math import sqrt
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier, export_graphviz
 from sklearn.model_selection import ParameterGrid, GridSearchCV
+from dask_ml.model_selection import GridSearchCV as DaskGridSearchCV
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support, accuracy_score
 
@@ -104,7 +105,8 @@ def do_ada_tuning(X, y, model,
 
     start_time = timeit.default_timer()
     print('Finding best params with 10-fold CV')
-    rf = GridSearchCV(AdaBoostClassifier(random_state=random_state), grid, cv=10)
+    rf = DaskGridSearchCV(AdaBoostClassifier(random_state=random_state),
+    param_grid=grid, n_jobs=mp.cpu_count()-2, cv=10)
     rf.fit(X, y)
     means = rf.cv_results_['mean_test_score']
     stds = rf.cv_results_['std_test_score']
@@ -134,7 +136,8 @@ def do_gbm_tuning(X, y, model,
 
     start_time = timeit.default_timer()
     o_print('Finding best params with 10-fold CV', verbose)
-    rf = GridSearchCV(GradientBoostingClassifier(random_state=random_state), grid, cv=10)
+    rf = Dask(GradientBoostingClassifier(random_state=random_state),
+    param_grid=grid, n_jobs=mp.cpu_count()-2, cv=10)
     rf.fit(X, y)
     means = rf.cv_results_['mean_test_score']
     stds = rf.cv_results_['std_test_score']
