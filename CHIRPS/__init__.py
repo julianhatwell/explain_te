@@ -39,6 +39,10 @@ def p_count_corrected(arr, classes, weights=None):
         except:
             pass
     c = np.bincount(arr, weights=np.array(weights))
+    # correct for any classes at the end of the sequence not represented e.g. a string of 0, 1, but there are 0, 1 and 2 classes
+    # the bincount function cuts off the last unrepresented class
+    unrep = len(classes) - len(c)
+    c = np.append(c, np.zeros(unrep))
 
     pc = c / weights.sum()
 

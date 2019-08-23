@@ -662,6 +662,7 @@ if True:
         mhtech[c] = mhtech[c].str.replace('Maybe', 'Not sure')
         mhtech[c] = mhtech[c].str.replace('not sure', 'Not sure')
         mhtech[c] = mhtech[c].str.replace('Some of them', 'Yes')
+        mhtech[c] = mhtech[c].str.replace('NA', 'Not sure')
 
     # make no_emplyees category ordered, and integer while we're at it
     def min_emps_map(x):
@@ -672,19 +673,9 @@ if True:
             return(int(x[:pos]))
     mhtech['no_employees'] = mhtech['no_employees'].apply(min_emps_map)
 
-    # should be no more missing data
-    # print('missing values')
-    # print(mhtech.isnull().sum())
-    # print()
-
     # impute a value for self-employed depending on number of employees
     mhtech.loc[mhtech['no_employees'] == 1 & mhtech['self_employed'].isnull(), 'self_employed'] = 'Yes'
     mhtech.loc[mhtech['no_employees'] > 1 & mhtech['self_employed'].isnull(), 'self_employed'] = 'No'
-
-    # gender has been over-loaded with free text
-    # print('gender options')
-    # print(mhtech.gender.unique())
-    # print()
 
     # cleaning gender data for analysis
     # no disrespect, but we have to reduce the number of categories to make a meaningful analysis
@@ -716,15 +707,16 @@ if True:
 
     def yesnoMap(x):
         if x == 'Yes':
+            return(2)
+        elif x == 'Not sure':
             return(1)
         elif x == 'No':
             return(0)
-        elif x == 'Not sure':
-            return(-1)
+
 
     def regionMap(x):
         if x in ['United States', 'Canada']:
-            return('NA')
+            return('USCA')
         elif x in ['United Kingdom', 'France', 'Netherlands', 'Switzerland',
                     'Germany', 'Austria', 'Ireland', 'Belgium']:
             return('CE')
@@ -734,7 +726,7 @@ if True:
             return('SE')
         elif x in ['Bulgaria', 'Poland', 'Russia', 'Latvia', 'Romania', 'Hungary', 'Moldova', 'Georgia', 'Czech Republic']:
             return('EE')
-        elif x in ['Mexico', 'Brazil', 'Costa Rica', 'Colombia', 'Uruguay', 'Bahamas, The']:
+        elif x in ['Mexico', 'Brazil', 'Costa Rica', 'Colombia', 'Uruguay', 'Bahamas']:
             return('CSA')
         elif x in ['Nigeria', 'South Africa', 'Zimbabwe', 'Israel']:
             return('MEAF')
@@ -747,11 +739,11 @@ if True:
     mhtech.drop('country', 1, inplace=True)
     mhtech.leave = mhtech.leave.apply(likertMap)
     # this will also fix the missing vals
-    mhtech.work_interfere = mhtech.work_interfere.fillna('Not sure').apply(likertMap)
+    mhtech.work_interfere = mhtech.work_interfere.apply(likertMap)
 
     # code all the binary indep vars
     for c in mhtech.columns:
-        if c in ['age', 'gender', 'country', 'leave', 'work_interfere', 'comments', 'no_employees', 'region']:
+        if c in ['age', 'gender', 'country', 'leave', 'work_interfere', 'comments', 'no_employees', 'region', 'treatment']:
             continue
         else:
             mhtech[c] = mhtech[c].apply(yesnoMap)

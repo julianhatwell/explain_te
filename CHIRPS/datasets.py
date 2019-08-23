@@ -767,10 +767,37 @@ def mhtech14(random_state=123, project_dir=None):
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'mhtech14.csv.gz',
                     compression='gzip')
     data.drop(columns='comments', inplace=True)
+    var_names = data.columns.to_list()
+
+    var_types = ['continuous',
+                    'nominal',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'nominal',
+                    'nominal']
 
     data_cont = data_container(
     data = data,
     class_col = 'treatment',
+    var_types = var_types,
     project_dir = project_dir,
     save_dir = 'mhtech14',
     random_state=random_state,
