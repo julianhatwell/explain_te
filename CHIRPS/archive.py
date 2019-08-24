@@ -229,3 +229,17 @@ var_labels = [var_labels[i].replace("don't know", 'not given')
               .replace('whole household unproductive (refused/no contact/moved/not c', 'unable')
               .split(',') for i in range(len(var_labels))]
 var_labels[1500:]
+
+
+pred_logproba = confidence_weight(pred_probas, 'log_proba')
+print('log_proba')
+print(pred_logproba)
+pred_logproba = (pred_logproba - np.mean(pred_logproba, axis = 1)[:, np.newaxis]) * (len(meta_data['class_names']) - 1) # this is the SAMME.R formula
+print('samme.r formula')
+print(pred_logproba)
+confidence_weights = np.sum(pred_logproba, axis=0)
+print('raw_conf_weights')
+print(confidence_weights)
+confidence_weights = p_count_corrected([i for i in range(len(meta_data['class_names']))], [i for i in range(len(meta_data['class_names']))], confidence_weights)
+print('conf_weights')
+print(confidence_weights)

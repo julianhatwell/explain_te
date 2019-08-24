@@ -422,7 +422,8 @@ class forest_walker(object):
         # else:
         #     self.get_label = None
 
-        # weights for standard Boosted models
+        # weights for standard Boosted models, random forests don't have this attribute
+        # SAMME has weighted trees, SAMME.R all weights are 1.0
         if not hasattr(forest, 'estimator_weights_'):
             self.forest.estimator_weights_ = np.ones(len(forest.estimators_))
 
@@ -1423,7 +1424,7 @@ class CHIRPS_runner(rule_evaluator):
                     if sum(kldivs) * paths_weights[j] > 0: # avoid div by zero
                         entropy_weighted_patterns[item] += e / sum(kldivs) * paths_weights[j]
 
-            # normalise the partial weighted entropy so it can be filtered by suppert (support takes on a slightly different meaning here)
+            # normalise the partial weighted entropy so it can be filtered by support (support takes on a slightly different meaning here)
             if len(entropy_weighted_patterns) == 1: # freak case but can happen - and the MinMaxScaler will give 0 when fitted to a single value
                 entropy_weighted_patterns['dummy'] += 0.0
             scaler = MinMaxScaler()
@@ -1450,11 +1451,13 @@ class CHIRPS_runner(rule_evaluator):
         # formula is sqrt(weight) * sup * ()(len - alpha) / len)
         if score_func == 1:
             score_function = lambda x, w: (x[0], x[1], (w * 0.5 + x[1] * 0.5) * (len(x[0]) - alpha) / len(x[0])) # don't know why this just works
-        # alternatives
+        # alternatives - penalise length more
         elif score_func == 2:
-            score_function = lambda x, w: (x[0], x[1], w * x[1] * (len(x[0]) - alpha) / (len(x[0])**2))
+            score_function = lambda x, w: (x[0], x[1], (w * 0.5 + x[1] * 0.5) * (len(x[0]) - alpha) / (len(x[0])**2))
+        # weights and alpha
         elif score_func == 3:
             score_function = lambda x, w: (x[0], x[1], w * (len(x[0]) - alpha) / len(x[0]))
+        # penalise length more
         elif score_func == 4:
             score_function = lambda x, w: (x[0], x[1], w * (len(x[0]) - alpha) / (len(x[0])**2))
         else: # weights only
@@ -1465,28 +1468,21 @@ class CHIRPS_runner(rule_evaluator):
 
     def score_sort_path_snippets(self, sample_instances=None, sample_labels=None,
                                     alpha_paths=0.0, score_func=1, weighting='chisq'):
-        # best at -1 < alpha < 1
-        # now the patterns are scored and sorted. alpha > 0 favours longer patterns. 0 neutral. < 0 shorter.
-        # the patterns can be weighted by chi**2 for independence test, p-values # TODO KL-div, log odds
-        if weighting is None:
-            self.sort_patterns(alpha=alpha_paths, score_func=score_func) # with only support/alpha sorting
-        else:
-            weights = [1] * len(self.patterns) # default neutral if no valid combo
+        # best at -1 < alpha < 1. alpha > 0 favours longer patterns. 0 neutral. < 0 shorter.
+        weights = [1] * len(self.patterns) # default neutral if no valid combo
+        if weighting is None or weighting == 'nothing':
+            self.sort_patterns(alpha=alpha_paths, score_func=score_func, weights=weights) # with only support/alpha sorting
+        else: # the patterns can be weighted by chi**2 for independence test, kl-div, lodds
+            # get a statistical weight for each pattern
             for j, wp in enumerate(self.patterns):
-
                 instances, labels = self.init_instances(instances=sample_instances, labels=sample_labels)
                 idx = self.apply_rule(rule=wp, instances=instances, features=self.features_enc)
-                p_counts_covered = p_count_corrected(labels[idx], [i for i in range(len(self.class_names))])
-                covered = p_counts_covered['p_counts']
-                not_covered = p_count_corrected(labels[~idx], [i for i in range(len(self.class_names))])['p_counts']
+                covered = p_count_corrected(labels[idx], [i for i in range(len(self.class_names))])['p_counts']
                 all_instances = p_count_corrected(labels, [i for i in range(len(self.class_names))])['p_counts']
-
-                # observed = np.array((covered, not_covered))
                 observed = np.array((covered, all_instances))
 
                 if weighting in ['chisq', 'kldiv', 'lodds']:
                     weights[j] = contingency_test(covered, all_instances, weighting)
-
             # correct any uncalculable weights
             weights = [w if not n else min(weights) for w, n in zip(weights, np.isnan(weights))] # clean up any nans
             # normalise
@@ -1839,57 +1835,73 @@ class CHIRPS_runner(rule_evaluator):
         # set up the rule for clean up
         self.prune_rule()
 
-        # rule complement testing to remove any redundant rule terms - TODO fix this to do a non- bootsrapped version
-        if current_metric > precis_threshold - delta: # only prune if the rule has excess precision that it could potentially give up
-            if pruning_bootstraps > 0:
-                curr_len = len(self.pruned_rule) + 1
-                new_len = curr_len - 1
-                current_rule = self.pruned_rule
-                while curr_len > new_len and new_len > 1: # repeat until no more improvement, stop before removing last rule or replace previous best (at the end)
-                    # get a bootstrapped evaluation
-                    b_current = np.full(pruning_bootstraps, np.nan)
-                    for b in range(pruning_bootstraps):
-                        idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
-                        b_sample_instances = instances[idx]
-                        b_sample_labels = labels[idx]
+        # pruning: remove any redundant rule terms that add less that delta to current metric
+        if pruning_bootstraps > 0:
+            # get a bootstrapped evaluation
+            b_current = np.full(pruning_bootstraps, np.nan)
+            for b in range(pruning_bootstraps):
+                # bootstrap the instances
+                idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
+                b_sample_instances = instances[idx]
+                b_sample_labels = labels[idx]
 
-                        eval_current = self.evaluate_rule(rule=current_rule, sample_instances=b_sample_instances, sample_labels=b_sample_labels)
-                        eval_current_post = eval_current[metric]
-                        eval_current_counts = eval_current['counts']
-                        b_current[b] = eval_current_post[np.where(eval_rule['labels'] == self.target_class)]
+                # evaluate on the bootstrap
+                eval_current = self.evaluate_rule(rule='pruned', sample_instances=b_sample_instances, sample_labels=b_sample_labels)
+                eval_current_post = eval_current[metric]
+                eval_current_counts = eval_current['counts']
+                b_current[b] = eval_current_post[np.where(eval_rule['labels'] == self.target_class)]
 
-                        rule_complement_results = self.eval_rule_complements(sample_instances=b_sample_instances, sample_labels=b_sample_labels)
-                        n_rule_complements = len(rule_complement_results)
-                        b_rc = np.full(n_rule_complements, np.nan)
+                rule_complement_results = self.eval_rule_complements(sample_instances=b_sample_instances, sample_labels=b_sample_labels)
+                n_rule_complements = len(rule_complement_results)
+                b_rc = np.full(n_rule_complements, np.nan)
 
-                        for rc, rcr in enumerate(rule_complement_results):
-                            eval_rcr = rcr['eval']
-                            rcr_posterior = eval_rcr[metric]
-                            b_rc[rc] = rcr_posterior[np.where(eval_rcr['labels'] == self.target_class)]
-                            # rcr_posterior_counts = eval_rcr['counts']
+                for rc, rcr in enumerate(rule_complement_results):
+                    eval_rcr = rcr['eval']
+                    rcr_posterior = eval_rcr[metric]
+                    b_rc[rc] = rcr_posterior[np.where(eval_rcr['labels'] == self.target_class)]
 
-                        if b == 0:
-                            b_rcr = np.array(b_rc)
-                        else:
-                            b_rcr = np.vstack((b_rcr, b_rc))
+                if b == 0:
+                    b_rcr = np.array(b_rc)
+                else:
+                    b_rcr = np.vstack((b_rcr, b_rc))
 
-                    to_remove = []
-                    for rc in range(n_rule_complements):
-                        if (b_current - delta >= b_rcr[:,rc]).sum() < bootstrap_confidence * pruning_bootstraps:
-                                if self.var_dict[rule_complement_results[rc]['feature']]['data_type'] == 'nominal':
-                                    to_remove = to_remove + self.var_dict[rule_complement_results[rc]['feature']]['labels_enc']
-                                else:
-                                    to_remove = to_remove + [rule_complement_results[rc]['feature']]
+            to_remove = []
+            for rc in range(n_rule_complements):
+                if (b_current - delta >= b_rcr[:,rc]).sum() < bootstrap_confidence * pruning_bootstraps:
+                    if self.var_dict[rule_complement_results[rc]['feature']]['data_type'] == 'nominal':
+                        to_remove = to_remove + self.var_dict[rule_complement_results[rc]['feature']]['labels_enc']
+                    else:
+                        to_remove = to_remove + [rule_complement_results[rc]['feature']]
+        else:
+            # evaluate on the input sample
+            eval_current = self.evaluate_rule(rule='pruned', sample_instances=instances, sample_labels=labels)
+            eval_current_post = eval_current[metric]
+            eval_current_counts = eval_current['counts']
+            current = eval_current_post[np.where(eval_rule['labels'] == self.target_class)]
 
-                    self.__previous_rule = self.pruned_rule
-                    self.pruned_rule = [(f, t, v) for f, t, v in self.pruned_rule if f not in to_remove]
+            rule_complement_results = self.eval_rule_complements(sample_instances=instances, sample_labels=labels)
+            n_rule_complements = len(rule_complement_results)
+            rcomp = np.full(n_rule_complements, np.nan)
 
-                    curr_len = new_len
-                    new_len = len(self.pruned_rule)
-                    if new_len == 0:
-                        print('pruned away: restoring previous rule')
-                        self.pruned_rule = self.__previous_rule
-        # else: TODO non bootstrapped version
+            for rc, rcr in enumerate(rule_complement_results):
+                eval_rcr = rcr['eval']
+                rcr_posterior = eval_rcr[metric]
+                rcomp[rc] = rcr_posterior[np.where(eval_rcr['labels'] == self.target_class)]
+            to_remove = []
+            for rc in range(n_rule_complements):
+                if current - delta < rcomp[rc]:
+                    if self.var_dict[rule_complement_results[rc]['feature']]['data_type'] == 'nominal':
+                        to_remove = to_remove + self.var_dict[rule_complement_results[rc]['feature']]['labels_enc']
+                    else:
+                        to_remove = to_remove + [rule_complement_results[rc]['feature']]
+
+        # now can prune any items in to_remove
+        self.__previous_rule = self.pruned_rule
+        self.pruned_rule = [(f, t, v) for f, t, v in self.pruned_rule if f not in to_remove]
+        new_len = len(self.pruned_rule)
+        if new_len == 0:
+            print('pruned away: restoring previous rule')
+            self.pruned_rule = self.__previous_rule
 
     def get_CHIRPS_explainer(self, elapsed_time=0):
         return(CHIRPS_explainer(self.random_state,
@@ -1935,13 +1947,13 @@ class CHIRPS_container(object):
         self.CHIRPS_explainers = None
         self.fwmet = forest_walk_mean_elapsed_time
 
-    def get_CHIRPS_runner(self, batch_idx, target_class, meta_data, random_state=123, feature_values=True, unweighted_trees=True):
+    def get_CHIRPS_runner(self, batch_idx, target_class, meta_data, random_state=123, feature_values=True, which_trees = 'majority'):
 
         true_to_lt = lambda x: '<' if x == True else '>'
 
         # extract the paths we want by filtering on tree performance
         n_paths = len(self.path_detail[batch_idx])
-        if unweighted_trees:
+        if which_trees == 'majority':
             # get the paths that agree with the target class
             paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == target_class]))]
         else: # confidence weighted for SAMME.R
@@ -1968,7 +1980,6 @@ class CHIRPS_container(object):
 
         # simply determine the count and proportion of trees according to votes
         model_votes = p_count_corrected(tree_preds, [i for i in range(len(meta_data['class_names']))], weights=estimator_weights)
-
         # determine the weighted count of trees  (support for SAMME.R)
         # based on SAMME.R quantities
         # confidence_weights = confidence_weight(np.array(pred_probas), 'conf_weight')
@@ -1979,8 +1990,8 @@ class CHIRPS_container(object):
 
         # NOT DOING ANYTHING WITH PATH LEVEL PRED PROBA YET
         # return an object for requested instance
-        c_runner = CHIRPS_runner(meta_data, paths, paths_weights, paths_pred_proba,
-                                    tree_preds, model_votes, confidence_weights,
+        c_runner = CHIRPS_runner(meta_data, paths, paths_weights, paths_pred_proba, # these should be for generating the rule
+                                    tree_preds, model_votes, confidence_weights, # these are just for the display output
                                     target_class,
                                     random_state)
         return(c_runner)
@@ -1990,7 +2001,7 @@ class CHIRPS_container(object):
                         random_state=123,
                         **kwargs):
         # defaults
-        options = {'unweighted_trees' : True,
+        options = {'which_trees' : 'majority',
             'paths_lengths_threshold' : 2,
             'support_paths' : 0.05,
             'alpha_paths' : 0.0,
@@ -2028,7 +2039,7 @@ class CHIRPS_container(object):
                 # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
                 # use deepcopy to ensure by_value, not by_reference instantiation
-                c_runner = self.get_CHIRPS_runner(i, target_classes[i], deepcopy(self.meta_data), random_state=random_state, unweighted_trees=options['unweighted_trees'])
+                c_runner = self.get_CHIRPS_runner(i, target_classes[i], deepcopy(self.meta_data), random_state=random_state, which_trees=options['which_trees'])
                 # run the chirps process on each instance paths
                 async_out.append(pool.apply_async(as_CHIRPS,
                     (c_runner,
@@ -2056,7 +2067,7 @@ class CHIRPS_container(object):
                 # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
                 # use deepcopy to ensure by_value, not by_reference instantiation
-                c_runner = self.get_CHIRPS_runner(i, target_classes[i], deepcopy(self.meta_data), random_state=random_state, unweighted_trees=options['unweighted_trees'])
+                c_runner = self.get_CHIRPS_runner(i, target_classes[i], deepcopy(self.meta_data), random_state=random_state, which_trees=options['which_trees'])
                 # run the chirps process on each instance paths
                 _, CHIRPS_exp = \
                     as_CHIRPS(c_runner,

@@ -7,7 +7,6 @@ import math
 import numpy as np
 from scipy import sparse
 from copy import deepcopy
-from collections import deque
 from scipy.stats import chi2_contingency
 
 # parallelisable function for the forest_walker class
@@ -42,13 +41,10 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
                                     }
     # usual case
     else:
-        path_deque = deque(path)
         ic = -1 # instance_count
-        while len(path_deque) > 0:
-            p = path_deque.popleft()
+        for p in path:
             if feature[p] < 0: # leaf node
                 continue
-            pass_test = True
             if features is None:
                 feature_name = None
             else:
