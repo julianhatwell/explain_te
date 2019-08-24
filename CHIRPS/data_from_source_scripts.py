@@ -718,19 +718,19 @@ if True:
         if x in ['United States', 'Canada']:
             return('USCA')
         elif x in ['United Kingdom', 'France', 'Netherlands', 'Switzerland',
-                    'Germany', 'Austria', 'Ireland', 'Belgium']:
-            return('CE')
-        elif x in ['Sweden', 'Finland', 'Norway', 'Denmark']:
-            return('NE')
-        elif x in ['Italy', 'Spain', 'Portugal', 'Slovenia', 'Greece', 'Bosnia and Herzegovina', 'Croatia']:
-            return('SE')
-        elif x in ['Bulgaria', 'Poland', 'Russia', 'Latvia', 'Romania', 'Hungary', 'Moldova', 'Georgia', 'Czech Republic']:
-            return('EE')
+                  'Germany', 'Austria', 'Ireland', 'Belgium',
+                  'Sweden', 'Finland', 'Norway', 'Denmark',
+                  'Italy', 'Spain', 'Portugal', 'Slovenia',
+                  'Greece', 'Bosnia and Herzegovina', 'Croatia',
+                  'Bulgaria', 'Poland', 'Russia', 'Latvia', 'Romania',
+                  'Hungary', 'Moldova', 'Georgia', 'Czech Republic']:
+            return('EUR')
         elif x in ['Mexico', 'Brazil', 'Costa Rica', 'Colombia', 'Uruguay', 'Bahamas']:
             return('CSA')
         elif x in ['Nigeria', 'South Africa', 'Zimbabwe', 'Israel']:
             return('MEAF')
-        elif x in ['India', 'China', 'Philippines', 'Thailand', 'Japan', 'Singapore', 'Australia', 'New Zealand']:
+        elif x in ['India', 'China', 'Philippines', 'Thailand', 'Japan',
+                  'Singapore', 'Australia', 'New Zealand']:
             return('APAC')
         else:
             return(x)
@@ -760,7 +760,7 @@ if True:
 
     mhtech.to_csv('CHIRPS\\datafiles\\mhtech14.csv.gz', index=False, compression='gzip')
     '''
-
+    
 if True:
     '''
     file = 'yps.csv'
