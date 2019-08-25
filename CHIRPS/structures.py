@@ -1393,11 +1393,11 @@ class CHIRPS_runner(rule_evaluator):
             entropy_weighted_patterns = defaultdict(np.float32)
             instances, labels = self.init_instances(instances=sample_instances)
             prior = p_count_corrected(labels, [i for i in range(len(self.class_names))])
-            prior_counts = prior['counts']
 
             # neutral estimator weights - SAMME.R
             if np.all([i == 1.0 for i in self.paths_weights]):
                 # weight by how well it discriminates - how different from prior, based on kl-div
+                # assumiing we took majority or confidence weights, this is a test in the direction of the posterior
                 paths_weights = [contingency_test(ppp, prior['p_counts'], 'kldiv') for ppp in self.paths_pred_proba]
             else:
                 # otherwise the weights from classic AdaBoost or SAMME
@@ -1413,13 +1413,11 @@ class CHIRPS_runner(rule_evaluator):
                     rule.append(item)
                     idx = self.apply_rule(rule=rule, instances=instances, features=self.features_enc)
                     p_counts = p_count_corrected(labels[idx], [i for i in range(len(self.class_names))])
-                    covered = p_counts['counts']
                     # collect the (conditional) information for each node in the tree/stump: how well does individual node discriminate? given node hierarchy
-                    kldiv = contingency_test(covered, prior_counts, 'kldiv') - current_kldiv
+                    kldiv = contingency_test(p_counts['counts'], prior['counts'], 'kldiv') - current_kldiv
                     current_kldiv = kldiv
                     kldivs.append(kldiv)
-                    items.append(item)
-                for e, item in zip(kldivs, items):
+                for e, item in zip(kldivs, p):
                     # running sum of the normalised then tree-weighted entropy for any node found in the ensemble
                     if sum(kldivs) * paths_weights[j] > 0: # avoid div by zero
                         entropy_weighted_patterns[item] += e / sum(kldivs) * paths_weights[j]
