@@ -1986,7 +1986,6 @@ class CHIRPS_container(object):
         confidence_weights = np.sum(pred_probas, axis=0)
         confidence_weights = p_count_corrected([i for i in range(len(meta_data['class_names']))], [i for i in range(len(meta_data['class_names']))], confidence_weights)
 
-        # NOT DOING ANYTHING WITH PATH LEVEL PRED PROBA YET
         # return an object for requested instance
         c_runner = CHIRPS_runner(meta_data, paths, paths_weights, paths_pred_proba, # these should be for generating the rule
                                     tree_preds, model_votes, confidence_weights, # these are just for the display output
