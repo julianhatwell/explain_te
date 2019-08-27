@@ -655,6 +655,9 @@ if True:
     ren = {old : new for old, new in zip(mhtech.columns, [lc.lower() for lc in mhtech.columns])}
     mhtech.rename(columns=ren, inplace=True)
 
+    # empty comments
+    mhtech['comments'] = data.comments.fillna('No comment')
+
     # standardise some other responses, getting rid of 'apos in "Don't know"
     for c in mhtech.columns:
         mhtech[c] = mhtech[c].str.replace("Don't know", 'Not sure')
