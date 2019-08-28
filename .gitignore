@@ -31,3 +31,5 @@ paper
 /GENESIM/constructors
 /GENESIM/data
 /GENESIM/doc
+/lore/
+/lore/__pycache__

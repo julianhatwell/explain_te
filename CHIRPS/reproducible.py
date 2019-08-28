@@ -12,6 +12,8 @@ from CHIRPS import config as cfg
 from lime import lime_tabular as limtab
 from anchor import anchor_tabular as anchtab
 from defragTrees.defragTrees import DefragModel
+import lore.lore as lore
+import lore.util as util
 from sklearn.tree import DecisionTreeClassifier
 
 penalise_bad_prediction = lambda mc, tc, value : value if mc == tc else 0 # for global interp methods
@@ -622,3 +624,47 @@ def do_benchmarking(benchmark_items, verbose=True, **control):
                                     save_path=save_path, dataset_name=b,
                                     random_state=control['random_state'],
                                     verbose=verbose)
+
+# LORE
+def prepare_dataset_lore(d_constructor, random_state, project_dir):
+    # Read Dataset
+    mydata = d_constructor(random_state=random_state, project_dir=project_dir)
+    df = mydata.data
+    meta_data = mydata.get_meta()
+
+    # Features Categorization
+    columns = df.columns
+    class_name = meta_data['class_col']
+    possible_outcomes = list(df[class_name].unique())
+
+    type_features, features_type = util.recognize_features_type(df, class_name)
+
+    discrete = [vn for vn, vt in zip(meta_data['var_names'], meta_data['var_types']) if vt == 'nominal']
+    discrete, continuous = util.set_discrete_continuous(columns, type_features, class_name, discrete, continuous=None)
+
+    columns_tmp = list(columns)
+    columns_tmp.remove(class_name)
+    idx_features = {i: col for i, col in enumerate(columns_tmp)}
+
+    # Dataset Preparation for Scikit Alorithms
+    df_le, label_encoder = util.label_encode(df, discrete)
+    X = df_le.loc[:, df_le.columns != class_name].values
+    y = df_le[class_name].values
+
+    dataset = {
+        'name': d_constructor.__name__,
+        'df': df,
+        'columns': list(columns),
+        'class_name': class_name,
+        'possible_outcomes': possible_outcomes,
+        'type_features': type_features,
+        'features_type': features_type,
+        'discrete': discrete,
+        'continuous': continuous,
+        'idx_features': idx_features,
+        'label_encoder': label_encoder,
+        'X': X,
+        'y': y,
+    }
+
+    return dataset
