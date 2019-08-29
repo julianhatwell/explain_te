@@ -930,6 +930,233 @@ if True:
     mhtech.to_csv('C:\\Users\\id126493\\OneDrive\\Documents\DI\\mhtech16\\mhtech16.csv', index=False)
     '''
 
+if True:
+    '''
+    file = '2016.csv'
+    archive = zipfile.ZipFile('CHIRPS/source_datafiles/mhtech.zip', 'r')
+    lines = archive.read(file).decode("utf-8").split('\r\n')
+    archive.close()
+
+    # convert strings to var lists - deal with some free text issues
+    lines = [lines[i].replace("<strong>", "").replace("</strong>", "").
+             replace("Yes - they all did", "all").replace("No - none did", "none").
+             replace("Some did", "some").replace("Yes - always", "always").
+             replace("Overall - how", "how").replace("None did", "none").
+             replace("I don't know", "not sure").replace("No - I don't think they would", "no").
+             replace("No - I don't think it would", "no").replace("Yes - they do", "definitely").
+             replace("Yes - I think it would", "yes").replace("Yes - I know several", "several").
+             replace("Yes - it has", "definitely").replace("No - they do not", "definitely not").
+             replace("Yes - I know several", "several").replace("I know some", "some").
+             replace("No - I don't know any", "none").replace("Not applicable to me", "not applicable").
+             replace("No - at none of my previous employers", "no").replace("Some of my previous employers", "some").
+             replace("Sometimes - if it comes up", "sometimes").replace("No - because it doesn't matter", "no need").
+             replace("No - because it would impact me negatively", "no").replace("Yes - I was aware of all of them", "all").
+             replace("I was aware of some", "some").replace("N/A (not currently aware)", "no").
+             replace("No - I only became aware later", "no").replace("Yes - I experienced", "yes").
+             replace("Maybe/Not sure", "not sure").replace("Yes - I observed", "obs").
+             replace("Yes - at all of my previous employers", "yes").replace("performance - ", "yes").
+             replace("Honestly,I", "I").replace("with ,y", "with my").replace("pay,ents", "payments").
+             replace("awareness,more", "awareness - more").replace("crazy,", "crazy").replace("neutral,", "neutral").
+             replace("talk,", "talk").replace("1,2,3", "1-2-3").replace("A,B,C", "A-B-C").
+             replace(" ,eating", " - eating").replace("grief,coping", "grief - coping").
+             replace("Not eligible for coverage / N/A", "not eligible").#replace("N/A", "not eligible").
+             replace("I am not sure", "Not sure").replace("Neither easy nor difficult", "neutral").
+             replace("No - Not sure any", "none").replace("I'm not sure", "not sure").replace("No - it has not", "no").
+             replace("Some of them", "some").replace("Yes - all of them", "all").replace("None of them", "none").
+             replace("Yes - I think they would", "yes").replace("Maybe", "possibly").
+             replace("Somewhat open", "some").replace("Somewhat not open", "less").replace("Very open", "always").
+             replace("Not open at all", "none").replace("Neutral", "neutral").replace("Yes", "yes").replace("No", "no").
+             split(',') for i in range(len(lines))]
+    names = [nm.replace('"', '').strip() for nm in lines[0]]
+    lines = lines[1:]
+
+    # np.array(names)[[("disorder" in n) for n in names]]
+    lines.pop() # empty final row
+    mhtech = pd.DataFrame(lines, columns=names)
+
+    # make no_emplyees category ordered, and integer while we're at it
+    def minempsMap(x):
+        if x == 'More than 1000':
+            return(1000)
+        elif x == 'Jun-25':
+            return(6)
+        elif x == '':
+            return(np.nan)
+        else:
+            pos = x.find('-')
+            return(int(x[:pos]))
+    mhtech['How many employees does your company or organization have?'] = \
+        mhtech['How many employees does your company or organization have?'].apply(minempsMap)
+
+    def intyesnoMap(x):
+        if x == '1':
+            return('yes')
+        elif x == '0':
+            return('no')
+        else:
+            return('not sure')
+
+    def notsureMap(x):
+        if x == '' or x == 'Maybe':
+            return('not sure')
+        else:
+            return(x)
+
+    def notapplicMap(x):
+        if x == '' or x == 'not applicable (I do not have a mental illness)' or x == 'not eligible':
+            return('not applicable')
+        else:
+            return(x)
+
+    def definitelyyesnoMap(x):
+        if x == 'definitely':
+            return('yes')
+        elif x == 'definitely not':
+            return('no')
+        else:
+            return(x)
+
+    def regionMap(x):
+        if x in ['United States', 'Canada', 'Other', 'United States of America']:
+            return('USCA')
+        elif x in ['United Kingdom', 'France', 'Netherlands', 'Switzerland',
+                  'Germany', 'Austria', 'Ireland', 'Belgium',
+                  'Sweden', 'Finland', 'Norway', 'norway', 'Denmark',
+                  'Italy', 'Spain', 'Portugal', 'Slovenia',
+                  'Greece', 'Bosnia and Herzegovina', 'Croatia',
+                  'Bulgaria', 'Poland', 'Russia', 'Latvia', 'Romania',
+                  'Hungary', 'Moldova', 'Georgia', 'Czech Republic',
+                  'Lithuania', 'Estonia', 'Slovakia', 'Serbia']:
+            return('EUR')
+        elif x in ['Mexico', 'Brazil', 'Costa Rica', 'Colombia', 'Uruguay',
+                   'Bahamas', 'Chile', 'Venezuela', 'Argentina', 'Guatemala', 'Ecuador']:
+            return('CSA')
+        elif x in ['India', 'Nigeria', 'South Africa', 'Zimbabwe', 'Israel',
+                   'Pakistan', 'Afghanistan', 'Iran', 'Algeria', 'Bangladesh',
+                  'Turkey', 'United Arab Emirates']:
+            return('MEAF')
+        elif x in ['China', 'Philippines', 'Thailand', 'Japan',
+                  'Singapore', 'Australia', 'New Zealand', 'Taiwan',
+                   'Brunei', 'Vietnam']:
+            return('APAC')
+        else:
+            return(x)
+
+    # cleaning gender data for analysis
+    # no disrespect, but we have to reduce the number of categories to make a meaningful analysis
+    # a bigger dataset with greater representation would be a different story
+
+    def genderMap(Gender):
+        gender=str(Gender).lower().replace('(cis)', '').replace('cis', '').strip()
+        if gender=='' or gender == 'human' or re.search('not sure|-|/|\?|trans|ish|nb|fluid|queer', gender):
+            return('others')
+        elif re.search('fema', gender) or gender == 'f' or gender == 'fem' or gender == 'woman':
+            return('female')
+        elif re.search('ma', gender) or gender == 'm' or gender == 'msle' or gender == 'm|' or gender == 'dude':
+            return('male')
+        else:
+            return('others')
+
+    mhtech['What is your gender?'] = mhtech['What is your gender?'].apply(genderMap)
+
+    mhtech['What region do you live in?'] = mhtech['What country do you live in?'].apply(regionMap)
+    mhtech.drop('What country do you live in?', 1, inplace=True)
+    mhtech['What region do you work in?'] = mhtech['What country do you work in?'].apply(regionMap)
+    mhtech.drop('What country do you work in?', 1, inplace=True)
+
+
+    for c in ['Is your employer primarily a tech company/organization?',
+             'Is your primary role within your company related to tech/IT?',
+              'Do you have medical coverage (private insurance or state-provided) which includes treatment of \xa0mental health issues?',
+              'Do you have previous employers?'
+             ]:
+        mhtech[c] = mhtech[c].apply(intyesnoMap)
+
+    for c in ['Does your employer provide mental health benefits as part of healthcare coverage?',
+             'Do you know the options for mental health care available under your employer-provided coverage?',
+             'Has your employer ever formally discussed mental health (for example - as part of a wellness campaign or other official communication)?',
+             'Does your employer offer resources to learn more about mental health concerns and options for seeking help?',
+             'Is your anonymity protected if you choose to take advantage of mental health or substance abuse treatment resources provided by your employer?',
+             'Do you think that discussing a mental health disorder with your employer would have negative consequences?',
+             'Do you think that discussing a physical health issue with your employer would have negative consequences?',
+             'Would you feel comfortable discussing a mental health disorder with your coworkers?',
+             'Would you feel comfortable discussing a mental health disorder with your direct supervisor(s)?',
+             'Do you feel that your employer takes mental health as seriously as physical health?',
+             'Have you heard of or observed negative consequences for co-workers who have been open about mental health issues in your workplace?',
+             'Do you know local or online resources to seek help for a mental health disorder?',
+             'Have your previous employers provided mental health benefits?',
+             'Were you aware of the options for mental health care provided by your previous employers?',
+             'Did your previous employers ever formally discuss mental health (as part of a wellness campaign or other official communication)?',
+             'Did your previous employers provide resources to learn more about mental health issues and how to seek help?',
+             'Do you think that discussing a mental health disorder with previous employers would have negative consequences?',
+             'Do you think that discussing a physical health issue with previous employers would have negative consequences?',
+             'Would you have been willing to discuss a mental health issue with your previous co-workers?',
+             'Would you have been willing to discuss a mental health issue with your direct supervisor(s)?',
+             'Did you feel that your previous employers took mental health as seriously as physical health?',
+             'Did you hear of or observe negative consequences for co-workers with mental health issues in your previous workplaces?']:
+        mhtech[c] = mhtech[c].apply(notsureMap)
+
+    for c in ['If you have been diagnosed or treated for a mental health disorder - do you ever reveal this to clients or business contacts?',
+             'If you have revealed a mental health issue to a client or business contact - do you believe this has impacted you negatively?',
+             'If you have been diagnosed or treated for a mental health disorder - do you ever reveal this to coworkers or employees?',
+             'If you have revealed a mental health issue to a coworker or employee - do you believe this has impacted you negatively?',
+             'Do you believe your productivity is ever affected by a mental health issue?',
+             'If yes - what percentage of your work time (time performing primary or secondary job functions) is affected by a mental health issue?',
+             'Was your anonymity protected if you chose to take advantage of mental health or substance abuse treatment resources with previous employers?',
+             'How willing would you be to share with friends and family that you have a mental illness?',
+             'Have your observations of how another individual who discussed a mental health disorder made you less likely to reveal a mental health issue yourself in your current workplace?']:
+        mhtech[c] = mhtech[c].apply(notapplicMap)
+
+    for c in ['Do you think that team members/co-workers would view you more negatively if they knew you suffered from a mental health issue?']:
+        mhtech[c] = mhtech[c].apply(definitelyyesnoMap)
+
+    mhtech.to_csv('CHIRPS\\datafiles\\mhtech16.csv.gz', index=False, compression='gzip')
+    '''
+# incomplete
+# def make_mhtech1718(file):
+#     archive = zipfile.ZipFile('CHIRPS/source_datafiles/mhtech.zip', 'r')
+#     lines = archive.read(file).replace(b"\xa0", b" ").decode("utf-8", 'ignore').split('\r\n')
+#     archive.close()
+#     # convert strings to var lists - deal with some free text issues
+#     lines = [lines[i].replace("<strong>", "").replace("</strong>", "").
+#              replace("Yes - they all did", "all").replace("No - none did", "none").
+#              replace("Some did", "some").replace("Yes - always", "Always").
+#              replace("Overall - how", "How").
+#              replace("I don't know", "Not sure").replace("No - I don't think they would", "No").
+#              replace("No - I don't think it would", "No").replace("Yes - they do", "Definitely").
+#              replace("Yes - I think it would", "Yes").replace("Yes - I know several", "Several").
+#              replace("Yes - it has", "Definitely").replace("No - they do not", "Definitely not").
+#              replace("Yes - I know several", "Several").replace("I know some", "Some").
+#              replace("No - I don't know any", "None").replace("Not applicable to me", "N/A").
+#              replace("No - at none of my previous employers", "No").replace("Some of my previous employers", "Some").
+#              replace("Sometimes - if it comes up", "Sometimes").replace("No - because it doesn't matter", "No need").
+#              replace("No - because it would impact me negatively", "No").replace("Yes - I was aware of all of them", "All").
+#              replace("I was aware of some", "Some").replace("N/A (not currently aware)", "No").
+#              replace("No - I only became aware later", "No").replace("Yes - I experienced", "Yes").
+#              replace("Maybe/Not sure", "Not sure").replace("Yes - I observed", "Obs").
+#              replace("Yes - at all of my previous employers", "Yes").replace("performance - ", "Yes").
+#              replace("Honestly,I", "I").replace("with ,y", "with my").replace("pay,ents", "payments").
+#              replace("awareness,more", "awareness - more").replace("crazy,", "crazy").replace("neutral,", "neutral").
+#              replace("talk,", "talk").replace("1,2,3", "1-2-3").replace("A,B,C", "A-B-C").
+#              replace(" ,eating", " - eating").replace("grief,coping", "grief - coping").
+#              split(',') for i in range(len(lines))]
+#     names = [nm.replace('"', '').strip() for nm in lines[0]]
+#     lines = lines[1:]
+#
+#     lines.pop() # empty final row
+#     return(pd.DataFrame(lines, columns=names))
+#
+# # make no_emplyees category ordered, and integer while we're at it
+# def min_emps_map(x):
+#     if x == 'More than 1000':
+#         return(1000)
+#     else:
+#         pos = x.find('-')
+#         return(int(x[:pos]))
+# mhtech['no_employees'] = mhtech['no_employees'].apply(min_emps_map)
+#
+#
+# mhtech1718 = pd.concat([make_mhtech1718(file = '2017.csv'), make_mhtech1718(file = '2018.csv')])
 
 if True:
     '''
