@@ -1247,3 +1247,42 @@ if True:
     samp.reset_index(drop=True, inplace=True)
     samp.to_csv('CHIRPS\\datafiles\\noshow_samp.csv.gz', index=False, compression='gzip')
     '''
+if True:
+    '''
+    file = 'wdbc.data'
+    archive = zipfile.ZipFile('CHIRPS/source_datafiles/breastwisc.zip', 'r')
+    lines = archive.read(file).decode("utf-8").split('\n')
+    archive.close()
+
+    lines = [lines[i].split(',') for i in range(len(lines))]
+    lines.pop()
+    names = ['id', 'mb'] + ['f_' + str(i + 1) for i in range(30)] # [nm for nm in lines[0]]
+    breast = pd.DataFrame(lines, columns=names)
+    breast.drop(columns='id', inplace=True)
+    var_names = [vn for vn in breast.columns if vn != 'mb']
+    var_names.append('mb')
+    breast = breast[var_names] # put the class col at the end
+
+    breast.to_csv('CHIRPS\\datafiles\\breast.csv.gz', index=False, compression='gzip')
+    '''
+
+if True:
+    '''
+    file = 'agaricus-lepiota.data'
+    archive = zipfile.ZipFile('CHIRPS/source_datafiles/agaricus-lepiota.zip', 'r')
+    lines = archive.read(file).decode("utf-8").split('\n')
+    archive.close()
+
+    lines = [lines[i].split(',') for i in range(len(lines))]
+    lines.pop()
+    names = ['edible', 'cshape', 'csurface', 'ccolor', 'bruises', 'odor',
+            'gattach', 'gspace', 'gsize', 'gcolor', 'sshape', 'sroot',
+            'ssurfaring', 'ssurfbring', 'scoloraring', 'scolorbring',
+            'vtype', 'vcolor', 'rnum', 'rtype', 'sporecolor', 'pop', 'hab']
+    mush = pd.DataFrame(lines, columns=names)
+
+    var_names = [vn for vn in mush.columns if vn != 'edible']
+    var_names.append('edible')
+    mush = mush[var_names] # put the class col at the end
+    mush.to_csv('CHIRPS\\datafiles\\mush.csv.gz', index=False, compression='gzip')
+    '''
