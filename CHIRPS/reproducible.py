@@ -1,7 +1,9 @@
 import json
 import time
 import timeit
+import random
 import numpy as np
+import pandas as pd
 from math import sqrt
 from copy import deepcopy
 import CHIRPS.datasets as ds
@@ -12,8 +14,10 @@ from CHIRPS import config as cfg
 from lime import lime_tabular as limtab
 from anchor import anchor_tabular as anchtab
 from defragTrees.defragTrees import DefragModel
-import lore.lore as lore
-import lore.util as util
+# import lore.lore as lore
+import lore.util as loreutil
+import lore.neighbor_generator as nbgen
+import lore.gpdatagenerator as gpdg
 from sklearn.tree import DecisionTreeClassifier
 
 penalise_bad_prediction = lambda mc, tc, value : value if mc == tc else 0 # for global interp methods
@@ -626,45 +630,121 @@ def do_benchmarking(benchmark_items, verbose=True, **control):
                                     verbose=verbose)
 
 # LORE
-def prepare_dataset_lore(d_constructor, random_state, project_dir):
-    # Read Dataset
-    mydata = d_constructor(random_state=random_state, project_dir=project_dir)
+def lore_prepare_dataset(name, mydata, meta_data):
+
     df = mydata.data
-    meta_data = mydata.get_meta()
-
-    # Features Categorization
-    columns = df.columns
     class_name = meta_data['class_col']
-    possible_outcomes = list(df[class_name].unique())
-
-    type_features, features_type = util.recognize_features_type(df, class_name)
-
-    discrete = [vn for vn, vt in zip(meta_data['var_names'], meta_data['var_types']) if vt == 'nominal']
-    discrete, continuous = util.set_discrete_continuous(columns, type_features, class_name, discrete, continuous=None)
-
-    columns_tmp = list(columns)
-    columns_tmp.remove(class_name)
-    idx_features = {i: col for i, col in enumerate(columns_tmp)}
-
-    # Dataset Preparation for Scikit Alorithms
-    df_le, label_encoder = util.label_encode(df, discrete)
-    X = df_le.loc[:, df_le.columns != class_name].values
-    y = df_le[class_name].values
-
+    # class_col must be at front for this method
+    columns = [meta_data['class_col']] + meta_data['features']
+    type_features, features_type = loreutil.recognize_features_type(df, class_name)
     dataset = {
-        'name': d_constructor.__name__,
-        'df': df,
-        'columns': list(columns),
+        'name': name,
+        'df': mydata.data[columns],
+        'columns': columns,
         'class_name': class_name,
-        'possible_outcomes': possible_outcomes,
+        'possible_outcomes': meta_data['class_names_label_order'],
         'type_features': type_features,
         'features_type': features_type,
-        'discrete': discrete,
-        'continuous': continuous,
-        'idx_features': idx_features,
-        'label_encoder': label_encoder,
-        'X': X,
-        'y': y,
+        'discrete': [vn for vn, vt in zip(meta_data['var_names'], meta_data['var_types']) if vt == 'nominal'] ,
+        'continuous': [vn for vn, vt in zip(meta_data['var_names'], meta_data['var_types']) if vt == 'continuous'] ,
+        'idx_features': {i : v for i, v in enumerate(meta_data['features'])},
+        'label_encoder': meta_data['le_dict'],
+        'X': mydata.data[meta_data['features']].to_numpy(),
+        'y': mydata.data[class_name].to_numpy(),
     }
 
     return dataset
+
+def lore_explain(idx_record2explain, X2E, dataset, blackbox,
+            ng_function=nbgen.genetic_neighborhood, #generate_random_data, #genetic_neighborhood, random_neighborhood
+            discrete_use_probabilities=False,
+            continuous_function_estimation=False,
+            returns_infos=False, path='./', sep=';', log=False, random_state=123):
+
+    dfZ, x = util.dataframe2explain(X2E, dataset, idx_record2explain, blackbox)
+
+    # Generate Neighborhood
+    dfZ, Z = ng_function(dfZ, x, blackbox, dataset)
+
+    # Build Decision Tree
+    dt, dt_dot = pyyadt.fit(dfZ, class_name, columns, features_type, discrete, continuous,
+                            filename=dataset['name'], path=path, sep=sep, log=log)
+
+    # Apply Black Box and Decision Tree on instance to explain
+    bb_outcome = blackbox.predict(x.reshape(1, -1))[0]
+
+    dfx = util.build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0]
+    cc_outcome, rule, tree_path = pyyadt.predict_rule(dt, dfx, class_name, features_type, discrete, continuous)
+
+    # Apply Black Box and Decision Tree on neighborhood
+    y_pred_bb = blackbox.predict(Z)
+    y_pred_cc, leaf_nodes = pyyadt.predict(dt, dfZ.to_dict('records'), class_name, features_type,
+                                           discrete, continuous)
+
+    def predict(X):
+        y, ln, = pyyadt.predict(dt, X, class_name, features_type, discrete, continuous)
+        return y, ln
+
+    # Update labels if necessary
+    if class_name in label_encoder:
+        cc_outcome = label_encoder[class_name].transform(np.array([cc_outcome]))[0]
+
+    if class_name in label_encoder:
+        y_pred_cc = label_encoder[class_name].transform(y_pred_cc)
+
+    # Extract Coutnerfactuals
+    diff_outcome = util.get_diff_outcome(bb_outcome, possible_outcomes)
+    counterfactuals = pyyadt.get_counterfactuals(dt, tree_path, rule, diff_outcome,
+                                                 class_name, continuous, features_type)
+
+    explanation = (rule, counterfactuals)
+
+    infos = {
+        'bb_outcome': bb_outcome,
+        'cc_outcome': cc_outcome,
+        'y_pred_bb': y_pred_bb,
+        'y_pred_cc': y_pred_cc,
+        'dfZ': dfZ,
+        'Z': Z,
+        'dt': dt,
+        'tree_path': tree_path,
+        'leaf_nodes': leaf_nodes,
+        'diff_outcome': diff_outcome,
+        'predict': predict,
+    }
+
+    if returns_infos:
+        return explanation, infos
+
+    return explanation
+
+def lore_preproc(X2E, dataset, random_state):
+    random.seed(random_state)
+    class_name = dataset['class_name']
+    columns = dataset['columns']
+    discrete = dataset['discrete']
+    continuous = dataset['continuous']
+    features_type = dataset['features_type']
+    label_encoder = dataset['label_encoder']
+    possible_outcomes = dataset['possible_outcomes']
+
+    discrete_use_probabilities=False
+    continuous_function_estimation=False
+
+    # Dataset Preprocessing
+    dataset['feature_values'] = gpdg.calculate_feature_values(X2E, columns, class_name, discrete, continuous, X2E.shape[0],
+                                                         discrete_use_probabilities, continuous_function_estimation)
+
+def lore_benchmark(ds_container, dataset, path_data, blackbox, log=False, random_state=123):
+
+    y2E = blackbox.predict(ds_container.X_test_enc)
+    idx_record2explain = 0 # this has to be automated
+
+    dataset['feature_values'] = lore_preproc(X2E=ds_container.X_test.to_numpy(), dataset=dataset, random_state=random_state)
+
+    # explanation, infos = lore_explain(idx_record2explain, X2E, dataset, blackbox,
+    #                               ng_function=ng.genetic_neighborhood,
+    #                               discrete_use_probabilities=True,
+    #                               continuous_function_estimation=False,
+    #                               returns_infos=True,
+    #                               path=path_data, sep=';', log=log)

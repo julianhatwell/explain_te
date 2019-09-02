@@ -199,29 +199,12 @@ class data_split_container(object):
     def test_train_split(self): # behave as scikit-learn
         return(self.X_train, self.X_test, self.y_train, self.y_test)
 
-# wrapper for data for convenience
-class data_container(non_deterministic):
+class data_preprocessor(object):
 
-    def __init__(self
-    , data
-    , class_col
-    , var_names = None
-    , var_types = None
-    , project_dir = None
-    , save_dir = ''
-    , random_state = None
-    , spiel = ''):
-        super().__init__(random_state)
-        self.spiel = spiel
+    def fit(self, data, class_col, var_names, var_types):
         self.data = data
         self.data_pre = DataFrame.copy(self.data)
         self.class_col = class_col
-        self.save_dir = save_dir
-
-        if project_dir is None:
-            self.project_dir = cfg.project_dir
-        else:
-            self.project_dir = project_dir
 
         if var_names is None:
             self.var_names = list(self.data.columns)
@@ -235,7 +218,6 @@ class data_container(non_deterministic):
 
         self.features = [vn for vn in self.var_names if vn != self.class_col]
         self.class_names = list(self.data[self.class_col].unique())
-
         self.le_dict = {}
         self.var_dict = {}
         self.var_dict_enc = {}
@@ -256,7 +238,7 @@ class data_container(non_deterministic):
 
             self.var_dict[v] = {'labels' : names if t == 'nominal' else None
                                 , 'labels_enc' : [v + '_' + str(n) for n in names] if t == 'nominal' else None
-                                , 'class_col' : True if v == class_col else False
+                                , 'class_col' : True if v == self.class_col else False
                                 , 'data_type' : t
                                 , 'order_col' : i}
 
@@ -291,6 +273,28 @@ class data_container(non_deterministic):
             self.encoder = encoder
         else:
             self.encoder = default_encoder
+
+# wrapper for data for convenience
+class data_container(non_deterministic, data_preprocessor):
+
+    def __init__(self
+    , data
+    , class_col
+    , var_names = None
+    , var_types = None
+    , project_dir = None
+    , save_dir = ''
+    , random_state = None
+    , spiel = ''):
+        super().__init__(random_state)
+        self.spiel = spiel
+        self.save_dir = save_dir
+        if project_dir is None:
+            self.project_dir = cfg.project_dir
+        else:
+            self.project_dir = project_dir
+
+        self.fit(data, class_col, var_names, var_types)
 
     # helper function for saving files
     def get_save_path(self, filename = ''):
