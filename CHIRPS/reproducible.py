@@ -4,7 +4,10 @@ import timeit
 import random
 import numpy as np
 import pandas as pd
+import math
 from math import sqrt
+import warnings
+import scipy.stats as st
 from copy import deepcopy
 import CHIRPS.datasets as ds
 import CHIRPS.routines as rt
@@ -14,11 +17,15 @@ from CHIRPS import config as cfg
 from lime import lime_tabular as limtab
 from anchor import anchor_tabular as anchtab
 from defragTrees.defragTrees import DefragModel
-# import lore.lore as lore
-import lore.util as loreutil
-import lore.neighbor_generator as nbgen
-import lore.gpdatagenerator as gpdg
 from sklearn.tree import DecisionTreeClassifier
+# lore required quite a lot of adaptation
+import lore.lore as lore
+import lore.util as loreutil
+# import lore.neighbor_generator as nbgen
+import lore.distance_functions as loredistfun
+import lore.pyyadt as loreyadt
+import pickle as cPickle
+from deap import base, creator, tools, algorithms
 
 penalise_bad_prediction = lambda mc, tc, value : value if mc == tc else 0 # for global interp methods
 
@@ -514,6 +521,712 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
                         save_results_path=save_path,
                         save_results_file=save_results_file + '_summary')
 
+# LORE
+def gpdg_record_init(x):
+    return x
+
+def gpdg_random_init(feature_values):
+    individual = list()
+    for feature_idx in feature_values:
+        values = feature_values[feature_idx]
+        val = np.random.choice(values, 1)[0]
+        individual.append(val)
+    return individual
+
+def gpdg_cPickle_clone(x):
+    return cPickle.loads(cPickle.dumps(x))
+
+def gpdg_mutate(feature_values, indpb, toolbox, individual):
+    new_individual = toolbox.clone(individual)
+    for feature_idx in range(0, len(individual)):
+        values = feature_values[feature_idx]
+        if np.random.random() <= indpb:
+            val = np.random.choice(values, 1)[0]
+            new_individual[feature_idx] = val
+    return new_individual,
+
+def gpdg_fitness_sso(x0, x_enc, bb, alpha1, alpha2, eta, discrete, continuous, class_name, idx_features, distance_function, x1):
+    # similar_same_outcome
+    x0d = {idx_features[i]: val for i, val in enumerate(x0)}
+    x1d = {idx_features[i]: val for i, val in enumerate(x1)}
+
+    # zero if is too similar
+    sim_ratio = 1.0 - distance_function(x0d, x1d, discrete, continuous, class_name)
+    record_similarity = 0.0 if sim_ratio >= eta else sim_ratio
+
+    y0 = bb.predict(np.asarray(x_enc.transform([x0]).todense()).reshape(1, -1))[0]
+    y1 = bb.predict(np.asarray(x_enc.transform([x1]).todense()).reshape(1, -1))[0]
+    target_similarity = 1.0 if y0 == y1 else 0.0
+
+    evaluation = alpha1 * record_similarity + alpha2 * target_similarity
+    return evaluation,
+
+def gpdg_fitness_sdo(x0, x_enc, bb, alpha1, alpha2, eta, discrete, continuous, class_name, idx_features, distance_function, x1):
+    # similar_different_outcome
+    x0d = {idx_features[i]: val for i, val in enumerate(x0)}
+    x1d = {idx_features[i]: val for i, val in enumerate(x1)}
+
+    # zero if is too similar
+    sim_ratio = 1.0 - distance_function(x0d, x1d, discrete, continuous, class_name)
+    record_similarity = 0.0 if sim_ratio >= eta else sim_ratio
+
+    y0 = bb.predict(np.asarray(x_enc.transform([x0]).todense()).reshape(1, -1))[0]
+    y1 = bb.predict(np.asarray(x_enc.transform([x1]).todense()).reshape(1, -1))[0]
+    target_similarity = 1.0 if y0 != y1 else 0.0
+
+    evaluation = alpha1 * record_similarity + alpha2 * target_similarity
+    return evaluation,
+
+
+def gpdg_fitness_dso(x0, x_enc, bb, alpha1, alpha2, eta, discrete, continuous, class_name, idx_features, distance_function, x1):
+    # dissimilar_same_outcome
+    x0d = {idx_features[i]: val for i, val in enumerate(x0)}
+    x1d = {idx_features[i]: val for i, val in enumerate(x1)}
+
+    # zero if is too dissimilar
+    sim_ratio = 1.0 - distance_function(x0d, x1d, discrete, continuous, class_name)
+    record_similarity = 0.0 if sim_ratio <= eta else 1.0 - sim_ratio
+
+    y0 = bb.predict(np.asarray(x_enc.transform([x0]).todense()).reshape(1, -1))[0]
+    y1 = bb.predict(np.asarray(x_enc.transform([x1]).todense()).reshape(1, -1))[0]
+    target_similarity = 1.0 if y0 == y1 else 0.0
+
+    evaluation = alpha1 * record_similarity + alpha2 * target_similarity
+    return evaluation,
+
+
+def gpdg_fitness_ddo(x0, x_enc, bb, alpha1, alpha2, eta, discrete, continuous, class_name, idx_features, distance_function, x1):
+    # dissimilar_different_outcome
+    x0d = {idx_features[i]: val for i, val in enumerate(x0)}
+    x1d = {idx_features[i]: val for i, val in enumerate(x1)}
+
+    # zero if is too dissimilar
+    sim_ratio = 1.0 - distance_function(x0d, x1d, discrete, continuous, class_name)
+    record_similarity = 0.0 if sim_ratio <= eta else 1.0 - sim_ratio
+
+    y0 = bb.predict(np.asarray(x_enc.transform([x0]).todense()).reshape(1, -1))[0]
+    y1 = bb.predict(np.asarray(x_enc.transform([x1]).todense()).reshape(1, -1))[0]
+    target_similarity = 1.0 if y0 != y1 else 0.0
+
+    evaluation = alpha1 * record_similarity + alpha2 * target_similarity
+    return evaluation,
+
+
+def gpdg_setup_toolbox(record, x_enc, feature_values, bb, init, init_params, evaluate, discrete, continuous, class_name,
+                  idx_features, distance_function, population_size=1000, alpha1=0.5, alpha2=0.5, eta=0.3,
+                  mutpb=0.2, tournsize=3):
+
+    creator.create("fitness", base.Fitness, weights=(1.0,))
+    creator.create("individual", list, fitness=creator.fitness)
+
+    toolbox = base.Toolbox()
+    toolbox.register("feature_values", init, init_params)
+    toolbox.register("individual", tools.initIterate, creator.individual, toolbox.feature_values)
+    toolbox.register("population", tools.initRepeat, list, toolbox.individual, n=population_size)
+
+    toolbox.register("clone", gpdg_cPickle_clone)
+    toolbox.register("evaluate", evaluate, record, x_enc, bb, alpha1, alpha2, eta, discrete, continuous,
+                     class_name, idx_features, distance_function)
+    toolbox.register("mate", tools.cxTwoPoint)
+    toolbox.register("mutate", gpdg_mutate, feature_values, mutpb, toolbox)
+    toolbox.register("select", tools.selTournament, tournsize=tournsize)
+
+    return toolbox
+
+
+def gpdg_fit(toolbox, population_size=1000, halloffame_ratio=0.1, cxpb=0.5, mutpb=0.2, ngen=10, verbose=False):
+
+    halloffame_size = int(np.round(population_size * halloffame_ratio))
+
+    population = toolbox.population(n=population_size)
+    halloffame = tools.HallOfFame(halloffame_size)
+
+    stats = tools.Statistics(lambda ind: ind.fitness.values)
+    stats.register("avg", np.mean)
+    stats.register("min", np.min)
+    stats.register("max", np.max)
+
+    population, logbook = algorithms.eaSimple(population, toolbox, cxpb=cxpb, mutpb=mutpb, ngen=ngen,
+                                              stats=stats, halloffame=halloffame, verbose=verbose)
+
+    return population, halloffame, logbook
+
+
+def gpdg_get_oversample(population, halloffame):
+    fitness_values = [p.fitness.wvalues[0] for p in population]
+    fitness_values = sorted(fitness_values)
+    fitness_diff = [fitness_values[i+1] - fitness_values[i] for i in range(0, len(fitness_values)-1)]
+
+    index = np.max(np.argwhere(fitness_diff == np.amax(fitness_diff)).flatten().tolist())
+    fitness_value_thr = fitness_values[index]
+
+    oversample = list()
+
+    for p in population:
+        if p.fitness.wvalues[0] > fitness_value_thr:
+            oversample.append(list(p))
+
+    for h in halloffame:
+        if h.fitness.wvalues[0] > fitness_value_thr:
+            oversample.append(list(h))
+
+    return oversample
+
+def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class_name, idx_features, distance_function,
+                  neigtype='all', population_size=1000, halloffame_ratio=0.1, alpha1=0.5, alpha2=0.5, eta1=1.0,
+                  eta2=0.0, tournsize=3, cxpb=0.5, mutpb=0.2, ngen=10, return_logbook=False):
+
+    if neigtype == 'all':
+        neigtype = {'ss': 0.25, 'sd': 0.25, 'ds': 0.25, 'dd': 0.25}
+
+    size_sso = int(np.round(population_size * neigtype.get('ss', 0.0)))
+    size_sdo = int(np.round(population_size * neigtype.get('sd', 0.0)))
+    size_dso = int(np.round(population_size * neigtype.get('ds', 0.0)))
+    size_ddo = int(np.round(population_size * neigtype.get('dd', 0.0)))
+
+    Xgp = list()
+
+    if size_sso > 0.0:
+        toolbox_sso = gpdg_setup_toolbox(x, x_enc, feature_values, bb, init=gpdg_record_init, init_params=x, evaluate=gpdg_fitness_sso,
+                                    discrete=discrete, continuous=continuous, class_name=class_name,
+                                    idx_features=idx_features, distance_function=distance_function,
+                                    population_size=size_sso, alpha1=alpha1, alpha2=alpha2, eta=eta1, mutpb=mutpb,
+                                    tournsize=tournsize)
+        population, halloffame, logbook = gpdg_fit(toolbox_sso, population_size=size_sso, halloffame_ratio=halloffame_ratio,
+                                              cxpb=cxpb, mutpb=mutpb, ngen=ngen, verbose=False)
+
+        Xsso = gpdg_get_oversample(population, halloffame)
+        Xgp.append(Xsso)
+
+    if size_sdo > 0.0:
+        toolbox_sdo = gpdg_setup_toolbox(x, x_enc, feature_values, bb, init=gpdg_record_init, init_params=x, evaluate=gpdg_fitness_sdo,
+                                    discrete=discrete, continuous=continuous, class_name=class_name,
+                                    idx_features=idx_features, distance_function=distance_function,
+                                    population_size=size_sdo, alpha1=alpha1, alpha2=alpha2, eta=eta1, mutpb=mutpb,
+                                    tournsize=tournsize)
+        population, halloffame, logbook = gpdg_fit(toolbox_sdo, population_size=size_sdo, halloffame_ratio=halloffame_ratio,
+                                              cxpb=cxpb, mutpb=mutpb, ngen=ngen, verbose=False)
+
+        Xsdo = gpdg_get_oversample(population, halloffame)
+        Xgp.append(Xsdo)
+
+    if size_dso > 0.0:
+        toolbox_dso = gdpg_setup_toolbox(x, x_enc, feature_values, bb, init=gpdg_record_init, init_params=x, evaluate=gpdg_fitness_dso,
+                                    discrete=discrete, continuous=continuous, class_name=class_name,
+                                    idx_features=idx_features, distance_function=distance_function,
+                                    population_size=size_dso, alpha1=alpha1, alpha2=alpha2, eta=eta2, mutpb=mutpb,
+                                    tournsize=tournsize)
+        population, halloffame, logbook = gpdg_fit(toolbox_dso, population_size=size_dso, halloffame_ratio=halloffame_ratio,
+                                              cxpb=cxpb, mutpb=mutpb, ngen=ngen, verbose=False)
+
+        Xdso = gpdg_get_oversample(population, halloffame)
+        Xgp.append(Xdso)
+
+    if size_ddo > 0.0:
+        toolbox_ddo = gdpg_setup_toolbox(x, x_enc, feature_values, bb, init=gpdg_record_init, init_params=x, evaluate=gpdg_fitness_ddo,
+                                    discrete=discrete, continuous=continuous, class_name=class_name,
+                                    idx_features=idx_features, distance_function=distance_function,
+                                    population_size=size_ddo, alpha1=alpha1, alpha2=alpha2, eta=eta2, mutpb=mutpb,
+                                    tournsize=tournsize)
+        population, halloffame, logbook = gpdg_fit(toolbox_ddo, population_size=size_ddo, halloffame_ratio=halloffame_ratio,
+                                              cxpb=cxpb, mutpb=mutpb, ngen=ngen, verbose=False)
+
+        Xddo = gpdg_get_oversample(population, halloffame)
+        Xgp.append(Xddo)
+
+    Xgp = np.concatenate((Xgp), axis=0)
+
+    if return_logbook:
+        return Xgp, logbook
+
+    return Xgp
+
+def gpdg_calculate_feature_values(X, columns, class_name, discrete, continuous, size=1000,
+                             discrete_use_probabilities=False,
+                             continuous_function_estimation=False):
+
+    columns1 = list(columns)
+    columns1.remove(class_name)
+    feature_values = dict()
+    for i, col in enumerate(columns1):
+        values = X[:, i]
+        if col in discrete:
+            if discrete_use_probabilities:
+                diff_values, counts = np.unique(values, return_counts=True)
+                prob = 1.0 * counts / np.sum(counts)
+                new_values = np.random.choice(diff_values, size=size, p=prob)
+                new_values = np.concatenate((values, new_values), axis=0)
+            else:
+                diff_values = np.unique(values)
+                new_values = diff_values
+        elif col in continuous:
+            if len(np.unique(values)) == 2 and all(np.unique(values) == np.array([0., 1.])):
+                binary = True
+            else:
+                binary = False
+            if continuous_function_estimation:
+                new_values = get_distr_values(values, size, binary)
+            else:
+                mu = np.mean(values)
+                if binary and discrete_use_probabilities:
+                    new_values = st.bernoulli.rvs(p=mu, size=size)
+                elif binary and not discrete_use_probabilities:
+                    diff_values = np.unique(values)
+                    new_values = diff_values
+                else: # suppose is gaussian
+                    sigma = np.std(values)
+                    new_values = np.random.normal(mu, sigma, size)
+            new_values = np.concatenate((values, new_values), axis=0)
+        feature_values[i] = new_values
+
+    return feature_values
+
+
+def gpdg_get_distr_values(x, size=1000, binary=False):
+    if binary:
+        p = np.mean(x)
+        if p==0.5:
+            minp = maxp = p
+        else:
+            pees = [p, 1-p]
+            minp = pees[pees.index(min(pees))]
+            maxp = pees[pees.index(max(pees))]
+
+        distr_values = np.empty(size)
+        distr_values[x == 0] = st.bernoulli.rvs(minp, size=np.sum(x == 0))
+        distr_values[x == 1] = st.bernoulli.rvs(maxp, size=np.sum(x == 1))
+    else:
+        nbr_bins = int(np.round(estimate_nbr_bins(x)))
+        name, params = best_fit_distribution(x, nbr_bins)
+        dist = getattr(st, name)
+
+        arg = params[:-2]
+        loc = params[-2]
+        scale = params[-1]
+
+        start = dist.ppf(0.01, *arg, loc=loc, scale=scale) if arg else dist.ppf(0.01, loc=loc, scale=scale)
+        end = dist.ppf(0.99, *arg, loc=loc, scale=scale) if arg else dist.ppf(0.99, loc=loc, scale=scale)
+
+        distr_values = np.linspace(start, end, size)
+
+        return distr_values
+
+
+# Distributions to check
+DISTRIBUTIONS = [st.uniform, st.dweibull, st.exponweib, st.expon, st.exponnorm, st.gamma, st.beta, st.alpha,
+                 st.chi, st.chi2, st.laplace, st.lognorm, st.norm, st.powerlaw]
+
+
+def gpdg_freedman_diaconis(x):
+    iqr = np.subtract(*np.percentile(x, [75, 25]))
+    n = len(x)
+    h = 2.0 * iqr / n**(1.0/3.0)
+    k = math.ceil((np.max(x) - np.min(x))/h)
+    return k
+
+
+def gpdg_struges(x):
+    n = len(x)
+    k = math.ceil( np.log2(n) ) + 1
+    return k
+
+
+def gpdg_estimate_nbr_bins(x):
+    if len(x) == 1:
+        return 1
+    k_fd = freedman_diaconis(x) if len(x) > 2 else 1
+    k_struges = struges(x)
+    if k_fd == float('inf') or np.isnan(k_fd):
+        k_fd = np.sqrt(len(x))
+    k = max(k_fd, k_struges)
+    return k
+
+
+# Create models from data
+def gpdg_best_fit_distribution(data, bins=200, ax=None):
+    """Model data by finding best fit distribution to data"""
+    # Get histogram of original data
+    y, x = np.histogram(data, bins=bins, density=True)
+    x = (x + np.roll(x, -1))[:-1] / 2.0
+
+    # Best holders
+    best_distribution = st.norm
+    best_params = (0.0, 1.0)
+    best_sse = np.inf
+
+    # Estimate distribution parameters from data
+    for distribution in DISTRIBUTIONS:
+
+        # Try to fit the distribution
+        try:
+                #print 'aaa'
+            # Ignore warnings from data that can't be fit
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore')
+
+                # fit dist to data
+                params = distribution.fit(data)
+
+                # Separate parts of parameters
+                arg = params[:-2]
+                loc = params[-2]
+                scale = params[-1]
+
+                # Calculate fitted PDF and error with fit in distribution
+                pdf = distribution.pdf(x, loc=loc, scale=scale, *arg)
+                sse = np.sum(np.power(y - pdf, 2.0))
+
+                # if axis pass in add to plot
+                try:
+                    if ax:
+                        pd.Series(pdf, x).plot(ax=ax)
+                except Exception:
+                    pass
+
+                # identify if this distribution is better
+                # print distribution.name, sse
+                if best_sse > sse > 0:
+                    best_distribution = distribution
+                    best_params = params
+                    best_sse = sse
+
+        except Exception:
+            pass
+
+    return best_distribution.name, best_params
+
+def lore_build_df2explain(bb, X, x_enc, dataset):
+
+    columns = dataset['columns']
+    features_type = dataset['features_type']
+    discrete = dataset['discrete']
+    label_encoder = dataset['label_encoder']
+
+    y = bb.predict(np.asarray(x_enc.transform(X).todense()))
+    yX = np.concatenate((y.reshape(-1, 1), X), axis=1)
+    data = list()
+    for i, col in enumerate(columns):
+        data_col = yX[:, i]
+        data_col = data_col.astype(int) if col in discrete else data_col
+        data_col = data_col.astype(int) if features_type[col] == 'integer' else data_col
+        data.append(data_col)
+    # data = map(list, map(None, *data))
+    data = [[d[i] for d in data] for i in range(0, len(data[0]))]
+    dfZ = pd.DataFrame(data=data, columns=columns)
+    dfZ = loreutil.label_decode(dfZ, discrete, label_encoder)
+    return dfZ
+
+
+def lore_dataframe2explain(X2E, dataset, idx_record2explain, blackbox):
+
+    # Select record to predict and explain
+    x = X2E[idx_record2explain]
+
+    # Remove record to explain (optional) from dataset Z and convert into dataframe
+    # Z = np.delete(Z, idx_record2explain, axis=0)
+    dfZ = build_df2explain(blackbox, X2E, dataset)
+
+    return dfZ, x
+
+def lore_genetic_neighborhood(dfZ, x, x_enc, blackbox, dataset):
+    discrete = dataset['discrete']
+    continuous = dataset['continuous']
+    class_name = dataset['class_name']
+    idx_features = dataset['idx_features']
+    feature_values = dataset['feature_values']
+
+    discrete_no_class = list(discrete)
+    discrete_no_class.remove(class_name)
+
+    def distance_function(x0, x1, discrete, continuous, class_name):
+        return loredistfun.mixed_distance(x0, x1, discrete, continuous, class_name,
+                              ddist=loredistfun.simple_match_distance,
+                              cdist=loredistfun.normalized_euclidean_distance)
+
+    Z = gpdg_generate_data(x, x_enc, feature_values, blackbox, discrete_no_class, continuous, class_name, idx_features,
+                      distance_function, neigtype={'ss': 0.5, 'sd': 0.5}, population_size=1000, halloffame_ratio=0.1,
+                      alpha1=0.5, alpha2=0.5, eta1=1.0, eta2=0.0,  tournsize=3, cxpb=0.5, mutpb=0.2, ngen=10)
+    zy = blackbox.predict(x_enc.transform(Z).todense())
+    if len(np.unique(zy)) == 1:
+        # print('qui')
+        label_encoder = dataset['label_encoder']
+        dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), x_enc, dataset).to_dict('records')[0]
+        neig_indexes = loreutil.get_closest_diffoutcome(dfZ, dfx, discrete, continuous, class_name,
+                                               blackbox, label_encoder, distance_function, k=100)
+        Zn, _ = loreutil.label_encode(dfZ, discrete, label_encoder)
+        Zn = Zn.iloc[neig_indexes, Z.columns != class_name].values
+        Z = np.concatenate((Z, Zn), axis=0)
+    dfZ = lore_build_df2explain(blackbox, Z, x_enc, dataset)
+    return dfZ, Z
+
+
+def lore_explain(ds_container, dataset, path_data, blackbox, log=False, returns_infos=False, random_state=123):
+
+    random.seed(random_state)
+    class_name = dataset['class_name']
+    columns = dataset['columns']
+    discrete = dataset['discrete']
+    continuous = dataset['continuous']
+    features_type = dataset['features_type']
+    label_encoder = dataset['label_encoder']
+    possible_outcomes = dataset['possible_outcomes']
+
+    discrete_use_probabilities=False # to be passed as params
+    continuous_function_estimation=False # to be passed as params
+
+    y2E = blackbox.predict(ds_container.X_test_enc)
+    dfZ = ds_container.X_test # unencoded
+    idx_record2explain = 0 # TODO: this has to be automated for the benchmark
+    x = ds_container.X_test.iloc[idx_record2explain].to_numpy()
+    x_enc = dataset['instance_encoder']
+    X2E=ds_container.X_test.to_numpy()
+    dfX2E = lore_build_df2explain(blackbox, X2E, x_enc, dataset).to_dict('records')
+    dfx = dfX2E[idx_record2explain] # recoded single record
+    bb_outcome = blackbox.predict(np.asarray(x_enc.transform([x]).todense()))[0]
+
+    # Dataset Preprocessing
+    dataset['feature_values'] = gpdg_calculate_feature_values(X2E, columns, class_name, discrete, continuous, X2E.shape[0],
+                                                         discrete_use_probabilities, continuous_function_estimation)
+
+    # Generate Neighborhood
+    dfZ, Z = lore_genetic_neighborhood(dfZ, x, x_enc, blackbox, dataset)  #generate_random_data, #genetic_neighborhood, random_neighborhood
+    y_pred_bb = blackbox.predict(np.asarray(x_enc.transform(Z).todense()))
+
+    # Build Decision Tree
+    dt, dt_dot = loreyadt.fit(dfZ, class_name, columns, features_type, discrete, continuous,
+                            filename=dataset['name'], path=path_data, sep=';', log=log)
+
+    # Apply Decision Tree on instance to explain
+    cc_outcome, rule, tree_path = loreyadt.predict_rule(dt, dfx, class_name, features_type, discrete, continuous)
+    # Apply Decision Tree on neighborhood
+    y_pred_cc, leaf_nodes = loreyadt.predict(dt, dfZ.to_dict('records'), class_name, features_type,
+                                           discrete, continuous)
+
+    def predict(X):
+        y, ln, = loreyadt.predict(dt, X, class_name, features_type, discrete, continuous)
+        return y, ln
+
+    # Update labels if necessary
+    if class_name in label_encoder:
+        cc_outcome = label_encoder[class_name].transform(np.array([cc_outcome]))[0]
+
+    if class_name in label_encoder:
+        y_pred_cc = label_encoder[class_name].transform(y_pred_cc)
+
+    # Extract Coutnerfactuals
+    diff_outcome = loreutil.get_diff_outcome(bb_outcome, possible_outcomes)
+    counterfactuals = loreyadt.get_counterfactuals(dt, tree_path, rule, diff_outcome,
+                                                 class_name, continuous, features_type)
+
+    explanation = (rule, counterfactuals)
+
+    infos = {
+        'bb_outcome': bb_outcome,
+        'cc_outcome': cc_outcome,
+        'y_pred_bb': y_pred_bb,
+        'y_pred_cc': y_pred_cc,
+        'dfZ': dfZ,
+        'Z': Z,
+        'dt': dt,
+        'tree_path': tree_path,
+        'leaf_nodes': leaf_nodes,
+        'diff_outcome': diff_outcome,
+        'predict': predict,
+    }
+
+    print('x = %s' % dfx)
+    print('r = %s --> %s' % (explanation[0][1], explanation[0][0]))
+    for delta in explanation[1]:
+        print('delta', delta)
+
+    covered = lore.get_covered(explanation[0][1], dfX2E, dataset)
+    print(len(covered))
+    print(covered)
+
+    print(explanation[0][0][dataset['class_name']], '<<<<')
+
+    def eval(x, y):
+        return 1 if x == y else 0
+
+    precision = [1-eval(v, explanation[0][0][dataset['class_name']]) for v in y2E[covered]]
+    print(precision)
+    print(np.mean(precision), np.std(precision))
+
+    if returns_infos:
+        return(explanation, infos)
+
+    return(explanation)
+
+
+def lore_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
+                            eval_start_time, defTrees_elapsed_time,
+                            n_instances=100,
+                            save_path='', dataset_name='',
+                            random_state=123,
+                            verbose=True):
+
+    method = 'lore'
+    file_stem = rt.get_file_stem(model)
+    o_print('lore benchmark', verbose)
+
+    # lore to do from here
+    _, _, instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
+                                                                            n_instances=n_instances)
+    forest_preds = forest.predict(instances_enc)
+    dfrgtrs_preds = dfrgtrs.predict(np.array(instances_enc_matrix))
+
+    defTrees_mean_elapsed_time = defTrees_elapsed_time / len(labels)
+
+    eval_model = rt.evaluate_model(y_true=labels, y_pred=dfrgtrs_preds,
+                        class_names=meta_data['class_names_label_order'],
+                        model=model,
+                        plot_cm=False, plot_cm_norm=False, # False here will output the metrics and suppress the plots
+                        save_path=save_path,
+                        method=method,
+                        random_state=random_state)
+
+    rule_list = rule_list_from_dfrgtrs(dfrgtrs)
+
+    results = [[]] * len(labels)
+    rule_idx = []
+    evaluator = strcts.evaluator()
+    for i in range(len(labels)):
+        instance_id = labels.index[i]
+        if i % 10 == 0: o_print('Working on ' + method + ' for instance ' + str(instance_id), verbose)
+
+        # get test sample by leave-one-out on current instance
+        _, _, loo_instances_enc, loo_instances_enc_matrix, loo_true_labels = ds_container.get_loo_instances(instance_id,
+                                                                                                            which_split='test')
+
+        loo_forest_preds = forest.predict(loo_instances_enc)
+        loo_dfrgtrs_preds = dfrgtrs.predict(np.array(loo_instances_enc_matrix))
+
+        # start a timer for the individual eval
+        dt_start_time = timeit.default_timer()
+
+        # which rule appies to each loo instance
+        rule_idx.append(which_rule(rule_list, loo_instances_enc, features=meta_data['features_enc']))
+
+        # which rule appies to current instance
+        rule = which_rule(rule_list, instances_enc[i], features=meta_data['features_enc'])
+        if rule[0] >= len(rule_list):
+            pretty_rule = []
+        else:
+            pretty_rule = evaluator.prettify_rule(rule_list[rule[0]], meta_data['var_dict'])
+
+        dt_end_time = timeit.default_timer()
+        dt_elapsed_time = dt_end_time - dt_start_time
+        dt_elapsed_time = dt_elapsed_time + defTrees_mean_elapsed_time # add the mean modeling time per instance
+
+        # which instances are covered by this rule
+        covered_instances = rule_idx[i] == rule
+
+        metrics = evaluator.evaluate(prior_labels=loo_true_labels,
+                                        post_idx=covered_instances)
+
+        # majority class is the forest vote class
+        # target class is the benchmark algorithm prediction
+        mc = [forest_preds[i]]
+        tc = [dfrgtrs_preds[i]]
+        mc_lab = meta_data['get_label'](meta_data['class_col'], mc)
+        tc_lab = meta_data['get_label'](meta_data['class_col'], tc)
+
+        true_class = ds_container.y_test.loc[instance_id]
+        results[i] = [dataset_name,
+        instance_id,
+        method,
+        pretty_rule,
+        len(rule),
+        true_class,
+        meta_data['class_names'][true_class],
+        mc[0],
+        mc_lab[0],
+        tc[0],
+        tc_lab[0],
+        np.array([tree.predict(instances_enc[i]) == mc for tree in forest.estimators_]).mean(), # majority vote share
+        0, # accumulated weight not meaningful for dfrgtrs
+        metrics['prior']['p_counts'][mc][0],
+        metrics['posterior'][tc][0],
+        metrics['stability'][tc][0],
+        metrics['recall'][tc][0],
+        metrics['f1'][tc][0],
+        metrics['cc'][tc][0],
+        metrics['ci'][tc][0],
+        metrics['ncc'][tc][0],
+        metrics['nci'][tc][0],
+        metrics['npv'][tc][0],
+        metrics['accuracy'][tc][0],
+        metrics['lift'][tc][0],
+        metrics['coverage'],
+        metrics['xcoverage'],
+        metrics['kl_div'],
+        penalise_bad_prediction(mc, tc, metrics['posterior'][mc][0]),
+        penalise_bad_prediction(mc, tc, metrics['stability'][mc][0]),
+        penalise_bad_prediction(mc, tc, metrics['recall'][mc][0]),
+        penalise_bad_prediction(mc, tc, metrics['f1'][mc][0]),
+        metrics['cc'][tc][0],
+        metrics['ci'][tc][0],
+        metrics['ncc'][tc][0],
+        metrics['nci'][tc][0],
+        penalise_bad_prediction(mc, tc, metrics['npv'][mc][0]),
+        penalise_bad_prediction(mc, tc, metrics['accuracy'][mc][0]),
+        penalise_bad_prediction(mc, tc, metrics['lift'][mc][0]),
+        metrics['coverage'],
+        metrics['xcoverage'],
+        metrics['kl_div'],
+        dt_elapsed_time]
+
+    if save_path is not None:
+        save_results_file=method + '_rnst_' + str(random_state)
+
+        rt.save_results(cfg.results_headers, results,
+                        save_results_path=save_path,
+                        save_results_file=save_results_file)
+
+        # collect summary_results
+        with open(meta_data['get_save_path']() + file_stem + 'performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
+            forest_performance = json.load(infile)
+        f_perf = forest_performance['main']['test_accuracy']
+        p_perf = np.mean(dfrgtrs_preds == labels)
+        fid = np.mean(dfrgtrs_preds == forest_preds)
+        summary_results = [[dataset_name, method, len(labels), len(rule_list), \
+                            len(np.unique(rule_idx)), np.median(np.array(rule_idx) + 1), np.mean(np.array(rule_idx) + 1), np.std(np.array(rule_idx) + 1), \
+                            np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
+                            eval_start_time, time.asctime( time.localtime(time.time()) ), \
+                            f_perf, sqrt((f_perf/(1-f_perf))/len(labels)), \
+                            p_perf, sqrt((p_perf/(1-p_perf))/len(labels)), \
+                            eval_model['test_kappa'], fid, sqrt((fid/(1-fid))/len(labels))]]
+
+        rt.save_results(cfg.summary_results_headers, summary_results,
+                        save_results_path=save_path,
+                        save_results_file=save_results_file + '_summary')
+
+def lore_prepare_dataset(name, mydata, meta_data):
+    # don't need tt splits
+    # this object is just required to inform other routines of avalable columns and types
+    df = mydata.data
+    class_name = meta_data['class_col']
+    # class_col must be at front for this method
+    columns = [meta_data['class_col']] + meta_data['features']
+    type_features, features_type = loreutil.recognize_features_type(df, class_name)
+    dataset = {
+        'name': name,
+        'df': mydata.data[columns],
+        'columns': columns,
+        'class_name': class_name,
+        'possible_outcomes': meta_data['class_names_label_order'],
+        'type_features': type_features,
+        'features_type': features_type,
+        'discrete': [vn for vn, vt in zip(meta_data['var_names'], meta_data['var_types']) if vt == 'nominal'] ,
+        'continuous': [vn for vn, vt in zip(meta_data['var_names'], meta_data['var_types']) if vt == 'continuous'] ,
+        'idx_features': {i : v for i, v in enumerate(meta_data['features'])},
+        'label_encoder': meta_data['le_dict'],
+        'instance_encoder' : mydata.encoder
+    }
+
+    return dataset
+
+
 def benchmarking_prep(datasets, model, tuning, project_dir,
                         random_state, random_state_splits,
                         do_raw=True, do_discretise=False,
@@ -532,6 +1245,9 @@ def benchmarking_prep(datasets, model, tuning, project_dir,
 
         # diagnostic for starting on a specific instance
         tt.current_row_test = start_instance
+
+        # lore specific dataset format
+        lore_dataset = lore_prepare_dataset(dataset_name, mydata, meta_data)
 
         if do_raw:
             o_print('Train main model', verbose)
@@ -565,6 +1281,7 @@ def benchmarking_prep(datasets, model, tuning, project_dir,
         # collect
         benchmark_items[dataset_name] = {'main' : {'forest' : rf, 'ds_container' : tt},
                                         'anchors' : {'forest' : rf_anch, 'ds_container' : tt_anch, 'explainer' : anchors_explainer},
+                                        'lore' : {'dataset' : lore_dataset}
                                         'meta_data' : meta_data}
         o_print('', verbose)
     return(benchmark_items)
@@ -629,122 +1346,14 @@ def do_benchmarking(benchmark_items, verbose=True, **control):
                                     random_state=control['random_state'],
                                     verbose=verbose)
 
-# LORE
-def lore_prepare_dataset(name, mydata, meta_data):
-
-    df = mydata.data
-    class_name = meta_data['class_col']
-    # class_col must be at front for this method
-    columns = [meta_data['class_col']] + meta_data['features']
-    type_features, features_type = loreutil.recognize_features_type(df, class_name)
-    dataset = {
-        'name': name,
-        'df': mydata.data[columns],
-        'columns': columns,
-        'class_name': class_name,
-        'possible_outcomes': meta_data['class_names_label_order'],
-        'type_features': type_features,
-        'features_type': features_type,
-        'discrete': [vn for vn, vt in zip(meta_data['var_names'], meta_data['var_types']) if vt == 'nominal'] ,
-        'continuous': [vn for vn, vt in zip(meta_data['var_names'], meta_data['var_types']) if vt == 'continuous'] ,
-        'idx_features': {i : v for i, v in enumerate(meta_data['features'])},
-        'label_encoder': meta_data['le_dict'],
-        'X': mydata.data[meta_data['features']].to_numpy(),
-        'y': mydata.data[class_name].to_numpy(),
-    }
-
-    return dataset
-
-def lore_explain(idx_record2explain, X2E, dataset, blackbox,
-            ng_function=nbgen.genetic_neighborhood, #generate_random_data, #genetic_neighborhood, random_neighborhood
-            discrete_use_probabilities=False,
-            continuous_function_estimation=False,
-            returns_infos=False, path='./', sep=';', log=False, random_state=123):
-
-    dfZ, x = util.dataframe2explain(X2E, dataset, idx_record2explain, blackbox)
-
-    # Generate Neighborhood
-    dfZ, Z = ng_function(dfZ, x, blackbox, dataset)
-
-    # Build Decision Tree
-    dt, dt_dot = pyyadt.fit(dfZ, class_name, columns, features_type, discrete, continuous,
-                            filename=dataset['name'], path=path, sep=sep, log=log)
-
-    # Apply Black Box and Decision Tree on instance to explain
-    bb_outcome = blackbox.predict(x.reshape(1, -1))[0]
-
-    dfx = util.build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0]
-    cc_outcome, rule, tree_path = pyyadt.predict_rule(dt, dfx, class_name, features_type, discrete, continuous)
-
-    # Apply Black Box and Decision Tree on neighborhood
-    y_pred_bb = blackbox.predict(Z)
-    y_pred_cc, leaf_nodes = pyyadt.predict(dt, dfZ.to_dict('records'), class_name, features_type,
-                                           discrete, continuous)
-
-    def predict(X):
-        y, ln, = pyyadt.predict(dt, X, class_name, features_type, discrete, continuous)
-        return y, ln
-
-    # Update labels if necessary
-    if class_name in label_encoder:
-        cc_outcome = label_encoder[class_name].transform(np.array([cc_outcome]))[0]
-
-    if class_name in label_encoder:
-        y_pred_cc = label_encoder[class_name].transform(y_pred_cc)
-
-    # Extract Coutnerfactuals
-    diff_outcome = util.get_diff_outcome(bb_outcome, possible_outcomes)
-    counterfactuals = pyyadt.get_counterfactuals(dt, tree_path, rule, diff_outcome,
-                                                 class_name, continuous, features_type)
-
-    explanation = (rule, counterfactuals)
-
-    infos = {
-        'bb_outcome': bb_outcome,
-        'cc_outcome': cc_outcome,
-        'y_pred_bb': y_pred_bb,
-        'y_pred_cc': y_pred_cc,
-        'dfZ': dfZ,
-        'Z': Z,
-        'dt': dt,
-        'tree_path': tree_path,
-        'leaf_nodes': leaf_nodes,
-        'diff_outcome': diff_outcome,
-        'predict': predict,
-    }
-
-    if returns_infos:
-        return explanation, infos
-
-    return explanation
-
-def lore_preproc(X2E, dataset, random_state):
-    random.seed(random_state)
-    class_name = dataset['class_name']
-    columns = dataset['columns']
-    discrete = dataset['discrete']
-    continuous = dataset['continuous']
-    features_type = dataset['features_type']
-    label_encoder = dataset['label_encoder']
-    possible_outcomes = dataset['possible_outcomes']
-
-    discrete_use_probabilities=False
-    continuous_function_estimation=False
-
-    # Dataset Preprocessing
-    dataset['feature_values'] = gpdg.calculate_feature_values(X2E, columns, class_name, discrete, continuous, X2E.shape[0],
-                                                         discrete_use_probabilities, continuous_function_estimation)
-
-def lore_benchmark(ds_container, dataset, path_data, blackbox, log=False, random_state=123):
-
-    y2E = blackbox.predict(ds_container.X_test_enc)
-    idx_record2explain = 0 # this has to be automated
-
-    dataset['feature_values'] = lore_preproc(X2E=ds_container.X_test.to_numpy(), dataset=dataset, random_state=random_state)
-
-    # explanation, infos = lore_explain(idx_record2explain, X2E, dataset, blackbox,
-    #                               ng_function=ng.genetic_neighborhood,
-    #                               discrete_use_probabilities=True,
-    #                               continuous_function_estimation=False,
-    #                               returns_infos=True,
-    #                               path=path_data, sep=';', log=log)
+        if control['method'] == 'lore':
+            lore_benchmark(forest=benchmark_items[b]['main']['forest'],
+                                    ds_container=benchmark_items[b]['main']['ds_container'],
+                                    meta_data=benchmark_items[b]['meta_data'],
+                                    model=control['model'],
+                                    dfrgtrs=dfrgtrs, eval_start_time=eval_start_time,
+                                    defTrees_elapsed_time=defTrees_elapsed_time,
+                                    n_instances=control['n_instances'],
+                                    save_path=save_path, dataset_name=b,
+                                    random_state=control['random_state'],
+                                    verbose=verbose)

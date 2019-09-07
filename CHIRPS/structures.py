@@ -199,7 +199,7 @@ class data_split_container(object):
     def test_train_split(self): # behave as scikit-learn
         return(self.X_train, self.X_test, self.y_train, self.y_test)
 
-class data_preprocessor(object):
+class data_preprocessor(non_deterministic):
 
     def fit(self, data, class_col, var_names, var_types):
         self.data = data
@@ -274,53 +274,6 @@ class data_preprocessor(object):
         else:
             self.encoder = default_encoder
 
-# wrapper for data for convenience
-class data_container(non_deterministic, data_preprocessor):
-
-    def __init__(self
-    , data
-    , class_col
-    , var_names = None
-    , var_types = None
-    , project_dir = None
-    , save_dir = ''
-    , random_state = None
-    , spiel = ''):
-        super().__init__(random_state)
-        self.spiel = spiel
-        self.save_dir = save_dir
-        if project_dir is None:
-            self.project_dir = cfg.project_dir
-        else:
-            self.project_dir = project_dir
-
-        self.fit(data, class_col, var_names, var_types)
-
-    # helper function for saving files
-    def get_save_path(self, filename = ''):
-        if len(self.project_dir) > 0:
-            return(self.project_dir + cfg.path_sep + self.save_dir + cfg.path_sep + filename)
-        else:
-            return(self.save_dir + cfg.path_sep + filename)
-
-    # helper function for data frame str / summary
-    def rstr(self):
-        return(self.data.shape, self.data.apply(lambda x: [x.unique()]))
-
-    # a function to return any code from a label
-    def get_code(self, col, label):
-        if len(self.le_dict.keys()) > 0 and label in self.le_dict.keys():
-            return self.le_dict[col].transform([label])[0]
-        else:
-            return(label)
-
-    # a function to return any label from a code
-    def get_label(self, col, label):
-        if len(self.le_dict.keys()) > 0 and col in self.le_dict.keys():
-            return self.le_dict[col].inverse_transform(label)
-        else:
-            return(label)
-
     # generate indexes for manual tt_split
     def get_tt_split_idx(self, test_size=0.3, random_state=None, shuffle=True):
         # common default setting: see class non_deterministic
@@ -385,6 +338,54 @@ class data_container(non_deterministic, data_preprocessor):
         test_prior = test_prior)
 
         return(tt)
+
+
+# wrapper for data for convenience
+class data_container(data_preprocessor):
+
+    def __init__(self
+    , data
+    , class_col
+    , var_names = None
+    , var_types = None
+    , project_dir = None
+    , save_dir = ''
+    , random_state = None
+    , spiel = ''):
+        super().__init__(random_state)
+        self.spiel = spiel
+        self.save_dir = save_dir
+        if project_dir is None:
+            self.project_dir = cfg.project_dir
+        else:
+            self.project_dir = project_dir
+
+        self.fit(data, class_col, var_names, var_types)
+
+    # helper function for saving files
+    def get_save_path(self, filename = ''):
+        if len(self.project_dir) > 0:
+            return(self.project_dir + cfg.path_sep + self.save_dir + cfg.path_sep + filename)
+        else:
+            return(self.save_dir + cfg.path_sep + filename)
+
+    # helper function for data frame str / summary
+    def rstr(self):
+        return(self.data.shape, self.data.apply(lambda x: [x.unique()]))
+
+    # a function to return any code from a label
+    def get_code(self, col, label):
+        if len(self.le_dict.keys()) > 0 and label in self.le_dict.keys():
+            return self.le_dict[col].transform([label])[0]
+        else:
+            return(label)
+
+    # a function to return any label from a code
+    def get_label(self, col, label):
+        if len(self.le_dict.keys()) > 0 and col in self.le_dict.keys():
+            return self.le_dict[col].inverse_transform(label)
+        else:
+            return(label)
 
     def get_meta(self):
         return({'class_col' : self.class_col,
