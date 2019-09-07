@@ -1227,18 +1227,106 @@ def ypsalc(random_state=123, project_dir=None):
     I lived most of my childhood in a: house/bungalow - block of flats (categorical)
     ''')
 
-# readmission
+# noshow
 def noshow(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'noshow.csv.gz',
                     compression='gzip'),
-    class_col = 'readmitted',
+    class_col = 'noshow',
     project_dir = project_dir,
-    save_dir = 'readmit',
+    save_dir = 'noshow',
     random_state=random_state,
     spiel = '''
-    From Kaggle - https://www.kaggle.com/dansbecker/hospital-readmissions
     No further information
     ''')
 
     return(data_cont)
+
+def cervical(random_state=123, project_dir=None):
+        data_cont = data_container(
+        data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cervical.csv.gz',
+                        compression='gzip'),
+        class_col = 'Biopsy',
+        var_types = ['continuous',
+                    'continuous',
+                    'continuous',
+                    'continuous',
+                    'nominal',
+                    'continuous',
+                    'continuous',
+                    'nominal',
+                    'continuous',
+                    'nominal',
+                    'continuous',
+                    'nominal',
+                    'continuous',
+                    'nominal',
+                    'nominal',
+                    'nominal',
+                    'nominal',
+                    'nominal',
+                    'nominal',
+                    'nominal',
+                    'nominal',
+                    'nominal',
+                    'nominal',
+                    'nominal',
+                    'nominal',
+                    'continuous',
+                    'nominal',
+                    'nominal',
+                    'nominal',
+                    'nominal',
+                    'nominal'],
+        project_dir = project_dir,
+        save_dir = 'cervical',
+        random_state=random_state,
+        spiel = '''
+        Data Set Information:
+        The dataset was collected at 'Hospital Universitario de Caracas' in Caracas, Venezuela. The dataset comprises demographic information, habits, and historic medical records of 858 patients. Several patients decided not to answer some of the questions because of privacy concerns (missing values).
+
+        Attribute Information:
+        (int) Age
+        (int) Number of sexual partners
+        (int) First sexual intercourse (age)
+        (int) Num of pregnancies
+        (bool) Smokes
+        (bool) Smokes (years)
+        (bool) Smokes (packs/year)
+        (bool) Hormonal Contraceptives
+        (int) Hormonal Contraceptives (years)
+        (bool) IUD
+        (int) IUD (years)
+        (bool) STDs
+        (int) STDs (number)
+        (bool) STDs:condylomatosis
+        (bool) STDs:cervical condylomatosis
+        (bool) STDs:vaginal condylomatosis
+        (bool) STDs:vulvo-perineal condylomatosis
+        (bool) STDs:syphilis
+        (bool) STDs:pelvic inflammatory disease
+        (bool) STDs:genital herpes
+        (bool) STDs:molluscum contagiosum
+        (bool) STDs:AIDS
+        (bool) STDs:HIV
+        (bool) STDs:Hepatitis B
+        (bool) STDs:HPV
+        (int) STDs: Number of diagnosis
+        (int) STDs: Time since first diagnosis
+        (int) STDs: Time since last diagnosis
+        (bool) Dx:Cancer
+        (bool) Dx:CIN
+        (bool) Dx:HPV
+        (bool) Dx
+        (bool) Hinselmann: target variable
+        (bool) Schiller: target variable
+        (bool) Cytology: target variable
+        (bool) Biopsy: target variable
+
+
+        Relevant Papers:
+        Kelwin Fernandes, Jaime S. Cardoso, and Jessica Fernandes. 'Transfer Learning with Partial Observability Applied to Cervical Cancer Screening.' Iberian Conference on Pattern Recognition and Image Analysis. Springer International Publishing, 2017.
+
+        Citation Request:
+        Kelwin Fernandes, Jaime S. Cardoso, and Jessica Fernandes. 'Transfer Learning with Partial Observability Applied to Cervical Cancer Screening.' Iberian Conference on Pattern Recognition and Image Analysis. Springer International Publishing, 2017.
+        ''')

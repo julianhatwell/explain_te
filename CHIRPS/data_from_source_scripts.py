@@ -1286,3 +1286,81 @@ if True:
     mush = mush[var_names] # put the class col at the end
     mush.to_csv('CHIRPS\\datafiles\\mush.csv.gz', index=False, compression='gzip')
     '''
+
+if True:
+    '''
+    file = 'risk_factors_cervical_cancer.csv'
+    archive = zipfile.ZipFile('CHIRPS/source_datafiles/cervical.zip', 'r')
+    lines = archive.read(file).decode("utf-8").split('\n')
+    archive.close()
+
+    lines = [lines[i].split(',') for i in range(len(lines))]
+    names = lines[0]
+    lines = lines[1:]
+    lines.pop()
+
+    cervical = pd.DataFrame(lines, columns=names)
+    cervical.drop(columns=['STDs: Time since first diagnosis', 'STDs: Time since last diagnosis'], inplace=True) # too many missing
+    cervical.drop(columns=['Hinselmann', 'Schiller', 'Citology'], inplace=True) # alternative target vars
+
+    var_types = ['continuous',
+                'continuous',
+                'continuous',
+                'continuous',
+                'nominal',
+                'continuous',
+                'continuous',
+                'nominal',
+                'continuous',
+                'nominal',
+                'continuous',
+                'nominal',
+                'continuous',
+                'nominal',
+                'nominal',
+                'nominal',
+                'nominal',
+                'nominal',
+                'nominal',
+                'nominal',
+                'nominal',
+                'nominal',
+                'nominal',
+                'nominal',
+                'nominal',
+                'continuous',
+                'nominal',
+                'nominal',
+                'nominal',
+                'nominal',
+                'nominal']
+
+    def numericMap(x):
+        if x == '?':
+            return(np.nan)
+        else:
+            return(np.float16(x))
+
+    def stringMap(x):
+        if x in ['1', '1.0', '1.']:
+            return('1')
+        elif x in ['0', '0.0', '0.']:
+            return('0')
+        else:
+            return(x)
+
+    # some numbers missings are as much as 14%
+    impnum = SimpleImputer(missing_values=np.nan, strategy='median')
+    impcat = SimpleImputer(missing_values='?', strategy='most_frequent')
+    for c, vt in zip(cervical.columns, var_types):
+        if vt == 'continuous':
+            cervical[c] = cervical[c].apply(numericMap)
+            impnum.fit(np.array(cervical[c]).reshape(-1, 1))
+            cervical[c] = impnum.transform(np.array(cervical[c]).reshape(-1, 1))
+        else:
+            cervical[c] = cervical[c].apply(stringMap)
+            impcat.fit(np.array(cervical[c]).reshape(-1, 1))
+            cervical[c] = impcat.transform(np.array(cervical[c]).reshape(-1, 1))
+
+    cervical.to_csv('CHIRPS\\datafiles\\cervical.csv.gz', index=False, compression='gzip')
+    '''

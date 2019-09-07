@@ -9,15 +9,14 @@ from math import sqrt
 import warnings
 import scipy.stats as st
 from copy import deepcopy
-import CHIRPS.datasets as ds
 import CHIRPS.routines as rt
 import CHIRPS.structures as strcts
-from CHIRPS import p_count_corrected, o_print
+from CHIRPS import o_print
 from CHIRPS import config as cfg
 from lime import lime_tabular as limtab
 from anchor import anchor_tabular as anchtab
 from defragTrees.defragTrees import DefragModel
-from sklearn.tree import DecisionTreeClassifier
+
 # lore required quite a lot of adaptation
 import lore.lore as lore
 import lore.util as loreutil
@@ -307,8 +306,8 @@ def Anchors_benchmark(forest, ds_container, meta_data,
         with open(meta_data['get_save_path']() + file_stem + 'performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
             forest_performance = json.load(infile)
         f_perf = forest_performance['Anchors']['test_accuracy']
-        p_perf = f_perf # for Anchors, forest pred and Anchors target are always the same
-        fid = 1 # for Anchors, forest pred and Anchors target are always the same
+
+
         summary_results = [[dataset_name, method, len(labels), 1, \
                             1, 1, 1, 0, \
                             np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
@@ -329,7 +328,6 @@ def defragTrees_prep(forest, meta_data, ds_container,
     y_test=ds_container.y_test
 
     feature_names = meta_data['features_enc']
-    class_names = meta_data['class_names_label_order']
     random_state = meta_data['random_state']
 
     o_print('Running defragTrees', verbose)
@@ -417,9 +415,6 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
         # get test sample by leave-one-out on current instance
         _, _, loo_instances_enc, loo_instances_enc_matrix, loo_true_labels = ds_container.get_loo_instances(instance_id,
                                                                                                             which_split='test')
-
-        loo_forest_preds = forest.predict(loo_instances_enc)
-        loo_dfrgtrs_preds = dfrgtrs.predict(np.array(loo_instances_enc_matrix))
 
         # start a timer for the individual eval
         dt_start_time = timeit.default_timer()
@@ -711,7 +706,7 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
         Xgp.append(Xsdo)
 
     if size_dso > 0.0:
-        toolbox_dso = gdpg_setup_toolbox(x, x_enc, feature_values, bb, init=gpdg_record_init, init_params=x, evaluate=gpdg_fitness_dso,
+        toolbox_dso = gpdg_setup_toolbox(x, x_enc, feature_values, bb, init=gpdg_record_init, init_params=x, evaluate=gpdg_fitness_dso,
                                     discrete=discrete, continuous=continuous, class_name=class_name,
                                     idx_features=idx_features, distance_function=distance_function,
                                     population_size=size_dso, alpha1=alpha1, alpha2=alpha2, eta=eta2, mutpb=mutpb,
@@ -723,7 +718,7 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
         Xgp.append(Xdso)
 
     if size_ddo > 0.0:
-        toolbox_ddo = gdpg_setup_toolbox(x, x_enc, feature_values, bb, init=gpdg_record_init, init_params=x, evaluate=gpdg_fitness_ddo,
+        toolbox_ddo = gpdg_setup_toolbox(x, x_enc, feature_values, bb, init=gpdg_record_init, init_params=x, evaluate=gpdg_fitness_ddo,
                                     discrete=discrete, continuous=continuous, class_name=class_name,
                                     idx_features=idx_features, distance_function=distance_function,
                                     population_size=size_ddo, alpha1=alpha1, alpha2=alpha2, eta=eta2, mutpb=mutpb,
@@ -765,7 +760,7 @@ def gpdg_calculate_feature_values(X, columns, class_name, discrete, continuous, 
             else:
                 binary = False
             if continuous_function_estimation:
-                new_values = get_distr_values(values, size, binary)
+                new_values = gpdg_get_distr_values(values, size, binary)
             else:
                 mu = np.mean(values)
                 if binary and discrete_use_probabilities:
@@ -796,8 +791,8 @@ def gpdg_get_distr_values(x, size=1000, binary=False):
         distr_values[x == 0] = st.bernoulli.rvs(minp, size=np.sum(x == 0))
         distr_values[x == 1] = st.bernoulli.rvs(maxp, size=np.sum(x == 1))
     else:
-        nbr_bins = int(np.round(estimate_nbr_bins(x)))
-        name, params = best_fit_distribution(x, nbr_bins)
+        nbr_bins = int(np.round(gpdg_estimate_nbr_bins(x)))
+        name, params = gpdg_best_fit_distribution(x, nbr_bins)
         dist = getattr(st, name)
 
         arg = params[:-2]
@@ -834,8 +829,8 @@ def gpdg_struges(x):
 def gpdg_estimate_nbr_bins(x):
     if len(x) == 1:
         return 1
-    k_fd = freedman_diaconis(x) if len(x) > 2 else 1
-    k_struges = struges(x)
+    k_fd = gpdg_freedman_diaconis(x) if len(x) > 2 else 1
+    k_struges = gpdg_struges(x)
     if k_fd == float('inf') or np.isnan(k_fd):
         k_fd = np.sqrt(len(x))
     k = max(k_fd, k_struges)
@@ -917,17 +912,6 @@ def lore_build_df2explain(bb, X, x_enc, dataset):
     return dfZ
 
 
-def lore_dataframe2explain(X2E, dataset, idx_record2explain, blackbox):
-
-    # Select record to predict and explain
-    x = X2E[idx_record2explain]
-
-    # Remove record to explain (optional) from dataset Z and convert into dataframe
-    # Z = np.delete(Z, idx_record2explain, axis=0)
-    dfZ = build_df2explain(blackbox, X2E, dataset)
-
-    return dfZ, x
-
 def lore_genetic_neighborhood(dfZ, x, x_enc, blackbox, dataset):
     discrete = dataset['discrete']
     continuous = dataset['continuous']
@@ -960,7 +944,10 @@ def lore_genetic_neighborhood(dfZ, x, x_enc, blackbox, dataset):
     return dfZ, Z
 
 
-def lore_explain(ds_container, dataset, path_data, blackbox, log=False, returns_infos=False, random_state=123):
+def lore_explain(instance, ds_container, dataset, blackbox,
+                discrete_use_probabilities=False,
+                continuous_function_estimation=False,
+                log=False, random_state=123):
 
     random.seed(random_state)
     class_name = dataset['class_name']
@@ -970,32 +957,46 @@ def lore_explain(ds_container, dataset, path_data, blackbox, log=False, returns_
     features_type = dataset['features_type']
     label_encoder = dataset['label_encoder']
     possible_outcomes = dataset['possible_outcomes']
-
-    discrete_use_probabilities=False # to be passed as params
-    continuous_function_estimation=False # to be passed as params
-
-    y2E = blackbox.predict(ds_container.X_test_enc)
-    dfZ = ds_container.X_test # unencoded
-    idx_record2explain = 0 # TODO: this has to be automated for the benchmark
-    x = ds_container.X_test.iloc[idx_record2explain].to_numpy()
+    path_data = dataset['path_data']
     x_enc = dataset['instance_encoder']
-    X2E=ds_container.X_test.to_numpy()
+
+    # new
+    y2E = blackbox.predict(ds_container.X_train_enc)
+    dfZ = ds_container.X_train # unencoded
+    X2E = dfZ.to_numpy()
+    x = instance.to_numpy()
     dfX2E = lore_build_df2explain(blackbox, X2E, x_enc, dataset).to_dict('records')
-    dfx = dfX2E[idx_record2explain] # recoded single record
+    dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), x_enc, dataset).to_dict('records')[0] # recoded single record
     bb_outcome = blackbox.predict(np.asarray(x_enc.transform([x]).todense()))[0]
 
+    # old
+    # dfZ = ds_container.X_test # unencoded
+    # idx_record2explain = 0 # TODO: this has to be automated for the benchmark
+    # x = ds_container.X_test.iloc[idx_record2explain].to_numpy()
+    # X2E=ds_container.X_test.to_numpy()
+    # dfX2E = lore_build_df2explain(blackbox, X2E, x_enc, dataset).to_dict('records')
+    # dfx = dfX2E[idx_record2explain] # recoded single record
+
+    print('starting calculate features')
+    print(time.asctime( time.localtime(time.time()) ))
     # Dataset Preprocessing
     dataset['feature_values'] = gpdg_calculate_feature_values(X2E, columns, class_name, discrete, continuous, X2E.shape[0],
                                                          discrete_use_probabilities, continuous_function_estimation)
 
+    print('starting generate neighbourhood')
+    print(time.asctime( time.localtime(time.time()) ))
     # Generate Neighborhood
     dfZ, Z = lore_genetic_neighborhood(dfZ, x, x_enc, blackbox, dataset)  #generate_random_data, #genetic_neighborhood, random_neighborhood
     y_pred_bb = blackbox.predict(np.asarray(x_enc.transform(Z).todense()))
 
+    print('starting build dec tree')
+    print(time.asctime( time.localtime(time.time()) ))
     # Build Decision Tree
     dt, dt_dot = loreyadt.fit(dfZ, class_name, columns, features_type, discrete, continuous,
                             filename=dataset['name'], path=path_data, sep=';', log=log)
 
+    print('starting apply tree')
+    print(time.asctime( time.localtime(time.time()) ))
     # Apply Decision Tree on instance to explain
     cc_outcome, rule, tree_path = loreyadt.predict_rule(dt, dfx, class_name, features_type, discrete, continuous)
     # Apply Decision Tree on neighborhood
@@ -1013,13 +1014,18 @@ def lore_explain(ds_container, dataset, path_data, blackbox, log=False, returns_
     if class_name in label_encoder:
         y_pred_cc = label_encoder[class_name].transform(y_pred_cc)
 
+    print('starting counterfactuals')
+    print(time.asctime( time.localtime(time.time()) ))
     # Extract Coutnerfactuals
     diff_outcome = loreutil.get_diff_outcome(bb_outcome, possible_outcomes)
     counterfactuals = loreyadt.get_counterfactuals(dt, tree_path, rule, diff_outcome,
                                                  class_name, continuous, features_type)
 
-    explanation = (rule, counterfactuals)
+    print('endings')
+    print(time.asctime( time.localtime(time.time()) ))
 
+    explanation = (rule, counterfactuals)
+    
     infos = {
         'bb_outcome': bb_outcome,
         'cc_outcome': cc_outcome,
@@ -1052,154 +1058,8 @@ def lore_explain(ds_container, dataset, path_data, blackbox, log=False, returns_
     print(precision)
     print(np.mean(precision), np.std(precision))
 
-    if returns_infos:
-        return(explanation, infos)
+    return(rule, counterfactuals, infos)
 
-    return(explanation)
-
-
-def lore_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
-                            eval_start_time, defTrees_elapsed_time,
-                            n_instances=100,
-                            save_path='', dataset_name='',
-                            random_state=123,
-                            verbose=True):
-
-    method = 'lore'
-    file_stem = rt.get_file_stem(model)
-    o_print('lore benchmark', verbose)
-
-    # lore to do from here
-    _, _, instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
-                                                                            n_instances=n_instances)
-    forest_preds = forest.predict(instances_enc)
-    dfrgtrs_preds = dfrgtrs.predict(np.array(instances_enc_matrix))
-
-    defTrees_mean_elapsed_time = defTrees_elapsed_time / len(labels)
-
-    eval_model = rt.evaluate_model(y_true=labels, y_pred=dfrgtrs_preds,
-                        class_names=meta_data['class_names_label_order'],
-                        model=model,
-                        plot_cm=False, plot_cm_norm=False, # False here will output the metrics and suppress the plots
-                        save_path=save_path,
-                        method=method,
-                        random_state=random_state)
-
-    rule_list = rule_list_from_dfrgtrs(dfrgtrs)
-
-    results = [[]] * len(labels)
-    rule_idx = []
-    evaluator = strcts.evaluator()
-    for i in range(len(labels)):
-        instance_id = labels.index[i]
-        if i % 10 == 0: o_print('Working on ' + method + ' for instance ' + str(instance_id), verbose)
-
-        # get test sample by leave-one-out on current instance
-        _, _, loo_instances_enc, loo_instances_enc_matrix, loo_true_labels = ds_container.get_loo_instances(instance_id,
-                                                                                                            which_split='test')
-
-        loo_forest_preds = forest.predict(loo_instances_enc)
-        loo_dfrgtrs_preds = dfrgtrs.predict(np.array(loo_instances_enc_matrix))
-
-        # start a timer for the individual eval
-        dt_start_time = timeit.default_timer()
-
-        # which rule appies to each loo instance
-        rule_idx.append(which_rule(rule_list, loo_instances_enc, features=meta_data['features_enc']))
-
-        # which rule appies to current instance
-        rule = which_rule(rule_list, instances_enc[i], features=meta_data['features_enc'])
-        if rule[0] >= len(rule_list):
-            pretty_rule = []
-        else:
-            pretty_rule = evaluator.prettify_rule(rule_list[rule[0]], meta_data['var_dict'])
-
-        dt_end_time = timeit.default_timer()
-        dt_elapsed_time = dt_end_time - dt_start_time
-        dt_elapsed_time = dt_elapsed_time + defTrees_mean_elapsed_time # add the mean modeling time per instance
-
-        # which instances are covered by this rule
-        covered_instances = rule_idx[i] == rule
-
-        metrics = evaluator.evaluate(prior_labels=loo_true_labels,
-                                        post_idx=covered_instances)
-
-        # majority class is the forest vote class
-        # target class is the benchmark algorithm prediction
-        mc = [forest_preds[i]]
-        tc = [dfrgtrs_preds[i]]
-        mc_lab = meta_data['get_label'](meta_data['class_col'], mc)
-        tc_lab = meta_data['get_label'](meta_data['class_col'], tc)
-
-        true_class = ds_container.y_test.loc[instance_id]
-        results[i] = [dataset_name,
-        instance_id,
-        method,
-        pretty_rule,
-        len(rule),
-        true_class,
-        meta_data['class_names'][true_class],
-        mc[0],
-        mc_lab[0],
-        tc[0],
-        tc_lab[0],
-        np.array([tree.predict(instances_enc[i]) == mc for tree in forest.estimators_]).mean(), # majority vote share
-        0, # accumulated weight not meaningful for dfrgtrs
-        metrics['prior']['p_counts'][mc][0],
-        metrics['posterior'][tc][0],
-        metrics['stability'][tc][0],
-        metrics['recall'][tc][0],
-        metrics['f1'][tc][0],
-        metrics['cc'][tc][0],
-        metrics['ci'][tc][0],
-        metrics['ncc'][tc][0],
-        metrics['nci'][tc][0],
-        metrics['npv'][tc][0],
-        metrics['accuracy'][tc][0],
-        metrics['lift'][tc][0],
-        metrics['coverage'],
-        metrics['xcoverage'],
-        metrics['kl_div'],
-        penalise_bad_prediction(mc, tc, metrics['posterior'][mc][0]),
-        penalise_bad_prediction(mc, tc, metrics['stability'][mc][0]),
-        penalise_bad_prediction(mc, tc, metrics['recall'][mc][0]),
-        penalise_bad_prediction(mc, tc, metrics['f1'][mc][0]),
-        metrics['cc'][tc][0],
-        metrics['ci'][tc][0],
-        metrics['ncc'][tc][0],
-        metrics['nci'][tc][0],
-        penalise_bad_prediction(mc, tc, metrics['npv'][mc][0]),
-        penalise_bad_prediction(mc, tc, metrics['accuracy'][mc][0]),
-        penalise_bad_prediction(mc, tc, metrics['lift'][mc][0]),
-        metrics['coverage'],
-        metrics['xcoverage'],
-        metrics['kl_div'],
-        dt_elapsed_time]
-
-    if save_path is not None:
-        save_results_file=method + '_rnst_' + str(random_state)
-
-        rt.save_results(cfg.results_headers, results,
-                        save_results_path=save_path,
-                        save_results_file=save_results_file)
-
-        # collect summary_results
-        with open(meta_data['get_save_path']() + file_stem + 'performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
-            forest_performance = json.load(infile)
-        f_perf = forest_performance['main']['test_accuracy']
-        p_perf = np.mean(dfrgtrs_preds == labels)
-        fid = np.mean(dfrgtrs_preds == forest_preds)
-        summary_results = [[dataset_name, method, len(labels), len(rule_list), \
-                            len(np.unique(rule_idx)), np.median(np.array(rule_idx) + 1), np.mean(np.array(rule_idx) + 1), np.std(np.array(rule_idx) + 1), \
-                            np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
-                            eval_start_time, time.asctime( time.localtime(time.time()) ), \
-                            f_perf, sqrt((f_perf/(1-f_perf))/len(labels)), \
-                            p_perf, sqrt((p_perf/(1-p_perf))/len(labels)), \
-                            eval_model['test_kappa'], fid, sqrt((fid/(1-fid))/len(labels))]]
-
-        rt.save_results(cfg.summary_results_headers, summary_results,
-                        save_results_path=save_path,
-                        save_results_file=save_results_file + '_summary')
 
 def lore_prepare_dataset(name, mydata, meta_data):
     # don't need tt splits
@@ -1221,10 +1081,134 @@ def lore_prepare_dataset(name, mydata, meta_data):
         'continuous': [vn for vn, vt in zip(meta_data['var_names'], meta_data['var_types']) if vt == 'continuous'] ,
         'idx_features': {i : v for i, v in enumerate(meta_data['features'])},
         'label_encoder': meta_data['le_dict'],
-        'instance_encoder' : mydata.encoder
+        'instance_encoder' : mydata.encoder,
+        'path_data' : meta_data['get_save_path']()
     }
 
     return dataset
+
+def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
+                            n_instances=100,
+                            save_path='', dataset_name='',
+                            random_state=123,
+                            verbose=True):
+
+    method = 'lore'
+    file_stem = rt.get_file_stem(model)
+    o_print('lore benchmark', verbose)
+
+    instances, _ , instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
+                                                                                n_instances=n_instances)
+    # get predictions
+    forest_preds = forest.predict(instances_enc)
+    sample_labels = forest.predict(ds_container.X_train_enc) # for train estimates
+
+    o_print('Running Anchors on each instance and collecting results', verbose)
+    eval_start_time = time.asctime( time.localtime(time.time()) )
+    # iterate through each instance to generate the anchors explanation
+    results = [[]] * len(labels)
+    evaluator = strcts.evaluator()
+    for i in range(len(labels)):
+        instance_id = labels.index[i]
+        if i % 10 == 0: o_print('Working on ' + method + ' for instance ' + str(instance_id), verbose)
+
+        # get test sample by leave-one-out on current instance
+        _, loo_instances_matrix, loo_instances_enc, _, loo_true_labels = ds_container.get_loo_instances(instance_id, which_split='test')
+
+        # get the model predicted labels
+        loo_preds = forest.predict(loo_instances_enc)
+
+        # collect the time taken
+        lore_start_time = timeit.default_timer()
+
+        # start the explanation process
+        rule, counterfactuals, info = lore_explain(instances[i], ds_container, lore_dataset, forest,
+                                    log=False,
+                                    random_state=random_state)
+
+        # the whole anchor explanation routine has run so stop the clock
+        anch_end_time = timeit.default_timer()
+        anch_elapsed_time = anch_end_time - anch_start_time
+
+        # Get train and test idx (boolean) covered by the anchor
+        anchor_train_idx = np.array([all_eq.all() for all_eq in ds_container.X_train_matrix[:, explanation.features()] == instances_matrix[:,explanation.features()][i]])
+        anchor_test_idx = np.array([all_eq.all() for all_eq in loo_instances_matrix[:, explanation.features()] == instances_matrix[:,explanation.features()][i]])
+
+        # create a class to run the standard evaluation
+        train_metrics = evaluator.evaluate(prior_labels=sample_labels, post_idx=anchor_train_idx)
+        test_metrics = evaluator.evaluate(prior_labels=loo_preds, post_idx=anchor_test_idx)
+
+        # collect the results
+        tc = [preds[i]]
+        tc_lab = meta_data['get_label'](meta_data['class_col'], tc)
+
+        true_class = ds_container.y_test.loc[instance_id]
+        results[i] = [dataset_name,
+            instance_id,
+            method,
+            ' AND '.join(explanation.names()),
+            len(explanation.names()),
+            true_class,
+            meta_data['class_names'][true_class],
+            tc[0],
+            tc_lab[0],
+            tc[0],
+            tc_lab[0],
+            np.array([tree.predict(instances_enc[i]) == tc for tree in forest.estimators_]).mean(), # majority vote share
+            0, # accumulated weight not meaningful for Anchors
+            test_metrics['prior']['p_counts'][tc][0],
+            train_metrics['posterior'][tc][0],
+            train_metrics['stability'][tc][0],
+            train_metrics['recall'][tc][0],
+            train_metrics['f1'][tc][0],
+            train_metrics['cc'][tc][0],
+            train_metrics['ci'][tc][0],
+            train_metrics['ncc'][tc][0],
+            train_metrics['nci'][tc][0],
+            train_metrics['npv'][tc][0],
+            train_metrics['accuracy'][tc][0],
+            train_metrics['lift'][tc][0],
+            train_metrics['coverage'],
+            train_metrics['xcoverage'],
+            train_metrics['kl_div'],
+            test_metrics['posterior'][tc][0],
+            test_metrics['stability'][tc][0],
+            test_metrics['recall'][tc][0],
+            test_metrics['f1'][tc][0],
+            test_metrics['cc'][tc][0],
+            test_metrics['ci'][tc][0],
+            test_metrics['ncc'][tc][0],
+            test_metrics['nci'][tc][0],
+            test_metrics['f1'][tc][0],
+            test_metrics['accuracy'][tc][0],
+            test_metrics['lift'][tc][0],
+            test_metrics['coverage'],
+            test_metrics['xcoverage'],
+            test_metrics['kl_div'],
+            anch_elapsed_time]
+
+    if save_path is not None:
+        save_results_file = method + '_rnst_' + str(random_state)
+        # save to file between each loop, in case of crashes/restarts
+        rt.save_results(cfg.results_headers, results, save_results_path=save_path,
+                        save_results_file=save_results_file)
+
+        # collect summary_results
+        with open(meta_data['get_save_path']() + file_stem + 'performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
+            forest_performance = json.load(infile)
+        f_perf = forest_performance['Anchors']['test_accuracy']
+        p_perf = f_perf # for Anchors, forest pred and Anchors target are always the same
+        fid = 1 # for Anchors, forest pred and Anchors target are always the same
+        summary_results = [[dataset_name, method, len(labels), 1, \
+                            1, 1, 1, 0, \
+                            np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
+                            eval_start_time, time.asctime( time.localtime(time.time()) ), \
+                            f_perf, sqrt((f_perf/(1-f_perf))/len(labels)), \
+                            1, 0, \
+                            1, 1, 0]]
+
+        rt.save_results(cfg.summary_results_headers, summary_results, save_path, save_results_file + '_summary')
+
 
 
 def benchmarking_prep(datasets, model, tuning, project_dir,
@@ -1281,7 +1265,7 @@ def benchmarking_prep(datasets, model, tuning, project_dir,
         # collect
         benchmark_items[dataset_name] = {'main' : {'forest' : rf, 'ds_container' : tt},
                                         'anchors' : {'forest' : rf_anch, 'ds_container' : tt_anch, 'explainer' : anchors_explainer},
-                                        'lore' : {'dataset' : lore_dataset}
+                                        'lore' : {'dataset' : lore_dataset},
                                         'meta_data' : meta_data}
         o_print('', verbose)
     return(benchmark_items)
@@ -1351,8 +1335,7 @@ def do_benchmarking(benchmark_items, verbose=True, **control):
                                     ds_container=benchmark_items[b]['main']['ds_container'],
                                     meta_data=benchmark_items[b]['meta_data'],
                                     model=control['model'],
-                                    dfrgtrs=dfrgtrs, eval_start_time=eval_start_time,
-                                    defTrees_elapsed_time=defTrees_elapsed_time,
+                                    lore_dataset=benchmark_items[b]['lore']['dataset'],
                                     n_instances=control['n_instances'],
                                     save_path=save_path, dataset_name=b,
                                     random_state=control['random_state'],
