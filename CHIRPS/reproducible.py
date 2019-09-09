@@ -16,6 +16,7 @@ from CHIRPS import config as cfg
 from lime import lime_tabular as limtab
 from anchor import anchor_tabular as anchtab
 from defragTrees.defragTrees import DefragModel
+from sklearn.tree import DecisionTreeClassifier
 
 # lore required quite a lot of adaptation
 import lore.lore as lore
@@ -305,7 +306,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
         # collect summary_results
         with open(meta_data['get_save_path']() + file_stem + 'performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
             forest_performance = json.load(infile)
-        f_perf = forest_performance['Anchors']['test_accuracy']
+        f_perf = forest_performance[method]['test_accuracy']
 
 
         summary_results = [[dataset_name, method, len(labels), 1, \
@@ -415,6 +416,8 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
         # get test sample by leave-one-out on current instance
         _, _, loo_instances_enc, loo_instances_enc_matrix, loo_true_labels = ds_container.get_loo_instances(instance_id,
                                                                                                             which_split='test')
+        # get the model predicted labels
+        loo_preds = forest.predict(loo_instances_enc)
 
         # start a timer for the individual eval
         dt_start_time = timeit.default_timer()
@@ -436,8 +439,7 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
         # which instances are covered by this rule
         covered_instances = rule_idx[i] == rule
 
-        metrics = evaluator.evaluate(prior_labels=loo_true_labels,
-                                        post_idx=covered_instances)
+        metrics = evaluator.evaluate(prior_labels=loo_preds, post_idx=covered_instances)
 
         # majority class is the forest vote class
         # target class is the benchmark algorithm prediction
@@ -890,12 +892,13 @@ def gpdg_best_fit_distribution(data, bins=200, ax=None):
 
     return best_distribution.name, best_params
 
-def lore_build_df2explain(bb, X, x_enc, dataset):
+def lore_build_df2explain(bb, X, dataset):
 
     columns = dataset['columns']
     features_type = dataset['features_type']
     discrete = dataset['discrete']
     label_encoder = dataset['label_encoder']
+    x_enc = dataset['instance_encoder']
 
     y = bb.predict(np.asarray(x_enc.transform(X).todense()))
     yX = np.concatenate((y.reshape(-1, 1), X), axis=1)
@@ -912,12 +915,13 @@ def lore_build_df2explain(bb, X, x_enc, dataset):
     return dfZ
 
 
-def lore_genetic_neighborhood(dfZ, x, x_enc, blackbox, dataset):
+def lore_genetic_neighborhood(dfZ, x, blackbox, dataset):
     discrete = dataset['discrete']
     continuous = dataset['continuous']
     class_name = dataset['class_name']
     idx_features = dataset['idx_features']
     feature_values = dataset['feature_values']
+    x_enc = dataset['instance_encoder']
 
     discrete_no_class = list(discrete)
     discrete_no_class.remove(class_name)
@@ -934,17 +938,23 @@ def lore_genetic_neighborhood(dfZ, x, x_enc, blackbox, dataset):
     if len(np.unique(zy)) == 1:
         # print('qui')
         label_encoder = dataset['label_encoder']
-        dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), x_enc, dataset).to_dict('records')[0]
+        dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0]
         neig_indexes = loreutil.get_closest_diffoutcome(dfZ, dfx, discrete, continuous, class_name,
                                                blackbox, label_encoder, distance_function, k=100)
         Zn, _ = loreutil.label_encode(dfZ, discrete, label_encoder)
         Zn = Zn.iloc[neig_indexes, Z.columns != class_name].values
         Z = np.concatenate((Z, Zn), axis=0)
-    dfZ = lore_build_df2explain(blackbox, Z, x_enc, dataset)
+    dfZ = lore_build_df2explain(blackbox, Z, dataset)
     return dfZ, Z
 
+# modified to return a boolean index
+def lore_get_covered(rule, X, dataset):
+    covered_indexes = list()
+    for x in X:
+        covered_indexes.append(lore.is_satisfied(x, rule, dataset['discrete'], dataset['features_type']))
+    return covered_indexes
 
-def lore_explain(instance, ds_container, dataset, blackbox,
+def lore_explain(instance, X_train, dataset, blackbox,
                 discrete_use_probabilities=False,
                 continuous_function_estimation=False,
                 log=False, random_state=123):
@@ -961,12 +971,12 @@ def lore_explain(instance, ds_container, dataset, blackbox,
     x_enc = dataset['instance_encoder']
 
     # new
-    y2E = blackbox.predict(ds_container.X_train_enc)
-    dfZ = ds_container.X_train # unencoded
-    X2E = dfZ.to_numpy()
+    # y2E = blackbox.predict(ds_container.X_train_enc)
+    # dfZ = ds_container.X_train # unencoded
+    X2E = X_train.to_numpy()
     x = instance.to_numpy()
-    dfX2E = lore_build_df2explain(blackbox, X2E, x_enc, dataset).to_dict('records')
-    dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), x_enc, dataset).to_dict('records')[0] # recoded single record
+    # dfX2E = lore_build_df2explain(blackbox, X2E, x_enc, dataset).to_dict('records')
+    dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0] # recoded single record
     bb_outcome = blackbox.predict(np.asarray(x_enc.transform([x]).todense()))[0]
 
     # old
@@ -985,8 +995,8 @@ def lore_explain(instance, ds_container, dataset, blackbox,
 
     print('starting generate neighbourhood')
     print(time.asctime( time.localtime(time.time()) ))
-    # Generate Neighborhood
-    dfZ, Z = lore_genetic_neighborhood(dfZ, x, x_enc, blackbox, dataset)  #generate_random_data, #genetic_neighborhood, random_neighborhood
+    # Generate Neighborhood - seeded by explananandum instance and training distribution
+    dfZ, Z = lore_genetic_neighborhood(X_train, x, blackbox, dataset)  #generate_random_data, #genetic_neighborhood, random_neighborhood
     y_pred_bb = blackbox.predict(np.asarray(x_enc.transform(Z).todense()))
 
     print('starting build dec tree')
@@ -1025,7 +1035,7 @@ def lore_explain(instance, ds_container, dataset, blackbox,
     print(time.asctime( time.localtime(time.time()) ))
 
     explanation = (rule, counterfactuals)
-    
+
     infos = {
         'bb_outcome': bb_outcome,
         'cc_outcome': cc_outcome,
@@ -1040,26 +1050,7 @@ def lore_explain(instance, ds_container, dataset, blackbox,
         'predict': predict,
     }
 
-    print('x = %s' % dfx)
-    print('r = %s --> %s' % (explanation[0][1], explanation[0][0]))
-    for delta in explanation[1]:
-        print('delta', delta)
-
-    covered = lore.get_covered(explanation[0][1], dfX2E, dataset)
-    print(len(covered))
-    print(covered)
-
-    print(explanation[0][0][dataset['class_name']], '<<<<')
-
-    def eval(x, y):
-        return 1 if x == y else 0
-
-    precision = [1-eval(v, explanation[0][0][dataset['class_name']]) for v in y2E[covered]]
-    print(precision)
-    print(np.mean(precision), np.std(precision))
-
     return(rule, counterfactuals, infos)
-
 
 def lore_prepare_dataset(name, mydata, meta_data):
     # don't need tt splits
@@ -1103,17 +1094,24 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
     forest_preds = forest.predict(instances_enc)
     sample_labels = forest.predict(ds_container.X_train_enc) # for train estimates
 
-    o_print('Running Anchors on each instance and collecting results', verbose)
+    o_print('Running lore on each instance and collecting results', verbose)
     eval_start_time = time.asctime( time.localtime(time.time()) )
     # iterate through each instance to generate the anchors explanation
     results = [[]] * len(labels)
     evaluator = strcts.evaluator()
+
+    # format for lore
+    lore_X_train = lore_build_df2explain(forest, ds_container.X_train.to_numpy(), lore_dataset).to_dict('records')
+
     for i in range(len(labels)):
         instance_id = labels.index[i]
         if i % 10 == 0: o_print('Working on ' + method + ' for instance ' + str(instance_id), verbose)
 
         # get test sample by leave-one-out on current instance
-        _, loo_instances_matrix, loo_instances_enc, _, loo_true_labels = ds_container.get_loo_instances(instance_id, which_split='test')
+        loo_instances, _, loo_instances_enc, _, loo_true_labels = ds_container.get_loo_instances(instance_id, which_split='test')
+
+        # format for lore
+        lore_loo_instances = lore_build_df2explain(forest, loo_instances.to_numpy(), lore_dataset).to_dict('records')
 
         # get the model predicted labels
         loo_preds = forest.predict(loo_instances_enc)
@@ -1122,22 +1120,43 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
         lore_start_time = timeit.default_timer()
 
         # start the explanation process
-        rule, counterfactuals, info = lore_explain(instances[i], ds_container, lore_dataset, forest,
+        rule, counterfactuals, info = lore_explain(instances.loc[instance_id], ds_container.X_train, lore_dataset, forest,
                                     log=False,
                                     random_state=random_state)
 
         # the whole anchor explanation routine has run so stop the clock
-        anch_end_time = timeit.default_timer()
-        anch_elapsed_time = anch_end_time - anch_start_time
+        lore_end_time = timeit.default_timer()
+        lore_elapsed_time = lore_end_time - lore_start_time
 
-        # Get train and test idx (boolean) covered by the anchor
-        anchor_train_idx = np.array([all_eq.all() for all_eq in ds_container.X_train_matrix[:, explanation.features()] == instances_matrix[:,explanation.features()][i]])
-        anchor_test_idx = np.array([all_eq.all() for all_eq in loo_instances_matrix[:, explanation.features()] == instances_matrix[:,explanation.features()][i]])
+        # Get train and test idx (boolean) covered by the rule
+
+        # from inside lore explain originally.
+        # print('x = %s' % dfx)
+        # print('r = %s --> %s' % (explanation[0][1], explanation[0][0]))
+        # for delta in explanation[1]:
+        #     print('delta', delta)
+        #
+        # rule[0] is the prediction, rule[1] is the rule
+        lore_train_idx = lore_get_covered(rule[1], lore_X_train, lore_dataset)
+        lore_test_idx = lore_get_covered(rule[1], lore_loo_instances, lore_dataset)
+        # print(len(covered))
+        # print(covered)
+        #
+        # print(explanation[0][0][dataset['class_name']], '<<<<')
+        #
+        # def eval(x, y):
+        #     return 1 if x == y else 0
+        #
+        # precision = [1-eval(v, explanation[0][0][dataset['class_name']]) for v in y2E[covered]]
+        # print(precision)
+        # print(np.mean(precision), np.std(precision))
 
         # create a class to run the standard evaluation
-        train_metrics = evaluator.evaluate(prior_labels=sample_labels, post_idx=anchor_train_idx)
-        test_metrics = evaluator.evaluate(prior_labels=loo_preds, post_idx=anchor_test_idx)
-
+        train_metrics = evaluator.evaluate(prior_labels=sample_labels, post_idx=lore_train_idx)
+        test_metrics = evaluator.evaluate(prior_labels=loo_preds, post_idx=lore_test_idx)
+        print(train_metrics)
+        print(test_metrics)
+        stop
         # collect the results
         tc = [preds[i]]
         tc_lab = meta_data['get_label'](meta_data['class_col'], tc)
@@ -1196,7 +1215,7 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
         # collect summary_results
         with open(meta_data['get_save_path']() + file_stem + 'performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
             forest_performance = json.load(infile)
-        f_perf = forest_performance['Anchors']['test_accuracy']
+        f_perf = forest_performance['main']['test_accuracy']
         p_perf = f_perf # for Anchors, forest pred and Anchors target are always the same
         fid = 1 # for Anchors, forest pred and Anchors target are always the same
         summary_results = [[dataset_name, method, len(labels), 1, \
