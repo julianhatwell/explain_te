@@ -446,7 +446,6 @@ def credit(random_state=123, project_dir=None):
     A15:	continuous.
     A16: +,- (class attribute)
     ''')
-
     return(data_cont)
 
 # german
@@ -482,7 +481,6 @@ def german(random_state=123, project_dir=None):
     The rows represent the actual classification and the columns the predicted classification.
     It is worse to class a customer as good when they are bad (5), than it is to class a customer as bad when they are good (1).
     ''')
-
     return(data_cont)
 
 # lending
@@ -503,7 +501,6 @@ def lending(random_state=123, project_dir=None):
 
     Prepared by Nate George: https://github.com/nateGeorge/preprocess_lending_club_data
     ''')
-
     return(data_cont)
 
 # lending sample: 0.1
@@ -524,7 +521,6 @@ def lending_samp(random_state=123, project_dir=None):
 
     Prepared by Nate George: https://github.com/nateGeorge/preprocess_lending_club_data
     ''')
-
     return(data_cont)
 
 # lending small sample: 0.01
@@ -545,7 +541,6 @@ def lending_small_samp(random_state=123, project_dir=None):
 
     Prepared by Nate George: https://github.com/nateGeorge/preprocess_lending_club_data
     ''')
-
     return(data_cont)
 
 # lending tiny sample: 0.0025
@@ -566,7 +561,6 @@ def lending_tiny_samp(random_state=123, project_dir=None):
 
     Prepared by Nate George: https://github.com/nateGeorge/preprocess_lending_club_data
     ''')
-
     return(data_cont)
 
 # nursery
@@ -592,7 +586,6 @@ def nursery(random_state=123, project_dir=None):
     making DEX (M. Bohanec, V. Rajkovic: Expert system for decision
     making. Sistemica 1(1), pp. 145-157, 1990.).
     ''')
-
     return(data_cont)
 
 # nursery sample: 0.2
@@ -618,7 +611,6 @@ def nursery_samp(random_state=123, project_dir=None):
     making DEX (M. Bohanec, V. Rajkovic: Expert system for decision
     making. Sistemica 1(1), pp. 145-157, 1990.).
     ''')
-
     return(data_cont)
 
 # rcdv
@@ -672,7 +664,6 @@ def rcdv(random_state=123, project_dir=None):
     TIME is the length of time from release from the sample sentence until return to prison in North Carolina, for individuals for whom RECID equals one. TIME is rounded to the nearest month. (In particular, note that TIME equals zero for individuals who return to prison in North Carolina within the first half month after release.) For individuals for whom RECID equals zero, the value of TIME is meaningless. For such individuals, TIME is usually recorded as zero, but it is occasionally recorded as the length of the followup period. We emphasize again that neither value is meaningful, for those individuals for whom RECID equals zero.
     FILE is a variable indicating to which data sample the individual record belongs. The value 1 indicates the analysis sample, 2 the validation sampel and 3 is missing data sample.
     ''')
-
     return(data_cont)
 
 # rcdv sample: 0.1
@@ -726,7 +717,6 @@ def rcdv_samp(random_state=123, project_dir=None):
     TIME is the length of time from release from the sample sentence until return to prison in North Carolina, for individuals for whom RECID equals one. TIME is rounded to the nearest month. (In particular, note that TIME equals zero for individuals who return to prison in North Carolina within the first half month after release.) For individuals for whom RECID equals zero, the value of TIME is meaningless. For such individuals, TIME is usually recorded as zero, but it is occasionally recorded as the length of the followup period. We emphasize again that neither value is meaningful, for those individuals for whom RECID equals zero.
     FILE is a variable indicating to which data sample the individual record belongs. The value 1 indicates the analysis sample, 2 the validation sampel and 3 is missing data sample.
     ''')
-
     return(data_cont)
 
 # readmission
@@ -742,7 +732,6 @@ def readmit(random_state=123, project_dir=None):
     From Kaggle - https://www.kaggle.com/dansbecker/hospital-readmissions
     No further information
     ''')
-
     return(data_cont)
 
 # readmission 0.1 sample
@@ -759,7 +748,6 @@ def readmit_samp(random_state=123, project_dir=None):
     No further information
     0.1 of sample
     ''')
-
     return(data_cont)
 
 # mental health survey 2014
@@ -834,19 +822,20 @@ def mhtech14(random_state=123, project_dir=None):
     obs_consequence: Have you heard of or observed negative consequences for coworkers with mental health conditions in your workplace?
     comments: Any additional notes or comments
     ''')
-
     return(data_cont)
 
 # young people survey - smoking habit
 def ypssmk(random_state=123, project_dir=None):
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'yps.csv.gz',
                     compression='gzip')
-    var_names = [vn for vn in data.columns if vn != 'Smoking']
-    var_names.append('Smoking')
-    data = data[var_names]
     class_col = 'Smoking'
+    var_names = [vn for vn in data.columns if vn != class_col]
+    var_names.append(class_col)
+    data = data[var_names]
+
     data_cont = data_container(
     data = data,
+    class_col = class_col,
     project_dir = project_dir,
     save_dir = 'ypssmk',
     random_state=random_state,
@@ -1031,19 +1020,22 @@ def ypssmk(random_state=123, project_dir=None):
     I spent most of my childhood in a: City - village (categorical)
     I lived most of my childhood in a: house/bungalow - block of flats (categorical)
     ''')
+    return(data_cont)
 
 # young people survey - alcohol habit
 def ypsalc(random_state=123, project_dir=None):
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'yps.csv.gz',
                     compression='gzip')
-    var_names = [vn for vn in data.columns if vn != 'Alcohol']
-    var_names.append('Alcohol')
-    data = data[var_names]
     class_col = 'Alcohol'
+    var_names = [vn for vn in data.columns if vn != class_col]
+    var_names.append(class_col)
+    data = data[var_names]
+
     data_cont = data_container(
     data = data,
+    class_col = class_col,
     project_dir = project_dir,
-    save_dir = 'ypsalc',
+    save_dir = 'ypssmk',
     random_state=random_state,
     spiel = '''
     https://www.kaggle.com/miroslavsabo/young-people-survey
@@ -1226,62 +1218,62 @@ def ypsalc(random_state=123, project_dir=None):
     I spent most of my childhood in a: City - village (categorical)
     I lived most of my childhood in a: house/bungalow - block of flats (categorical)
     ''')
+    return(data_cont)
 
 # noshow
 def noshow(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'noshow.csv.gz',
                     compression='gzip'),
-    class_col = 'noshow',
+    class_col = 'no_show',
     project_dir = project_dir,
     save_dir = 'noshow',
     random_state=random_state,
     spiel = '''
     No further information
     ''')
-
     return(data_cont)
 
-def cervical(random_state=123, project_dir=None):
-        data_cont = data_container(
-        data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cervical.csv.gz',
-                        compression='gzip'),
-        class_col = 'Biopsy',
-        var_types = ['continuous',
-                    'continuous',
-                    'continuous',
-                    'continuous',
-                    'nominal',
-                    'continuous',
-                    'continuous',
-                    'nominal',
-                    'continuous',
-                    'nominal',
-                    'continuous',
-                    'nominal',
-                    'continuous',
-                    'nominal',
-                    'nominal',
-                    'nominal',
-                    'nominal',
-                    'nominal',
-                    'nominal',
-                    'nominal',
-                    'nominal',
-                    'nominal',
-                    'nominal',
-                    'nominal',
-                    'nominal',
-                    'continuous',
-                    'nominal',
-                    'nominal',
-                    'nominal',
-                    'nominal',
-                    'nominal'],
+# noshow_samp
+def noshow_samp(random_state=123, project_dir=None):
+    data_cont = data_container(
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'noshow_samp.csv.gz',
+                    compression='gzip'),
+    class_col = 'no_show',
+    project_dir = project_dir,
+    save_dir = 'noshow_samp',
+    random_state=random_state,
+    spiel = '''
+    No further information
+    ''')
+    return(data_cont)
+
+# noshow_small_samp
+def noshow_small_samp(random_state=123, project_dir=None):
+    data_cont = data_container(
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'noshow_small_samp.csv.gz',
+                    compression='gzip'),
+    class_col = 'no_show',
+    project_dir = project_dir,
+    save_dir = 'noshow_small_samp',
+    random_state=random_state,
+    spiel = '''
+    No further information
+    ''')
+    return(data_cont)
+
+def cervicalh(random_state=123, project_dir=None):
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cervical.csv.gz',
+                    compression='gzip')
+    data.drop(columns=['Schiller', 'Citology', 'Biopsy'])
+    data_cont = data_container(
+        data = data,
+        class_col = 'Hinselmann',
         project_dir = project_dir,
-        save_dir = 'cervical',
+        save_dir = 'cervicalh',
         random_state=random_state,
         spiel = '''
+        This dataset uses 'Hinselmann' as the class column, removing the other three options
         Data Set Information:
         The dataset was collected at 'Hospital Universitario de Caracas' in Caracas, Venezuela. The dataset comprises demographic information, habits, and historic medical records of 858 patients. Several patients decided not to answer some of the questions because of privacy concerns (missing values).
 
@@ -1330,3 +1322,438 @@ def cervical(random_state=123, project_dir=None):
         Citation Request:
         Kelwin Fernandes, Jaime S. Cardoso, and Jessica Fernandes. 'Transfer Learning with Partial Observability Applied to Cervical Cancer Screening.' Iberian Conference on Pattern Recognition and Image Analysis. Springer International Publishing, 2017.
         ''')
+    return(data_cont)
+
+def cervicals(random_state=123, project_dir=None):
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cervical.csv.gz',
+                    compression='gzip')
+    data.drop(columns=['Hinselmann', 'Citology', 'Biopsy'])
+    data_cont = data_container(
+        data = data,
+        class_col = 'Schiller',
+        project_dir = project_dir,
+        save_dir = 'cervicals',
+        random_state=random_state,
+        spiel = '''
+        This dataset uses 'Schiller' as the class column, removing the other three options
+        Data Set Information:
+        The dataset was collected at 'Hospital Universitario de Caracas' in Caracas, Venezuela. The dataset comprises demographic information, habits, and historic medical records of 858 patients. Several patients decided not to answer some of the questions because of privacy concerns (missing values).
+
+        Attribute Information:
+        (int) Age
+        (int) Number of sexual partners
+        (int) First sexual intercourse (age)
+        (int) Num of pregnancies
+        (bool) Smokes
+        (bool) Smokes (years)
+        (bool) Smokes (packs/year)
+        (bool) Hormonal Contraceptives
+        (int) Hormonal Contraceptives (years)
+        (bool) IUD
+        (int) IUD (years)
+        (bool) STDs
+        (int) STDs (number)
+        (bool) STDs:condylomatosis
+        (bool) STDs:cervical condylomatosis
+        (bool) STDs:vaginal condylomatosis
+        (bool) STDs:vulvo-perineal condylomatosis
+        (bool) STDs:syphilis
+        (bool) STDs:pelvic inflammatory disease
+        (bool) STDs:genital herpes
+        (bool) STDs:molluscum contagiosum
+        (bool) STDs:AIDS
+        (bool) STDs:HIV
+        (bool) STDs:Hepatitis B
+        (bool) STDs:HPV
+        (int) STDs: Number of diagnosis
+        (int) STDs: Time since first diagnosis
+        (int) STDs: Time since last diagnosis
+        (bool) Dx:Cancer
+        (bool) Dx:CIN
+        (bool) Dx:HPV
+        (bool) Dx
+        (bool) Hinselmann: target variable
+        (bool) Schiller: target variable
+        (bool) Cytology: target variable
+        (bool) Biopsy: target variable
+
+
+        Relevant Papers:
+        Kelwin Fernandes, Jaime S. Cardoso, and Jessica Fernandes. 'Transfer Learning with Partial Observability Applied to Cervical Cancer Screening.' Iberian Conference on Pattern Recognition and Image Analysis. Springer International Publishing, 2017.
+
+        Citation Request:
+        Kelwin Fernandes, Jaime S. Cardoso, and Jessica Fernandes. 'Transfer Learning with Partial Observability Applied to Cervical Cancer Screening.' Iberian Conference on Pattern Recognition and Image Analysis. Springer International Publishing, 2017.
+        ''')
+    return(data_cont)
+
+def cervicalc(random_state=123, project_dir=None):
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cervical.csv.gz',
+                    compression='gzip')
+    data.drop(columns=['Hinselmann', 'Schiller', 'Biopsy'])
+    data_cont = data_container(
+        data = data,
+        class_col = 'Citology',
+        project_dir = project_dir,
+        save_dir = 'cervicalc',
+        random_state=random_state,
+        spiel = '''
+        This dataset uses 'Citology' as the class column, removing the other three options
+        Data Set Information:
+        The dataset was collected at 'Hospital Universitario de Caracas' in Caracas, Venezuela. The dataset comprises demographic information, habits, and historic medical records of 858 patients. Several patients decided not to answer some of the questions because of privacy concerns (missing values).
+
+        Attribute Information:
+        (int) Age
+        (int) Number of sexual partners
+        (int) First sexual intercourse (age)
+        (int) Num of pregnancies
+        (bool) Smokes
+        (bool) Smokes (years)
+        (bool) Smokes (packs/year)
+        (bool) Hormonal Contraceptives
+        (int) Hormonal Contraceptives (years)
+        (bool) IUD
+        (int) IUD (years)
+        (bool) STDs
+        (int) STDs (number)
+        (bool) STDs:condylomatosis
+        (bool) STDs:cervical condylomatosis
+        (bool) STDs:vaginal condylomatosis
+        (bool) STDs:vulvo-perineal condylomatosis
+        (bool) STDs:syphilis
+        (bool) STDs:pelvic inflammatory disease
+        (bool) STDs:genital herpes
+        (bool) STDs:molluscum contagiosum
+        (bool) STDs:AIDS
+        (bool) STDs:HIV
+        (bool) STDs:Hepatitis B
+        (bool) STDs:HPV
+        (int) STDs: Number of diagnosis
+        (int) STDs: Time since first diagnosis
+        (int) STDs: Time since last diagnosis
+        (bool) Dx:Cancer
+        (bool) Dx:CIN
+        (bool) Dx:HPV
+        (bool) Dx
+        (bool) Hinselmann: target variable
+        (bool) Schiller: target variable
+        (bool) Cytology: target variable
+        (bool) Biopsy: target variable
+
+
+        Relevant Papers:
+        Kelwin Fernandes, Jaime S. Cardoso, and Jessica Fernandes. 'Transfer Learning with Partial Observability Applied to Cervical Cancer Screening.' Iberian Conference on Pattern Recognition and Image Analysis. Springer International Publishing, 2017.
+
+        Citation Request:
+        Kelwin Fernandes, Jaime S. Cardoso, and Jessica Fernandes. 'Transfer Learning with Partial Observability Applied to Cervical Cancer Screening.' Iberian Conference on Pattern Recognition and Image Analysis. Springer International Publishing, 2017.
+        ''')
+    return(data_cont)
+
+def cervicalb(random_state=123, project_dir=None):
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cervical.csv.gz',
+                    compression='gzip')
+    data.drop(columns=['Hinselmann', 'Schiller', 'Citology'])
+    data_cont = data_container(
+        data = data,
+        class_col = 'Biopsy',
+        project_dir = project_dir,
+        save_dir = 'cervicalb',
+        random_state=random_state,
+        spiel = '''
+        This dataset uses 'Citology' as the class column, removing the other three options
+        Data Set Information:
+        The dataset was collected at 'Hospital Universitario de Caracas' in Caracas, Venezuela. The dataset comprises demographic information, habits, and historic medical records of 858 patients. Several patients decided not to answer some of the questions because of privacy concerns (missing values).
+
+        Attribute Information:
+        (int) Age
+        (int) Number of sexual partners
+        (int) First sexual intercourse (age)
+        (int) Num of pregnancies
+        (bool) Smokes
+        (bool) Smokes (years)
+        (bool) Smokes (packs/year)
+        (bool) Hormonal Contraceptives
+        (int) Hormonal Contraceptives (years)
+        (bool) IUD
+        (int) IUD (years)
+        (bool) STDs
+        (int) STDs (number)
+        (bool) STDs:condylomatosis
+        (bool) STDs:cervical condylomatosis
+        (bool) STDs:vaginal condylomatosis
+        (bool) STDs:vulvo-perineal condylomatosis
+        (bool) STDs:syphilis
+        (bool) STDs:pelvic inflammatory disease
+        (bool) STDs:genital herpes
+        (bool) STDs:molluscum contagiosum
+        (bool) STDs:AIDS
+        (bool) STDs:HIV
+        (bool) STDs:Hepatitis B
+        (bool) STDs:HPV
+        (int) STDs: Number of diagnosis
+        (int) STDs: Time since first diagnosis
+        (int) STDs: Time since last diagnosis
+        (bool) Dx:Cancer
+        (bool) Dx:CIN
+        (bool) Dx:HPV
+        (bool) Dx
+        (bool) Hinselmann: target variable
+        (bool) Schiller: target variable
+        (bool) Cytology: target variable
+        (bool) Biopsy: target variable
+
+
+        Relevant Papers:
+        Kelwin Fernandes, Jaime S. Cardoso, and Jessica Fernandes. 'Transfer Learning with Partial Observability Applied to Cervical Cancer Screening.' Iberian Conference on Pattern Recognition and Image Analysis. Springer International Publishing, 2017.
+
+        Citation Request:
+        Kelwin Fernandes, Jaime S. Cardoso, and Jessica Fernandes. 'Transfer Learning with Partial Observability Applied to Cervical Cancer Screening.' Iberian Conference on Pattern Recognition and Image Analysis. Springer International Publishing, 2017.
+        ''')
+    return(data_cont)
+
+def breast(random_state=123, project_dir=None):
+        data_cont = data_container(
+        data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'breast.csv.gz',
+                        compression='gzip'),
+        class_col = 'mb',
+
+        project_dir = project_dir,
+        save_dir = 'breast',
+        random_state=random_state,
+        spiel = '''
+        Creators:
+        1. Dr. William H. Wolberg, General Surgery Dept.
+        University of Wisconsin, Clinical Sciences Center
+        Madison, WI 53792
+        wolberg '@' eagle.surgery.wisc.edu
+
+        2. W. Nick Street, Computer Sciences Dept.
+        University of Wisconsin, 1210 West Dayton St., Madison, WI 53706
+        street '@' cs.wisc.edu 608-262-6619
+
+        3. Olvi L. Mangasarian, Computer Sciences Dept.
+        University of Wisconsin, 1210 West Dayton St., Madison, WI 53706
+        olvi '@' cs.wisc.edu
+
+        Donor:
+        Nick Street
+
+        Data Set Information:
+        Features are computed from a digitized image of a fine needle aspirate (FNA) of a breast mass. They describe characteristics of the cell nuclei present in the image. A few of the images can be found at [Web Link]
+        Separating plane described above was obtained using Multisurface Method-Tree (MSM-T) [K. P. Bennett, "Decision Tree Construction Via Linear Programming." Proceedings of the 4th Midwest Artificial Intelligence and Cognitive Science Society, pp. 97-101, 1992], a classification method which uses linear programming to construct a decision tree. Relevant features were selected using an exhaustive search in the space of 1-4 features and 1-3 separating planes.
+        The actual linear program used to obtain the separating plane in the 3-dimensional space is that described in: [K. P. Bennett and O. L. Mangasarian: "Robust Linear Programming Discrimination of Two Linearly Inseparable Sets", Optimization Methods and Software 1, 1992, 23-34].
+
+        This database is also available through the UW CS ftp server:
+        ftp ftp.cs.wisc.edu
+        cd math-prog/cpo-dataset/machine-learn/WDBC/
+
+        Attribute Information:
+
+        1) ID number
+        2) Diagnosis (M = malignant, B = benign)
+        3-32)
+        ''')
+        return(data_cont)
+
+def thyroid(random_state=123, project_dir=None):
+        data_cont = data_container(
+        data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'thyroid.csv.gz',
+                        compression='gzip'),
+        class_col = 'diagnosis',
+
+        project_dir = project_dir,
+        save_dir = 'thyroid',
+        random_state=random_state,
+        spiel = '''
+        Note: diagnosis has been rendered to a two-class column with possible values normal or abnormal.
+
+        Thyroid disease records supplied by the Garavan Institute and J. Ross
+        Quinlan, New South Wales Institute, Syndney, Australia. 1987.
+
+        This directory contains the latest version of an archive of thyroid diagnoses
+        obtained from the Garvan Institute, consisting of 9172 records from 1984 to
+        early 1987.
+
+        Attribute Name			Possible Values
+    	--------------			---------------
+    	age:				continuous.
+    	sex:				M, F.
+    	on thyroxine:			f, t.
+    	query on thyroxine:		f, t.
+    	on antithyroid medication:	f, t.
+    	sick:				f, t.
+    	pregnant:			f, t.
+    	thyroid surgery:		f, t.
+    	I131 treatment:			f, t.
+    	query hypothyroid:		f, t.
+    	query hyperthyroid:		f, t.
+    	lithium:			f, t.
+    	goitre:				f, t.
+    	tumor:				f, t.
+    	hypopituitary:			f, t.
+    	psych:				f, t.
+    	TSH measured:			f, t.
+    	TSH:				continuous.
+    	T3 measured:			f, t.
+    	T3:				continuous.
+    	TT4 measured:			f, t.
+    	TT4:				continuous.
+    	T4U measured:			f, t.
+    	T4U:				continuous.
+    	FTI measured:			f, t.
+    	FTI:				continuous.
+    	TBG measured:			f, t.
+    	TBG:				continuous.
+    	referral source:		WEST, STMW, SVHC, SVI, SVHD, other.
+
+        The original diagnosis consists of a string of letters indicating diagnosed conditions.
+
+        A diagnosis "-" indicates no condition requiring comment.
+        A diagnosis of the
+        form "X|Y" is interpreted as "consistent with X, but more likely Y".
+        The
+        conditions are divided into groups where each group corresponds to a class of
+        comments.
+
+
+        Letter	Diagnosis
+		------	---------
+        hyperthyroid conditions:
+		      A	hyperthyroid
+		      B	T3 toxic
+		      C	toxic goitre
+		      D	secondary toxic
+	    hypothyroid conditions:
+		      E	hypothyroid
+		      F	primary hypothyroid
+		      G	compensated hypothyroid
+		      H	secondary hypothyroid
+	    binding protein:
+		      I	increased binding protein
+		      J	decreased binding protein
+	    general health:
+		      K	concurrent non-thyroidal illness
+	    replacement therapy:
+	          L	consistent with replacement therapy
+		      M	underreplaced
+		      N	overreplaced
+	    antithyroid treatment:
+		      O	antithyroid drugs
+		      P	I131 treatment
+		      Q	surgery
+	    miscellaneous:
+              R	discordant assay results
+		      S	elevated TBG
+		      T	elevated thyroid hormones
+
+        In experiments with an earlier version of this archive, decision trees were
+        derived for the most frequent classes of comments, namely:
+        hyperthyroid conditions (A, B, C, D)
+        hypothyroid conditions (E, F, G, H)
+        binding protein (I, J)
+        general health (K)
+        replacement therapy (L, M, N)
+        discordant results (R)
+        ''')
+        return(data_cont)
+
+def thyroid_samp(random_state=123, project_dir=None):
+        data_cont = data_container(
+        data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'thyroid_samp.csv.gz',
+                        compression='gzip'),
+        class_col = 'diagnosis',
+
+        project_dir = project_dir,
+        save_dir = 'thyroid',
+        random_state=random_state,
+        spiel = '''
+        Note: diagnosis has been rendered to a two-class column with possible values normal or abnormal.
+
+        Thyroid disease records supplied by the Garavan Institute and J. Ross
+        Quinlan, New South Wales Institute, Syndney, Australia. 1987.
+
+        This directory contains the latest version of an archive of thyroid diagnoses
+        obtained from the Garvan Institute, consisting of 9172 records from 1984 to
+        early 1987.
+
+        Attribute Name			Possible Values
+    	--------------			---------------
+    	age:				continuous.
+    	sex:				M, F.
+    	on thyroxine:			f, t.
+    	query on thyroxine:		f, t.
+    	on antithyroid medication:	f, t.
+    	sick:				f, t.
+    	pregnant:			f, t.
+    	thyroid surgery:		f, t.
+    	I131 treatment:			f, t.
+    	query hypothyroid:		f, t.
+    	query hyperthyroid:		f, t.
+    	lithium:			f, t.
+    	goitre:				f, t.
+    	tumor:				f, t.
+    	hypopituitary:			f, t.
+    	psych:				f, t.
+    	TSH measured:			f, t.
+    	TSH:				continuous.
+    	T3 measured:			f, t.
+    	T3:				continuous.
+    	TT4 measured:			f, t.
+    	TT4:				continuous.
+    	T4U measured:			f, t.
+    	T4U:				continuous.
+    	FTI measured:			f, t.
+    	FTI:				continuous.
+    	TBG measured:			f, t.
+    	TBG:				continuous.
+    	referral source:		WEST, STMW, SVHC, SVI, SVHD, other.
+
+        The original diagnosis consists of a string of letters indicating diagnosed conditions.
+
+        A diagnosis "-" indicates no condition requiring comment.
+        A diagnosis of the
+        form "X|Y" is interpreted as "consistent with X, but more likely Y".
+        The
+        conditions are divided into groups where each group corresponds to a class of
+        comments.
+
+
+        Letter	Diagnosis
+		------	---------
+        hyperthyroid conditions:
+		      A	hyperthyroid
+		      B	T3 toxic
+		      C	toxic goitre
+		      D	secondary toxic
+	    hypothyroid conditions:
+		      E	hypothyroid
+		      F	primary hypothyroid
+		      G	compensated hypothyroid
+		      H	secondary hypothyroid
+	    binding protein:
+		      I	increased binding protein
+		      J	decreased binding protein
+	    general health:
+		      K	concurrent non-thyroidal illness
+	    replacement therapy:
+	          L	consistent with replacement therapy
+		      M	underreplaced
+		      N	overreplaced
+	    antithyroid treatment:
+		      O	antithyroid drugs
+		      P	I131 treatment
+		      Q	surgery
+	    miscellaneous:
+              R	discordant assay results
+		      S	elevated TBG
+		      T	elevated thyroid hormones
+
+        In experiments with an earlier version of this archive, decision trees were
+        derived for the most frequent classes of comments, namely:
+        hyperthyroid conditions (A, B, C, D)
+        hypothyroid conditions (E, F, G, H)
+        binding protein (I, J)
+        general health (K)
+        replacement therapy (L, M, N)
+        discordant results (R)
+        ''')
+        return(data_cont)

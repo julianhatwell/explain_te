@@ -656,7 +656,6 @@ def gpdg_get_oversample(population, halloffame):
 
     index = np.max(np.argwhere(fitness_diff == np.amax(fitness_diff)).flatten().tolist())
     fitness_value_thr = fitness_values[index]
-
     oversample = list()
 
     for p in population:
@@ -693,7 +692,9 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
                                               cxpb=cxpb, mutpb=mutpb, ngen=ngen, verbose=False)
 
         Xsso = gpdg_get_oversample(population, halloffame)
-        Xgp.append(Xsso)
+        if Xsso:
+            print('in sso')
+            Xgp.append(Xsso)
 
     if size_sdo > 0.0:
         toolbox_sdo = gpdg_setup_toolbox(x, x_enc, feature_values, bb, init=gpdg_record_init, init_params=x, evaluate=gpdg_fitness_sdo,
@@ -705,7 +706,9 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
                                               cxpb=cxpb, mutpb=mutpb, ngen=ngen, verbose=False)
 
         Xsdo = gpdg_get_oversample(population, halloffame)
-        Xgp.append(Xsdo)
+        if Xsdo: # can't be empty list
+            print('in sdo')
+            Xgp.append(Xsdo)
 
     if size_dso > 0.0:
         toolbox_dso = gpdg_setup_toolbox(x, x_enc, feature_values, bb, init=gpdg_record_init, init_params=x, evaluate=gpdg_fitness_dso,
@@ -717,7 +720,9 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
                                               cxpb=cxpb, mutpb=mutpb, ngen=ngen, verbose=False)
 
         Xdso = gpdg_get_oversample(population, halloffame)
-        Xgp.append(Xdso)
+        if Xdso:
+            print('in sso')
+            Xgp.append(Xdso)
 
     if size_ddo > 0.0:
         toolbox_ddo = gpdg_setup_toolbox(x, x_enc, feature_values, bb, init=gpdg_record_init, init_params=x, evaluate=gpdg_fitness_ddo,
@@ -729,7 +734,9 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
                                               cxpb=cxpb, mutpb=mutpb, ngen=ngen, verbose=False)
 
         Xddo = gpdg_get_oversample(population, halloffame)
-        Xgp.append(Xddo)
+        if Xddo:
+            print('in ddo')
+            Xgp.append(Xddo)
 
     Xgp = np.concatenate((Xgp), axis=0)
 
@@ -915,7 +922,7 @@ def lore_build_df2explain(bb, X, dataset):
     return dfZ
 
 
-def lore_genetic_neighborhood(dfZ, x, blackbox, dataset):
+def lore_genetic_neighborhood(dfZ, x, blackbox, dataset, popsize=1000):
     discrete = dataset['discrete']
     continuous = dataset['continuous']
     class_name = dataset['class_name']
@@ -932,13 +939,18 @@ def lore_genetic_neighborhood(dfZ, x, blackbox, dataset):
                               cdist=loredistfun.normalized_euclidean_distance)
 
     Z = gpdg_generate_data(x, x_enc, feature_values, blackbox, discrete_no_class, continuous, class_name, idx_features,
-                      distance_function, neigtype={'ss': 0.5, 'sd': 0.5}, population_size=1000, halloffame_ratio=0.1,
+                      distance_function,
+                      neigtype={'ss': 0.5, 'sd': 0.5},
+                      population_size=popsize, halloffame_ratio=0.1,
                       alpha1=0.5, alpha2=0.5, eta1=1.0, eta2=0.0,  tournsize=3, cxpb=0.5, mutpb=0.2, ngen=10)
+    if not Z.tolist():
+        return(None, Z)
     zy = blackbox.predict(x_enc.transform(Z).todense())
-    if len(np.unique(zy)) == 1:
+    if len(np.unique(zy)) == 1: # the model is predicting everything the same
         # print('qui')
         label_encoder = dataset['label_encoder']
         dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0]
+        dfZ = lore_build_df2explain(blackbox, dfZ, dataset)
         neig_indexes = loreutil.get_closest_diffoutcome(dfZ, dfx, discrete, continuous, class_name,
                                                blackbox, label_encoder, distance_function, k=100)
         Zn, _ = loreutil.label_encode(dfZ, discrete, label_encoder)
@@ -947,12 +959,84 @@ def lore_genetic_neighborhood(dfZ, x, blackbox, dataset):
     dfZ = lore_build_df2explain(blackbox, Z, dataset)
     return dfZ, Z
 
+
+def lore_random_neighborhood(dfZ, x, blackbox, dataset, popsize=1000, stratified=True):
+    discrete = dataset['discrete']
+    continuous = dataset['continuous']
+    label_encoder = dataset['label_encoder']
+    class_name = dataset['class_name']
+    columns = dataset['columns']
+    features_type = dataset['features_type']
+    x_enc = dataset['instance_encoder']
+
+    if stratified:
+
+        def distance_function(x0, x1, discrete, continuous, class_name):
+            return loredistfun.mixed_distance(x0, x1, discrete, continuous, class_name,
+                                  ddist=loredistfun.simple_match_distance,
+                                  cdist=loredistfun.normalized_euclidean_distance)
+
+        dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0]
+        # need to add the predictions back in
+        dfZ = lore_build_df2explain(blackbox, dfZ, dataset)
+        neig_indexes = loreutil.get_closest_diffoutcome(dfZ, dfx, discrete, continuous, class_name,
+                                               blackbox, label_encoder, distance_function, k=100)
+
+        Z, _ = loreutil.label_encode(dfZ, discrete, label_encoder)
+        Z = Z.iloc[neig_indexes, Z.columns != class_name].values
+        Z = lore_generate_random_data(Z, class_name, columns, discrete, continuous, features_type, size=popsize, uniform=True)
+        dfZ = lore_build_df2explain(blackbox, Z, dataset)
+
+        return dfZ, Z
+
+    else:
+
+        Z, _ = lroeutil.label_encode(dfZ, discrete, label_encoder)
+        Z = Z.iloc[:, Z.columns != class_name].values
+        Z = lore_generate_random_data(Z, class_name, columns, discrete, continuous, features_type, size=popsize, uniform=True)
+        dfZ = util.build_df2explain(blackbox, Z, dataset)
+
+        return dfZ, Z
+
+
+def lore_generate_random_data(X, class_name, columns, discrete, continuous, features_type, size=1000, uniform=True):
+    if isinstance(X, pd.DataFrame):
+        X = X.values
+    X1 = list()
+    columns1 = list(columns)
+    columns1.remove(class_name)
+    for i, col in enumerate(columns1):
+        values = X[:, i]
+        diff_values = np.unique(values)
+        prob_values = [1.0 * list(values).count(val) / len(values) for val in diff_values]
+        if col in discrete:
+            if uniform:
+                new_values = np.random.choice(diff_values, size)
+            else:
+                new_values = np.random.choice(diff_values, size, prob_values)
+        elif col in continuous:
+            mu = np.mean(values)
+            sigma = np.std(values)
+            if sigma <= 0.0:
+                new_values = np.array([values[0]] * size)
+            else:
+                new_values = np.random.normal(mu, sigma, size)
+        if features_type[col] == 'integer':
+            new_values = new_values.astype(int)
+        X1.append(new_values)
+    X1 = np.concatenate((X, np.column_stack(X1)), axis=0).tolist()
+    if isinstance(X, pd.DataFrame):
+        X1 = pd.DataFrame(data=X1, columns=columns1)
+    return X1
+
+
 # modified to return a boolean index
 def lore_get_covered(rule, X, dataset):
     covered_indexes = list()
     for x in X:
         covered_indexes.append(lore.is_satisfied(x, rule, dataset['discrete'], dataset['features_type']))
     return covered_indexes
+
 
 def lore_explain(instance, X_train, dataset, blackbox,
                 discrete_use_probabilities=False,
@@ -969,26 +1053,11 @@ def lore_explain(instance, X_train, dataset, blackbox,
     possible_outcomes = dataset['possible_outcomes']
     path_data = dataset['path_data']
     x_enc = dataset['instance_encoder']
-
-    # new
-    # y2E = blackbox.predict(ds_container.X_train_enc)
-    # dfZ = ds_container.X_train # unencoded
     X2E = X_train.to_numpy()
     x = instance.to_numpy()
-    # dfX2E = lore_build_df2explain(blackbox, X2E, x_enc, dataset).to_dict('records')
     dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0] # recoded single record
     bb_outcome = blackbox.predict(np.asarray(x_enc.transform([x]).todense()))[0]
 
-    # old
-    # dfZ = ds_container.X_test # unencoded
-    # idx_record2explain = 0 # TODO: this has to be automated for the benchmark
-    # x = ds_container.X_test.iloc[idx_record2explain].to_numpy()
-    # X2E=ds_container.X_test.to_numpy()
-    # dfX2E = lore_build_df2explain(blackbox, X2E, x_enc, dataset).to_dict('records')
-    # dfx = dfX2E[idx_record2explain] # recoded single record
-
-    print('starting calculate features')
-    print(time.asctime( time.localtime(time.time()) ))
     # Dataset Preprocessing
     dataset['feature_values'] = gpdg_calculate_feature_values(X2E, columns, class_name, discrete, continuous, X2E.shape[0],
                                                          discrete_use_probabilities, continuous_function_estimation)
@@ -996,17 +1065,20 @@ def lore_explain(instance, X_train, dataset, blackbox,
     print('starting generate neighbourhood')
     print(time.asctime( time.localtime(time.time()) ))
     # Generate Neighborhood - seeded by explananandum instance and training distribution
-    dfZ, Z = lore_genetic_neighborhood(X_train, x, blackbox, dataset)  #generate_random_data, #genetic_neighborhood, random_neighborhood
+    dfZ, Z = lore_genetic_neighborhood(X_train, x, blackbox, dataset, popsize=X2E.shape[0])
+    if not Z.tolist(): # failed to generate a genetic neighborhood, values insufficiently different?
+        print('unable to create genetic neighbourhood')
+        dfZ, Z = lore_random_neighborhood(X_train, x, blackbox, dataset, popsize=X2E.shape[0])
+
+    print('endings generate neighbourhood')
+    print(time.asctime( time.localtime(time.time()) ))
+    print()
     y_pred_bb = blackbox.predict(np.asarray(x_enc.transform(Z).todense()))
 
-    print('starting build dec tree')
-    print(time.asctime( time.localtime(time.time()) ))
     # Build Decision Tree
     dt, dt_dot = loreyadt.fit(dfZ, class_name, columns, features_type, discrete, continuous,
                             filename=dataset['name'], path=path_data, sep=';', log=log)
 
-    print('starting apply tree')
-    print(time.asctime( time.localtime(time.time()) ))
     # Apply Decision Tree on instance to explain
     cc_outcome, rule, tree_path = loreyadt.predict_rule(dt, dfx, class_name, features_type, discrete, continuous)
     # Apply Decision Tree on neighborhood
@@ -1024,15 +1096,10 @@ def lore_explain(instance, X_train, dataset, blackbox,
     if class_name in label_encoder:
         y_pred_cc = label_encoder[class_name].transform(y_pred_cc)
 
-    print('starting counterfactuals')
-    print(time.asctime( time.localtime(time.time()) ))
     # Extract Coutnerfactuals
     diff_outcome = loreutil.get_diff_outcome(bb_outcome, possible_outcomes)
     counterfactuals = loreyadt.get_counterfactuals(dt, tree_path, rule, diff_outcome,
                                                  class_name, continuous, features_type)
-
-    print('endings')
-    print(time.asctime( time.localtime(time.time()) ))
 
     explanation = (rule, counterfactuals)
 
@@ -1129,44 +1196,23 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
         lore_elapsed_time = lore_end_time - lore_start_time
 
         # Get train and test idx (boolean) covered by the rule
-
-        # from inside lore explain originally.
-        # print('x = %s' % dfx)
-        # print('r = %s --> %s' % (explanation[0][1], explanation[0][0]))
-        # for delta in explanation[1]:
-        #     print('delta', delta)
-        #
-        # rule[0] is the prediction, rule[1] is the rule
         lore_train_idx = lore_get_covered(rule[1], lore_X_train, lore_dataset)
         lore_test_idx = lore_get_covered(rule[1], lore_loo_instances, lore_dataset)
-        # print(len(covered))
-        # print(covered)
-        #
-        # print(explanation[0][0][dataset['class_name']], '<<<<')
-        #
-        # def eval(x, y):
-        #     return 1 if x == y else 0
-        #
-        # precision = [1-eval(v, explanation[0][0][dataset['class_name']]) for v in y2E[covered]]
-        # print(precision)
-        # print(np.mean(precision), np.std(precision))
 
         # create a class to run the standard evaluation
         train_metrics = evaluator.evaluate(prior_labels=sample_labels, post_idx=lore_train_idx)
         test_metrics = evaluator.evaluate(prior_labels=loo_preds, post_idx=lore_test_idx)
-        print(train_metrics)
-        print(test_metrics)
-        stop
+
         # collect the results
-        tc = [preds[i]]
+        tc = [forest_preds[i]]
         tc_lab = meta_data['get_label'](meta_data['class_col'], tc)
 
         true_class = ds_container.y_test.loc[instance_id]
         results[i] = [dataset_name,
             instance_id,
             method,
-            ' AND '.join(explanation.names()),
-            len(explanation.names()),
+            rule[1],
+            len(rule[1].keys()),
             true_class,
             meta_data['class_names'][true_class],
             tc[0],
@@ -1174,7 +1220,7 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
             tc[0],
             tc_lab[0],
             np.array([tree.predict(instances_enc[i]) == tc for tree in forest.estimators_]).mean(), # majority vote share
-            0, # accumulated weight not meaningful for Anchors
+            0, # accumulated weight not meaningful for lore
             test_metrics['prior']['p_counts'][tc][0],
             train_metrics['posterior'][tc][0],
             train_metrics['stability'][tc][0],
@@ -1204,7 +1250,7 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
             test_metrics['coverage'],
             test_metrics['xcoverage'],
             test_metrics['kl_div'],
-            anch_elapsed_time]
+            lore_elapsed_time]
 
     if save_path is not None:
         save_results_file = method + '_rnst_' + str(random_state)
@@ -1248,6 +1294,8 @@ def benchmarking_prep(datasets, model, tuning, project_dir,
 
         # diagnostic for starting on a specific instance
         tt.current_row_test = start_instance
+        # lore needs own copy of tt, as the internal counters need same start point
+        tt_lore = deepcopy(tt)
 
         # lore specific dataset format
         lore_dataset = lore_prepare_dataset(dataset_name, mydata, meta_data)
@@ -1284,7 +1332,7 @@ def benchmarking_prep(datasets, model, tuning, project_dir,
         # collect
         benchmark_items[dataset_name] = {'main' : {'forest' : rf, 'ds_container' : tt},
                                         'anchors' : {'forest' : rf_anch, 'ds_container' : tt_anch, 'explainer' : anchors_explainer},
-                                        'lore' : {'dataset' : lore_dataset},
+                                        'lore' : {'dataset' : lore_dataset, 'ds_container' : tt},
                                         'meta_data' : meta_data}
         o_print('', verbose)
     return(benchmark_items)
@@ -1351,7 +1399,7 @@ def do_benchmarking(benchmark_items, verbose=True, **control):
 
         if control['method'] == 'lore':
             lore_benchmark(forest=benchmark_items[b]['main']['forest'],
-                                    ds_container=benchmark_items[b]['main']['ds_container'],
+                                    ds_container=benchmark_items[b]['lore']['ds_container'],
                                     meta_data=benchmark_items[b]['meta_data'],
                                     model=control['model'],
                                     lore_dataset=benchmark_items[b]['lore']['dataset'],
