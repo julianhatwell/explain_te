@@ -738,7 +738,10 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
             print('in ddo')
             Xgp.append(Xddo)
 
-    Xgp = np.concatenate((Xgp), axis=0)
+    try: # will fail if Xgp is still an empty list
+        Xgp = np.concatenate((Xgp), axis=0)
+    except:
+        return(None)
 
     if return_logbook:
         return Xgp, logbook
@@ -943,7 +946,7 @@ def lore_genetic_neighborhood(dfZ, x, blackbox, dataset, popsize=1000):
                       neigtype={'ss': 0.5, 'sd': 0.5},
                       population_size=popsize, halloffame_ratio=0.1,
                       alpha1=0.5, alpha2=0.5, eta1=1.0, eta2=0.0,  tournsize=3, cxpb=0.5, mutpb=0.2, ngen=10)
-    if not Z.tolist():
+    if Z is None:
         return(None, Z)
     zy = blackbox.predict(x_enc.transform(Z).todense())
     if len(np.unique(zy)) == 1: # the model is predicting everything the same
@@ -954,6 +957,7 @@ def lore_genetic_neighborhood(dfZ, x, blackbox, dataset, popsize=1000):
         neig_indexes = loreutil.get_closest_diffoutcome(dfZ, dfx, discrete, continuous, class_name,
                                                blackbox, label_encoder, distance_function, k=100)
         Zn, _ = loreutil.label_encode(dfZ, discrete, label_encoder)
+        print(Z)
         Zn = Zn.iloc[neig_indexes, Z.columns != class_name].values
         Z = np.concatenate((Z, Zn), axis=0)
     dfZ = lore_build_df2explain(blackbox, Z, dataset)
@@ -1062,12 +1066,13 @@ def lore_explain(instance, X_train, dataset, blackbox,
     dataset['feature_values'] = gpdg_calculate_feature_values(X2E, columns, class_name, discrete, continuous, X2E.shape[0],
                                                          discrete_use_probabilities, continuous_function_estimation)
 
-    print('starting generate neighbourhood')
+    print('starting generate genetic neighbourhood')
     print(time.asctime( time.localtime(time.time()) ))
     # Generate Neighborhood - seeded by explananandum instance and training distribution
     dfZ, Z = lore_genetic_neighborhood(X_train, x, blackbox, dataset, popsize=X2E.shape[0])
-    if not Z.tolist(): # failed to generate a genetic neighborhood, values insufficiently different?
+    if Z is None: # failed to generate a genetic neighborhood, values insufficiently different?
         print('unable to create genetic neighbourhood')
+        print('starting generate random neighbourhood')
         dfZ, Z = lore_random_neighborhood(X_train, x, blackbox, dataset, popsize=X2E.shape[0])
 
     print('endings generate neighbourhood')
@@ -1172,7 +1177,8 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
 
     for i in range(len(labels)):
         instance_id = labels.index[i]
-        if i % 10 == 0: o_print('Working on ' + method + ' for instance ' + str(instance_id), verbose)
+        #if i % 10 == 0:
+        o_print('Working on ' + method + ' for instance ' + str(instance_id), verbose)
 
         # get test sample by leave-one-out on current instance
         loo_instances, _, loo_instances_enc, _, loo_true_labels = ds_container.get_loo_instances(instance_id, which_split='test')
@@ -1294,8 +1300,9 @@ def benchmarking_prep(datasets, model, tuning, project_dir,
 
         # diagnostic for starting on a specific instance
         tt.current_row_test = start_instance
-        # lore needs own copy of tt, as the internal counters need same start point
+        # other methods need own copy of tt, as the internal counters need same start point
         tt_lore = deepcopy(tt)
+        tt_dfrgTrs = deepcopy(tt)
 
         # lore specific dataset format
         lore_dataset = lore_prepare_dataset(dataset_name, mydata, meta_data)
@@ -1317,6 +1324,8 @@ def benchmarking_prep(datasets, model, tuning, project_dir,
             # preprocessing - discretised continuous X matrix has been added and also needs an updated var_dict
             # plus returning the fitted explainer that holds the data distribution
             tt_anch, anchors_explainer = Anchors_preproc(ds_container=tt, meta_data=meta_data)
+            # diagnostic for starting on a specific instance
+            tt_anch.current_row_test = start_instance
 
             # no tuning grid because we want to take best params from a previous run (see try/except above)
             rf_anch = rt.forest_prep(ds_container=tt_anch,
@@ -1332,7 +1341,8 @@ def benchmarking_prep(datasets, model, tuning, project_dir,
         # collect
         benchmark_items[dataset_name] = {'main' : {'forest' : rf, 'ds_container' : tt},
                                         'anchors' : {'forest' : rf_anch, 'ds_container' : tt_anch, 'explainer' : anchors_explainer},
-                                        'lore' : {'dataset' : lore_dataset, 'ds_container' : tt},
+                                        'dfrgTrs' : {'ds_container' : tt_dfrgTrs},
+                                        'lore' : {'dataset' : lore_dataset, 'ds_container' : tt_lore},
                                         'meta_data' : meta_data}
         o_print('', verbose)
     return(benchmark_items)
@@ -1378,7 +1388,7 @@ def do_benchmarking(benchmark_items, verbose=True, **control):
                                 random_state=control['random_state'],
                                 verbose=verbose)
         if control['method'] == 'defragTrees':
-            dfrgtrs, eval_start_time, defTrees_elapsed_time = defragTrees_prep(ds_container=benchmark_items[b]['main']['ds_container'],
+            dfrgtrs, eval_start_time, defTrees_elapsed_time = defragTrees_prep(ds_container=benchmark_items[b]['dfrgTrs']['ds_container'],
                                                                     meta_data=benchmark_items[b]['meta_data'],
                                                                     forest=benchmark_items[b]['main']['forest'],
                                                                     Kmax=control['Kmax'],

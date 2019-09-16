@@ -790,7 +790,7 @@ if True:
              replace("No - because it would impact me negatively", "no").replace("Yes - I was aware of all of them", "all").
              replace("I was aware of some", "some").replace("N/A (not currently aware)", "no").
              replace("No - I only became aware later", "no").replace("Yes - I experienced", "yes").
-             replace("Maybe/Not sure", "not sure").replace("Yes - I observed", "obs").
+             replace("Maybe/Not sure", "not sure").replace("Yes - I observed", "yes").
              replace("Yes - at all of my previous employers", "yes").replace("performance - ", "yes").
              replace("Honestly,I", "I").replace("with ,y", "with my").replace("pay,ents", "payments").
              replace("awareness,more", "awareness - more").replace("crazy,", "crazy").replace("neutral,", "neutral").
@@ -803,6 +803,7 @@ if True:
              replace("Yes - I think they would", "yes").replace("Maybe", "possibly").
              replace("Somewhat open", "some").replace("Somewhat not open", "less").replace("Very open", "always").
              replace("Not open at all", "none").replace("Neutral", "neutral").replace("Yes", "yes").replace("No", "no").
+             replace('Somewhat ', '').replace('Very', 'very').replace('Unsure', 'not sure').replace('Sometimes', 'sometimes').
              split(',') for i in range(len(lines))]
     names = [nm.replace('"', '').strip() for nm in lines[0]]
     lines = lines[1:]
@@ -826,24 +827,26 @@ if True:
         mhtech['How many employees does your company or organization have?'].apply(minempsMap)
 
     def intyesnoMap(x):
-        if x == '1':
+        if str(x) == '1':
             return('yes')
-        elif x == '0':
+        elif str(x) == '0':
             return('no')
         else:
             return('not sure')
 
     def notsureMap(x):
-        if x == '' or x == 'Maybe':
+        if x == '' or x == 'Maybe' or x == 'N/A' or x == 'no - not sure any':
             return('not sure')
+    #     elif x == 'possibly':
+    #         return('some')
         else:
-            return(x)
+            return(x.lower())
 
     def notapplicMap(x):
-        if x == '' or x == 'not applicable (I do not have a mental illness)' or x == 'not eligible':
+        if x == '' or x == 'not applicable (I do not have a mental illness)' or x == 'not eligible' or x == 'N/A':
             return('not applicable')
         else:
-            return(x)
+            return(x.lower())
 
     def definitelyyesnoMap(x):
         if x == 'definitely':
@@ -851,7 +854,7 @@ if True:
         elif x == 'definitely not':
             return('no')
         else:
-            return(x)
+            return(x.lower())
 
     def regionMap(x):
         if x in ['United States', 'Canada', 'Other', 'United States of America']:
@@ -902,10 +905,12 @@ if True:
     mhtech.drop('What country do you work in?', 1, inplace=True)
 
 
-    for c in ['Is your employer primarily a tech company/organization?',
-             'Is your primary role within your company related to tech/IT?',
+    for c in ['Are you self-employed?',
+              'Is your employer primarily a tech company/organization?',
+              'Is your primary role within your company related to tech/IT?',
               'Do you have medical coverage (private insurance or state-provided) which includes treatment of \xa0mental health issues?',
-              'Do you have previous employers?'
+              'Do you have previous employers?',
+              'Have you ever sought treatment for a mental health issue from a mental health professional?'
              ]:
         mhtech[c] = mhtech[c].apply(intyesnoMap)
 
@@ -930,7 +935,10 @@ if True:
              'Would you have been willing to discuss a mental health issue with your previous co-workers?',
              'Would you have been willing to discuss a mental health issue with your direct supervisor(s)?',
              'Did you feel that your previous employers took mental health as seriously as physical health?',
-             'Did you hear of or observe negative consequences for co-workers with mental health issues in your previous workplaces?']:
+             'Did you hear of or observe negative consequences for co-workers with mental health issues in your previous workplaces?',
+             'If a mental health issue prompted you to request a medical leave from work - asking for that leave would be:',
+             'Have you observed or experienced an unsupportive or badly handled response to a mental health issue in your current or previous workplace?',
+             'Have your observations of how another individual who discussed a mental health disorder made you less likely to reveal a mental health issue yourself in your current workplace?']:
         mhtech[c] = mhtech[c].apply(notsureMap)
 
     for c in ['If you have been diagnosed or treated for a mental health disorder - do you ever reveal this to clients or business contacts?',
@@ -941,11 +949,25 @@ if True:
              'If yes - what percentage of your work time (time performing primary or secondary job functions) is affected by a mental health issue?',
              'Was your anonymity protected if you chose to take advantage of mental health or substance abuse treatment resources with previous employers?',
              'How willing would you be to share with friends and family that you have a mental illness?',
-             'Have your observations of how another individual who discussed a mental health disorder made you less likely to reveal a mental health issue yourself in your current workplace?']:
+             'Have your observations of how another individual who discussed a mental health disorder made you less likely to reveal a mental health issue yourself in your current workplace?',
+             'If you have a mental health issue - do you feel that it interferes with your work when being treated effectively?',
+             'If you have a mental health issue - do you feel that it interferes with your work when NOT being treated effectively?',
+             'Do you work remotely?']:
         mhtech[c] = mhtech[c].apply(notapplicMap)
 
-    for c in ['Do you think that team members/co-workers would view you more negatively if they knew you suffered from a mental health issue?']:
+    for c in ['Do you think that team members/co-workers would view you more negatively if they knew you suffered from a mental health issue?',
+             'Do you feel that being identified as a person with a mental health issue would hurt your career?']:
         mhtech[c] = mhtech[c].apply(definitelyyesnoMap)
+
+    mhtech.iloc[:,1].fillna(0, inplace=True)
+    mhtech.iloc[:,26].replace('no', 'none', inplace=True)
+    mhtech.iloc[:,29].replace('always', 'yes', inplace=True)
+    for c in [range(30, 36)]:
+        mhtech.iloc[:,c] = mhtech.iloc[:,c].replace('none', 'no').replace('all', 'yes').replace('some', 'possibly')
+
+    mhtech['mh1'] = mhtech['Have you ever sought treatment for a mental health issue from a mental health professional?']
+    mhtech['mh2'] = mhtech['Have you been diagnosed with a mental health condition by a medical professional?']
+    mhtech['mh3'] = mhtech['Do you currently have a mental health disorder?']
 
     mhtech.to_csv('CHIRPS\\datafiles\\mhtech16.csv.gz', index=False, compression='gzip')
     '''
@@ -1264,6 +1286,12 @@ if True:
         else:
             return(np.float16(x))
 
+    def truefalseMap(x):
+        if x == 'f':
+            return(0)
+        else:
+            return(1)
+
     impnum = SimpleImputer(missing_values=np.nan, strategy='median')
     impzero = SimpleImputer(missing_values=np.nan, strategy='constant', fill_value=0.0)
 
@@ -1275,6 +1303,10 @@ if True:
         thyroid[c] = thyroid[c].apply(numericMap)
         impzero.fit(np.array(thyroid[c]).reshape(-1, 1))
         thyroid[c] = impzero.transform(np.array(thyroid[c]).reshape(-1, 1))
+
+    for c in thyroid.columns:
+        if c not in ['sex', 'age', 'TSH', 'T3', 'TT4', 'T4U', 'FTI', 'TBG', 'referral source', 'diagnosis']:
+            thyroid[c] = thyroid[c].apply(truefalseMap)
 
     thyroid.to_csv('CHIRPS\\datafiles\\thyroid.csv.gz', index=False, compression='gzip')
 

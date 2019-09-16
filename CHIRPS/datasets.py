@@ -824,6 +824,127 @@ def mhtech14(random_state=123, project_dir=None):
     ''')
     return(data_cont)
 
+def mh1tech16(random_state=123, project_dir=None):
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'mhtech16.csv.gz',
+                    compression='gzip')
+    # too correlated
+    data.drop(columns=['If you have been diagnosed or treated for a mental health disorder - do you ever reveal this to clients or business contacts?', \
+                        'If you have revealed a mental health issue to a client or business contact - do you believe this has impacted you negatively?', \
+                        'Was your anonymity protected if you chose to take advantage of mental health or substance abuse treatment resources with previous employers?', \
+                        'If you have been diagnosed or treated for a mental health disorder - do you ever reveal this to coworkers or employees?', \
+                        'If you have revealed a mental health issue to a coworker or employee - do you believe this has impacted you negatively?', \
+                        'Do you believe your productivity is ever affected by a mental health issue?', \
+                        'If yes - what percentage of your work time (time performing primary or secondary job functions) is affected by a mental health issue?', \
+                        'If you have a mental health issue - do you feel that it interferes with your work when being treated effectively?', \
+                        'If you have a mental health issue - do you feel that it interferes with your work when NOT being treated effectively?', \
+                        'Have you ever sought treatment for a mental health issue from a mental health professional?', \
+                        'Have you been diagnosed with a mental health condition by a medical professional?', \
+                        'Do you currently have a mental health disorder?', \
+                        'If yes - what condition(s) have you been diagnosed with?', \
+                        'If maybe - what condition(s) do you believe you have?', \
+                        'If so - what condition(s) were you diagnosed with?', \
+                        'Why or why not?', \
+                        'Why or why not?.1', \
+                        'mh2', \
+                        'mh3'], inplace=True)
+    var_types = ['nominal', 'continuous', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'continuous', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal']
+    data_cont = data_container(
+    data = data,
+    class_col = 'mh1',
+    var_types = var_types,
+    project_dir = project_dir,
+    save_dir = 'mh1tech16',
+    random_state=random_state,
+    spiel = '''
+    From Kaggle
+    mh1 = 'Have you ever sought treatment for a mental health issue from a mental health professional?'
+    mh2 = 'Have you been diagnosed with a mental health condition by a medical professional?'
+    mh3 = 'Do you currently have a mental health disorder?'
+    ''')
+    return(data)
+
+def mh2tech16(random_state=123, project_dir=None):
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'mhtech16.csv.gz',
+                    compression='gzip')
+    # too correlated
+    data.drop(columns=['If you have been diagnosed or treated for a mental health disorder - do you ever reveal this to clients or business contacts?', \
+                        'If you have revealed a mental health issue to a client or business contact - do you believe this has impacted you negatively?', \
+                        'Was your anonymity protected if you chose to take advantage of mental health or substance abuse treatment resources with previous employers?', \
+                        'If you have been diagnosed or treated for a mental health disorder - do you ever reveal this to coworkers or employees?', \
+                        'If you have revealed a mental health issue to a coworker or employee - do you believe this has impacted you negatively?', \
+                        'Do you believe your productivity is ever affected by a mental health issue?', \
+                        'If yes - what percentage of your work time (time performing primary or secondary job functions) is affected by a mental health issue?', \
+                        'If you have a mental health issue - do you feel that it interferes with your work when being treated effectively?', \
+                        'If you have a mental health issue - do you feel that it interferes with your work when NOT being treated effectively?', \
+                        'Have you ever sought treatment for a mental health issue from a mental health professional?', \
+                        'Have you been diagnosed with a mental health condition by a medical professional?', \
+                        'Do you currently have a mental health disorder?', \
+                        'If yes - what condition(s) have you been diagnosed with?', \
+                        'If maybe - what condition(s) do you believe you have?', \
+                        'If so - what condition(s) were you diagnosed with?', \
+                        'Why or why not?', \
+                        'mh1', \
+                        'mh3'], inplace=True)
+    data_cont = data_container(
+    data = data,
+    class_col = 'mh2',
+    project_dir = project_dir,
+    save_dir = 'mh2tech16',
+    random_state=random_state,
+    spiel = '''
+    From Kaggle
+    mh1 = 'Have you ever sought treatment for a mental health issue from a mental health professional?'
+    mh2 = 'Have you been diagnosed with a mental health condition by a medical professional?'
+    mh3 = 'Do you currently have a mental health disorder?'
+    ''')
+    return(data)
+
+def mh3tech16(random_state=123, project_dir=None):
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'mhtech16.csv.gz',
+                    compression='gzip')
+    # too correlated
+    data.drop(columns=['If you have been diagnosed or treated for a mental health disorder - do you ever reveal this to clients or business contacts?', \
+                        'If you have revealed a mental health issue to a client or business contact - do you believe this has impacted you negatively?', \
+                        'Was your anonymity protected if you chose to take advantage of mental health or substance abuse treatment resources with previous employers?', \
+                        'If you have been diagnosed or treated for a mental health disorder - do you ever reveal this to coworkers or employees?', \
+                        'If you have revealed a mental health issue to a coworker or employee - do you believe this has impacted you negatively?', \
+                        'Do you believe your productivity is ever affected by a mental health issue?', \
+                        'If yes - what percentage of your work time (time performing primary or secondary job functions) is affected by a mental health issue?', \
+                        'If you have a mental health issue - do you feel that it interferes with your work when being treated effectively?', \
+                        'If you have a mental health issue - do you feel that it interferes with your work when NOT being treated effectively?', \
+                        'Have you ever sought treatment for a mental health issue from a mental health professional?', \
+                        'Have you been diagnosed with a mental health condition by a medical professional?', \
+                        'Do you currently have a mental health disorder?', \
+                        'If yes - what condition(s) have you been diagnosed with?', \
+                        'If maybe - what condition(s) do you believe you have?', \
+                        'If so - what condition(s) were you diagnosed with?', \
+                        'Why or why not?', \
+                        'mh1', \
+                        'mh2'], inplace=True)
+    data_cont = data_container(
+    data = data,
+    class_col = 'mh3',
+    project_dir = project_dir,
+    save_dir = 'mh3tech16',
+    random_state=random_state,
+    spiel = '''
+    From Kaggle
+    mh1 = 'Have you ever sought treatment for a mental health issue from a mental health professional?'
+    mh2 = 'Have you been diagnosed with a mental health condition by a medical professional?'
+    mh3 = 'Do you currently have a mental health disorder?'
+    ''')
+    return(data)
+
+
 # young people survey - smoking habit
 def ypssmk(random_state=123, project_dir=None):
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'yps.csv.gz',
