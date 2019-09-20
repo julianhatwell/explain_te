@@ -693,7 +693,6 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
 
         Xsso = gpdg_get_oversample(population, halloffame)
         if Xsso:
-            print('in sso')
             Xgp.append(Xsso)
 
     if size_sdo > 0.0:
@@ -707,7 +706,6 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
 
         Xsdo = gpdg_get_oversample(population, halloffame)
         if Xsdo: # can't be empty list
-            print('in sdo')
             Xgp.append(Xsdo)
 
     if size_dso > 0.0:
@@ -721,7 +719,6 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
 
         Xdso = gpdg_get_oversample(population, halloffame)
         if Xdso:
-            print('in sso')
             Xgp.append(Xdso)
 
     if size_ddo > 0.0:
@@ -735,7 +732,6 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
 
         Xddo = gpdg_get_oversample(population, halloffame)
         if Xddo:
-            print('in ddo')
             Xgp.append(Xddo)
 
     try: # will fail if Xgp is still an empty list
@@ -957,8 +953,7 @@ def lore_genetic_neighborhood(dfZ, x, blackbox, dataset, popsize=1000):
         neig_indexes = loreutil.get_closest_diffoutcome(dfZ, dfx, discrete, continuous, class_name,
                                                blackbox, label_encoder, distance_function, k=100)
         Zn, _ = loreutil.label_encode(dfZ, discrete, label_encoder)
-        print(Z)
-        Zn = Zn.iloc[neig_indexes, Z.columns != class_name].values
+        Zn = Zn.iloc[neig_indexes, Zn.columns != class_name].values
         Z = np.concatenate((Z, Zn), axis=0)
     dfZ = lore_build_df2explain(blackbox, Z, dataset)
     return dfZ, Z

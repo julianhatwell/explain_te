@@ -962,8 +962,10 @@ if True:
     mhtech.iloc[:,1].fillna(0, inplace=True)
     mhtech.iloc[:,26].replace('no', 'none', inplace=True)
     mhtech.iloc[:,29].replace('always', 'yes', inplace=True)
-    for c in [range(30, 36)]:
+    for c in range(30, 36):
         mhtech.iloc[:,c] = mhtech.iloc[:,c].replace('none', 'no').replace('all', 'yes').replace('some', 'possibly')
+    for c in range(57, 59):
+        mhtech.iloc[:,c] = mhtech.iloc[:,c].replace('', 'non-US')
 
     mhtech['mh1'] = mhtech['Have you ever sought treatment for a mental health issue from a mental health professional?']
     mhtech['mh2'] = mhtech['Have you been diagnosed with a mental health condition by a medical professional?']

@@ -3,9 +3,10 @@ import time
 import timeit
 import pickle
 import numpy as np
+import pandas as pd
 import multiprocessing as mp
 from pandas import DataFrame, Series
-
+from imblearn.over_sampling import SMOTE
 from math import sqrt
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier, export_graphviz
@@ -16,6 +17,7 @@ from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recal
 
 from CHIRPS import if_nexists_make_dir, if_nexists_make_file, chisq_indep_test, p_count_corrected, o_print
 from CHIRPS.plotting import plot_confusion_matrix
+from CHIRPS.structures import data_preprocessor
 
 from CHIRPS import config as cfg
 
@@ -258,10 +260,26 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
                 plot_cm=False, plot_cm_norm=False,
                 verbose=True):
 
-    X_train=ds_container.X_train_enc
-    X_test=ds_container.X_test_enc
-    y_train=ds_container.y_train
-    y_test=ds_container.y_test
+    if meta_data['needs_balance']:
+        # run SMOTE oversampling
+        sm = SMOTE(random_state=12, ratio = 1.0)
+        X_res, y_res = sm.fit_sample(ds_container.X_train, ds_container.y_train)
+        train_res = pd.DataFrame(X_res, columns=meta_data['features'])
+        train_res[meta_data['class_col']] = pd.Series(y_res)
+
+        preproc = data_preprocessor()
+        preproc.fit(train_res, meta_data['class_col'], meta_data['var_names'], meta_data['var_types'])
+        tt_res = preproc.tt_split(test_size=1, random_state=meta_data['random_state'])
+
+        X_train=tt_res.X_train_enc
+        X_test=ds_container.X_test_enc
+        y_train=tt_res.y_train
+        y_test=ds_container.y_test
+    else:
+        X_train=ds_container.X_train_enc
+        X_test=ds_container.X_test_enc
+        y_train=ds_container.y_train
+        y_test=ds_container.y_test
 
     class_names=meta_data['class_names_label_order']
     random_state=meta_data['random_state']

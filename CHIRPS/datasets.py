@@ -839,6 +839,7 @@ def mh1tech16(random_state=123, project_dir=None):
                         'If you have a mental health issue - do you feel that it interferes with your work when NOT being treated effectively?', \
                         'Have you ever sought treatment for a mental health issue from a mental health professional?', \
                         'Have you been diagnosed with a mental health condition by a medical professional?', \
+                        'How willing would you be to share with friends and family that you have a mental illness?', \
                         'Do you currently have a mental health disorder?', \
                         'If yes - what condition(s) have you been diagnosed with?', \
                         'If maybe - what condition(s) do you believe you have?', \
@@ -854,9 +855,9 @@ def mh1tech16(random_state=123, project_dir=None):
        'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
        'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
        'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
-       'nominal', 'nominal', 'nominal', 'continuous', 'nominal',
+       'nominal', 'nominal', 'continuous', 'nominal', 'nominal',
        'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
-       'nominal', 'nominal']
+       'nominal']
     data_cont = data_container(
     data = data,
     class_col = 'mh1',
@@ -870,7 +871,7 @@ def mh1tech16(random_state=123, project_dir=None):
     mh2 = 'Have you been diagnosed with a mental health condition by a medical professional?'
     mh3 = 'Do you currently have a mental health disorder?'
     ''')
-    return(data)
+    return(data_cont)
 
 def mh2tech16(random_state=123, project_dir=None):
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'mhtech16.csv.gz',
@@ -887,16 +888,29 @@ def mh2tech16(random_state=123, project_dir=None):
                         'If you have a mental health issue - do you feel that it interferes with your work when NOT being treated effectively?', \
                         'Have you ever sought treatment for a mental health issue from a mental health professional?', \
                         'Have you been diagnosed with a mental health condition by a medical professional?', \
+                        'How willing would you be to share with friends and family that you have a mental illness?', \
                         'Do you currently have a mental health disorder?', \
                         'If yes - what condition(s) have you been diagnosed with?', \
                         'If maybe - what condition(s) do you believe you have?', \
                         'If so - what condition(s) were you diagnosed with?', \
                         'Why or why not?', \
+                        'Why or why not?.1', \
                         'mh1', \
                         'mh3'], inplace=True)
+    var_types = ['nominal', 'continuous', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'continuous', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal']
     data_cont = data_container(
     data = data,
     class_col = 'mh2',
+    var_types = var_types,
     project_dir = project_dir,
     save_dir = 'mh2tech16',
     random_state=random_state,
@@ -906,7 +920,7 @@ def mh2tech16(random_state=123, project_dir=None):
     mh2 = 'Have you been diagnosed with a mental health condition by a medical professional?'
     mh3 = 'Do you currently have a mental health disorder?'
     ''')
-    return(data)
+    return(data_cont)
 
 def mh3tech16(random_state=123, project_dir=None):
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'mhtech16.csv.gz',
@@ -923,16 +937,30 @@ def mh3tech16(random_state=123, project_dir=None):
                         'If you have a mental health issue - do you feel that it interferes with your work when NOT being treated effectively?', \
                         'Have you ever sought treatment for a mental health issue from a mental health professional?', \
                         'Have you been diagnosed with a mental health condition by a medical professional?', \
+                        'How willing would you be to share with friends and family that you have a mental illness?', \
                         'Do you currently have a mental health disorder?', \
                         'If yes - what condition(s) have you been diagnosed with?', \
                         'If maybe - what condition(s) do you believe you have?', \
                         'If so - what condition(s) were you diagnosed with?', \
                         'Why or why not?', \
+                        'Why or why not?.1', \
                         'mh1', \
                         'mh2'], inplace=True)
+    var_types = ['nominal', 'continuous', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal', 'nominal', 'continuous', 'nominal', 'nominal',
+       'nominal', 'nominal', 'nominal', 'nominal', 'nominal',
+       'nominal']
+
     data_cont = data_container(
     data = data,
     class_col = 'mh3',
+    var_types = var_types,
     project_dir = project_dir,
     save_dir = 'mh3tech16',
     random_state=random_state,
@@ -942,7 +970,7 @@ def mh3tech16(random_state=123, project_dir=None):
     mh2 = 'Have you been diagnosed with a mental health condition by a medical professional?'
     mh3 = 'Do you currently have a mental health disorder?'
     ''')
-    return(data)
+    return(data_cont)
 
 
 # young people survey - smoking habit
@@ -1350,6 +1378,7 @@ def noshow(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'noshow',
     random_state=random_state,
+    needs_balance = True,
     spiel = '''
     No further information
     ''')
@@ -1364,6 +1393,7 @@ def noshow_samp(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'noshow_samp',
     random_state=random_state,
+    needs_balance = True,
     spiel = '''
     No further information
     ''')
@@ -1378,6 +1408,7 @@ def noshow_small_samp(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'noshow_small_samp',
     random_state=random_state,
+    needs_balance = True,
     spiel = '''
     No further information
     ''')
@@ -1386,13 +1417,14 @@ def noshow_small_samp(random_state=123, project_dir=None):
 def cervicalh(random_state=123, project_dir=None):
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cervical.csv.gz',
                     compression='gzip')
-    data.drop(columns=['Schiller', 'Citology', 'Biopsy'])
+    data.drop(columns=['Schiller', 'Citology', 'Biopsy'], inplace=True)
     data_cont = data_container(
         data = data,
         class_col = 'Hinselmann',
         project_dir = project_dir,
         save_dir = 'cervicalh',
         random_state=random_state,
+        needs_balance = True,
         spiel = '''
         This dataset uses 'Hinselmann' as the class column, removing the other three options
         Data Set Information:
@@ -1448,13 +1480,14 @@ def cervicalh(random_state=123, project_dir=None):
 def cervicals(random_state=123, project_dir=None):
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cervical.csv.gz',
                     compression='gzip')
-    data.drop(columns=['Hinselmann', 'Citology', 'Biopsy'])
+    data.drop(columns=['Hinselmann', 'Citology', 'Biopsy'], inplace=True)
     data_cont = data_container(
         data = data,
         class_col = 'Schiller',
         project_dir = project_dir,
         save_dir = 'cervicals',
         random_state=random_state,
+        needs_balance = True,
         spiel = '''
         This dataset uses 'Schiller' as the class column, removing the other three options
         Data Set Information:
@@ -1510,13 +1543,14 @@ def cervicals(random_state=123, project_dir=None):
 def cervicalc(random_state=123, project_dir=None):
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cervical.csv.gz',
                     compression='gzip')
-    data.drop(columns=['Hinselmann', 'Schiller', 'Biopsy'])
+    data.drop(columns=['Hinselmann', 'Schiller', 'Biopsy'], inplace=True)
     data_cont = data_container(
         data = data,
         class_col = 'Citology',
         project_dir = project_dir,
         save_dir = 'cervicalc',
         random_state=random_state,
+        needs_balance = True,
         spiel = '''
         This dataset uses 'Citology' as the class column, removing the other three options
         Data Set Information:
@@ -1572,13 +1606,14 @@ def cervicalc(random_state=123, project_dir=None):
 def cervicalb(random_state=123, project_dir=None):
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cervical.csv.gz',
                     compression='gzip')
-    data.drop(columns=['Hinselmann', 'Schiller', 'Citology'])
+    data.drop(columns=['Hinselmann', 'Schiller', 'Citology'], inplace=True)
     data_cont = data_container(
         data = data,
         class_col = 'Biopsy',
         project_dir = project_dir,
         save_dir = 'cervicalb',
         random_state=random_state,
+        needs_balance = True,
         spiel = '''
         This dataset uses 'Citology' as the class column, removing the other three options
         Data Set Information:

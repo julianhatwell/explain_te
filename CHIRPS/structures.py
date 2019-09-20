@@ -351,8 +351,10 @@ class data_container(data_preprocessor):
     , project_dir = None
     , save_dir = ''
     , random_state = None
+    , needs_balance = False
     , spiel = ''):
         super().__init__(random_state)
+        self.needs_balance = needs_balance
         self.spiel = spiel
         self.save_dir = save_dir
         if project_dir is None:
@@ -403,7 +405,8 @@ class data_container(data_preprocessor):
                 'le_dict' : self.le_dict,
                 'get_label' : self.get_label,
                 'random_state' : self.random_state,
-                'get_save_path' : self.get_save_path
+                'get_save_path' : self.get_save_path,
+                'needs_balance' : self.needs_balance
                 })
 
 # classes and functions for the parallelisable tree_walk
