@@ -1666,6 +1666,42 @@ def cervicalb(random_state=123, project_dir=None):
         ''')
     return(data_cont)
 
+def cervicalr(random_state=123, project_dir=None):
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cervicalr.csv.gz',
+                    compression='gzip')
+    data_cont = data_container(
+        data = data,
+        class_col = 'Biopsy',
+        project_dir = project_dir,
+        save_dir = 'cervicalr',
+        random_state=random_state,
+        needs_balance = True,
+        spiel = '''
+        The cervical cancer dataset contains indicators and risk factors for predicting whether a woman will get cervical cancer. The features include demographic data (such as age), lifestyle, and medical history. The data can be downloaded from the UCI Machine Learning repository and is described by Fernandes, Cardoso, and Fernandes (2017)15.
+
+        The subset of data features used in the book’s examples are:
+            Age in years
+            Number of sexual partners
+            First sexual intercourse (age in years)
+            Number of pregnancies
+            Smoking yes or no
+            Smoking (in years)
+            Hormonal contraceptives yes or no
+            Hormonal contraceptives (in years)
+            Intrauterine device yes or no (IUD)
+            Number of years with an intrauterine device (IUD)
+            Has patient ever had a sexually transmitted disease (STD) yes or no
+            Number of STD diagnoses
+            Time since first STD diagnosis
+            Time since last STD diagnosis
+            The biopsy results “Healthy” or “Cancer”. Target outcome.
+        The biopsy serves as the gold standard for diagnosing cervical cancer.
+        Missing values for each column were imputed by the mode (most frequent value).
+
+        Fernandes, Kelwin, Jaime S Cardoso, and Jessica Fernandes. “Transfer learning with partial observability applied to cervical cancer screening.” In Iberian Conference on Pattern Recognition and Image Analysis, 243–50. Springer. (2017).
+        ''')
+    return(data_cont)
+
 def breast(random_state=123, project_dir=None):
         data_cont = data_container(
         data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'breast.csv.gz',

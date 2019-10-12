@@ -3,7 +3,6 @@ import time
 import timeit
 import pickle
 import numpy as np
-import pandas as pd
 import multiprocessing as mp
 from pandas import DataFrame, Series
 from imblearn.over_sampling import SMOTE
@@ -264,8 +263,8 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
         # run SMOTE oversampling
         sm = SMOTE(random_state=12, ratio = 1.0)
         X_res, y_res = sm.fit_sample(ds_container.X_train, ds_container.y_train)
-        train_res = pd.DataFrame(X_res, columns=meta_data['features'])
-        train_res[meta_data['class_col']] = pd.Series(y_res)
+        train_res = DataFrame(X_res, columns=meta_data['features'])
+        train_res[meta_data['class_col']] = Series(y_res)
 
         preproc = data_preprocessor()
         preproc.fit(train_res, meta_data['class_col'], meta_data['var_names'], meta_data['var_types'])
