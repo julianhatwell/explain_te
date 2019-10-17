@@ -92,7 +92,7 @@ def as_CHIRPS(c_runner,
     # these steps make up the CHIRPS process:
     # mine paths for freq patts
     # fp growth mining
-
+    print('as_chirps for batch_idx ' +  str(batch_idx))
     # collect the time taken
     cr_start_time = timeit.default_timer()
 
@@ -100,6 +100,7 @@ def as_CHIRPS(c_runner,
     c_runner.sample_instances = sample_instances
     c_runner.sample_labels = sample_labels
 
+    print('start mining for batch_idx ' + str(batch_idx))
     # extract path snippets with highest suppert/weight
     c_runner.mine_path_snippets(paths_lengths_threshold, support_paths,
                             disc_path_bins, disc_path_eqcounts)
@@ -107,22 +108,27 @@ def as_CHIRPS(c_runner,
     # score and sort
     # if len(c_runner.patterns) > 1000:
     #      print('a long wait for label ' + str(batch_idx))
-    #      print([cp for i, cp in enumerate(c_runner.patterns) if i < 50])
+         # print([cp for i, cp in enumerate(c_runner.patterns) if i < 50])
+    print('found ' + str(len(c_runner.patterns)) + ' patterns for batch_idx ' +  str(batch_idx))
+    print('start score sort for batch_idx ' + str(batch_idx))
     c_runner.score_sort_path_snippets(alpha_paths=alpha_paths,
                                         score_func=score_func,
                                         weighting=weighting)
 
     # greedily add terms to create rule
+    print('start merge rule for batch_idx ' + str(batch_idx) + ' (' + str(len(c_runner.patterns)) + ') patterns')
     c_runner.merge_rule(forest=forest,
                 algorithm=algorithm,
                 merging_bootstraps=merging_bootstraps,
                 pruning_bootstraps=pruning_bootstraps,
                 delta=delta,
                 precis_threshold=precis_threshold)
+    print('merge complete for batch_idx ' + str(batch_idx))
 
     cr_end_time = timeit.default_timer()
     cr_elapsed_time = cr_end_time - cr_start_time
     cr_elapsed_time = cr_elapsed_time + forest_walk_mean_elapsed_time
 
+    print('start get explainer for batch_idx ' + str(batch_idx))
     CHIRPS_exp = c_runner.get_CHIRPS_explainer(cr_elapsed_time)
     return(batch_idx, CHIRPS_exp)

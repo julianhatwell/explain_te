@@ -1562,19 +1562,26 @@ class CHIRPS_runner(rule_evaluator):
                         candidate.append(item)
                     candidate_terms.append(item) # this will output the newly added terms
 
-        # accumlate points from rule and tidy up
         # remove the first item from unapplied_rules as it's just been applied or ignored for being out of range
         del self.unapplied_rules[0]
         # accumlate all the freq patts that are subsets of the current rules
         # remove the index from the unapplied rules list (including the current rule just added)
         to_remove = []
+        accumulated_points = 0
+        accumulated_weights = 0
         for ur in self.unapplied_rules:
             # check if all items are already part of the rule (i.e. it's a subset)
             if all([item in candidate for item in self.patterns[ur][0]]):
                 # collect up the values to remove. don't want to edit the iterator in progress
                 to_remove.append(ur)
+                # accumlate points from any deleted terms
+                accumulated_points += self.patterns[ur][2]
+                accumulated_weights += self.patterns[ur][1]
         for rmv in reversed(to_remove):
             self.unapplied_rules.remove(rmv)
+        # make up a new tuple
+        t, w, p = next_rule_term
+        next_rule_term = (t, w + accumulated_weights, p + accumulated_points)
         return(candidate, candidate_terms, next_rule_term)
 
     def prune_rule(self):
@@ -1765,6 +1772,7 @@ class CHIRPS_runner(rule_evaluator):
                                                 sample_labels=b_sample_labels)
                     b_prev[b] = b_eval_prev[metric][np.where(b_eval_prev['labels'] == self.target_class)]
 
+                # test for continue to next, or update rule
                 should_continue = (b_curr > b_prev).sum() <= bootstrap_confidence * merging_bootstraps
                 self.reverted.append(should_continue)
                 current_metric = b_curr.mean()
@@ -1774,8 +1782,8 @@ class CHIRPS_runner(rule_evaluator):
             # otherwise accept the candidate, update everything and save all the metrics
             self.rule = deepcopy(candidate)
             rule_length_counter += 1
-            self.accumulated_points += next_rule_term[2] / self.total_points
-            self.accumulated_weights += next_rule_term[1] / self.total_weights
+            self.accumulated_points += (next_rule_term[2] / self.total_points)
+            self.accumulated_weights += (next_rule_term[1] / self.total_weights)
 
             # check for end conditions; no target class instances
             if eval_rule['counts'][np.where(eval_rule['labels'] == self.target_class)] == 0:
@@ -1823,8 +1831,9 @@ class CHIRPS_runner(rule_evaluator):
                         if item[2] > self.var_dict[item[0]]['lower_bound'][0]:
                             self.var_dict[item[0]]['lower_bound'][0] = item[2]
 
-            previous = current_metric # before completing the loop
-
+            previous = current_metric
+        # end while
+        print(current_metric, rule_length_counter, len(self.unapplied_rules), self.accumulated_points, self.accumulated_weights)
         # case no solution was found
         if rule_length_counter == 0:
             print('no solution')
@@ -1870,6 +1879,7 @@ class CHIRPS_runner(rule_evaluator):
                     b_rcr = np.array(b_rc)
                 else:
                     b_rcr = np.vstack((b_rcr, b_rc))
+
 
             to_remove = []
             for rc in range(n_rule_complements):
@@ -1959,6 +1969,8 @@ class CHIRPS_container(object):
 
         # extract the paths we want by filtering on tree performance
         n_paths = len(self.path_detail[batch_idx])
+        print('longest path for ' + str(batch_idx) + ': ' +  str(max([len(pd['path']['feature_idx']) for pd in self.path_detail[batch_idx]])))
+        print('mean path length for ' + str(batch_idx) + ': ' +  str(np.mean([len(pd['path']['feature_idx']) for pd in self.path_detail[batch_idx]])))
         if which_trees == 'majority':
             # get the paths that agree with the target class
             paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == target_class]))]

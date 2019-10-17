@@ -1307,9 +1307,9 @@ def benchmarking_prep(datasets, model, tuning, project_dir,
             # this will train and score the model, mathod='main' (default)
             rf = rt.forest_prep(ds_container=tt,
                         meta_data=meta_data,
+                        tuning_grid=tuning['grid'],
                         model=model,
                         override_tuning=tuning['override'],
-                        tuning_grid=tuning['grid'],
                         save_path=save_path, verbose=verbose)
         else:
             rf = None
@@ -1322,10 +1322,12 @@ def benchmarking_prep(datasets, model, tuning, project_dir,
             # diagnostic for starting on a specific instance
             tt_anch.current_row_test = start_instance
 
-            # no tuning grid because we want to take best params from a previous run (see try/except above)
+            # override_tuning False because we want to take best params from a previous run (see try/except above)
             rf_anch = rt.forest_prep(ds_container=tt_anch,
                 meta_data=meta_data,
+                tuning_grid=tuning['grid'],
                 model=model,
+                override_tuning=False,
                 save_path=save_path,
                 method='Anchors', verbose=verbose)
         else:

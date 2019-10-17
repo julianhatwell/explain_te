@@ -24,6 +24,8 @@ from CHIRPS import config as cfg
 import warnings
 warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
 
+n_jobs = mp.cpu_count()-2
+
 def get_file_stem(model='RandomForest'):
     if model=='RandomForest':
         return('rf_')
@@ -53,18 +55,11 @@ def extend_path(stem, extensions, is_dir=False):
     else:
         return(stem[:-1])
 
-def default_param_grid(output='PG'):
-    grid = {'n_estimators': [(i + 1) * 200 for i in range(8)]}
-    if output=='PG':
-        return(ParameterGrid(grid))
-    else:
-        return(grid)
-
 def do_rf_tuning(X, y, model, # model redundant, just here for same interface
-            grid = None, random_state=123, save_path = None):
-    if grid is None:
-        grid = default_param_grid()
+                    grid,
+                    random_state=123, save_path = None):
 
+    grid = ParameterGrid(grid)
     start_time = timeit.default_timer()
 
     rf = RandomForestClassifier()
@@ -73,7 +68,10 @@ def do_rf_tuning(X, y, model, # model redundant, just here for same interface
     for g in grid:
         print('Trying params: ' + str(g))
         fitting_start_time = timeit.default_timer()
-        rf.set_params(oob_score = True, random_state=random_state, **g)
+        rf.set_params(n_jobs=n_jobs,
+            oob_score = True,
+            random_state=random_state,
+            **g)
         rf.fit(X, y)
         fitting_end_time = timeit.default_timer()
         fitting_elapsed_time = fitting_end_time - fitting_start_time
@@ -99,15 +97,13 @@ def do_rf_tuning(X, y, model, # model redundant, just here for same interface
 
     return(best_params, forest_performance)
 
-def do_ada_tuning(X, y, model,
-            grid = None, random_state=123, save_path = None):
-    if grid is None:
-        grid = default_param_grid(output='asis')
+def do_ada_tuning(X, y, model, grid,
+                    random_state=123, save_path = None):
 
     start_time = timeit.default_timer()
     print('Finding best params with 10-fold CV')
     rf = DaskGridSearchCV(AdaBoostClassifier(random_state=random_state),
-    param_grid=grid, n_jobs=mp.cpu_count()-2, cv=10)
+    param_grid=grid, n_jobs=n_jobs, cv=10)
     rf.fit(X, y)
     means = rf.cv_results_['mean_test_score']
     stds = rf.cv_results_['std_test_score']
@@ -130,15 +126,13 @@ def do_ada_tuning(X, y, model,
 
     return(best_params, forest_performance)
 
-def do_gbm_tuning(X, y, model,
-            grid = None, random_state=123, save_path = None, verbose=True):
-    if grid is None:
-        grid = default_param_grid(output='asis')
+def do_gbm_tuning(X, y, model, grid,
+                    random_state=123, save_path = None, verbose=True):
 
     start_time = timeit.default_timer()
     o_print('Finding best params with 10-fold CV', verbose)
     rf = Dask(GradientBoostingClassifier(random_state=random_state),
-    param_grid=grid, n_jobs=mp.cpu_count()-2, cv=10)
+    param_grid=grid, n_jobs=n_jobs, cv=10)
     rf.fit(X, y)
     means = rf.cv_results_['mean_test_score']
     stds = rf.cv_results_['std_test_score']
@@ -159,8 +153,7 @@ def do_gbm_tuning(X, y, model,
 
     return(best_params, forest_performance)
 
-def tune_wrapper(X, y, model,
-            grid = None,
+def tune_wrapper(X, y, model, grid,
             random_state=123,
             save_path = None,
             override_tuning=False,
@@ -253,9 +246,10 @@ def evaluate_model(y_true, y_pred, class_names=None, model='RandomForest',
 
     return(test_metrics)
 
-def forest_prep(ds_container, meta_data, model='RandomForest',
+def forest_prep(ds_container, meta_data, tuning_grid,
+                model='RandomForest',
                 save_path=None, override_tuning=False,
-                tuning_grid=None, method='main',
+                method='main',
                 plot_cm=False, plot_cm_norm=False,
                 verbose=True):
 
@@ -296,7 +290,7 @@ def forest_prep(ds_container, meta_data, model='RandomForest',
         best_params.update({'oob_score' : True, 'random_state' : random_state})
         del(best_params['score'])
         rf = RandomForestClassifier()
-        rf.set_params(**best_params)
+        rf.set_params(n_jobs=n_jobs, **best_params)
         rf.fit(X=X_train, y=y_train)
 
     elif model in ['AdaBoost1', 'AdaBoost2']:
