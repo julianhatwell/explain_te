@@ -1316,3 +1316,44 @@ if True:
     samp.reset_index(drop=True, inplace=True)
     samp.to_csv('CHIRPS\\datafiles\\thyroid_samp.csv.gz', index=False, compression='gzip')
     '''
+
+if True:
+    '''
+    data = pd.read_csv('C:\\Users\\id126493\\Documents\\GitHub\\explain_te\\CHIRPS\\source_datafiles\\heart.csv')
+    data.to_csv('CHIRPS\\datafiles\\heart.csv.gz', index=False, compression='gzip')
+
+    data = pd.read_csv('C:\\Users\\id126493\\Documents\\GitHub\\explain_te\\CHIRPS\\datafiles\\heart.csv.gz',
+                        compression='gzip')
+    '''
+
+if True:
+    '''
+    import pandas as pd
+    data = pd.read_csv('C:\\Users\\id126493\\Documents\\GitHub\\explain_te\\CHIRPS\\source_datafiles\\diabetic_retinopathy.csv', header=None)
+    data.rename(columns={0 : 'qa', 1 : 'ps', 2 : 'ma0.5', 3 : 'ma0.6',
+                         4 : 'ma0.7', 5 : 'ma0.8', 6 : 'ma0.9', 7 : 'ma1.0',
+                         8 : 'ex0.5', 9 : 'ex0.6', 10 : 'ex0.7', 11 : 'ex0.8',
+                         12 : 'ex0.9', 13 : 'ex1.0', 14 : 'exm1', 15 : 'exm2',
+                         16 : 'eucmac', 17 : 'diaopt', 18 : 'amfm', 19 : 'dr'}, inplace=True)
+
+    # 0) The binary result of quality assessment. 0 = bad quality 1 = sufficient quality. 
+    # 1) The binary result of pre-screening, where 1 indicates severe retinal abnormality and 0 its lack.
+    # 2-7) The results of MA detection. Each feature value stand for the
+    # number of MAs found at the confidence levels alpha = 0.5, . . . , 1, respectively.
+    # 8-15) contain the same information as 2-7) for exudates. However,
+    # as exudates are represented by a set of points rather than the number of
+    # pixels constructing the lesions, these features are normalized by dividing the
+    # number of lesions with the diameter of the ROI to compensate different image
+    # sizes.
+    # Note - 2-7 and 8-15 are not equal in number. Not sure what to call the last two ex.
+    # 16) The euclidean distance of the center of
+    # the macula and the center of the optic disc to provide important information
+    # regarding the patientâ€™s condition. This feature
+    # is also normalized with the diameter of the ROI.
+    # 17) The diameter of the optic disc.
+    # 18) The binary result of the AM/FM-based classification.
+    # 19) Class label. 1 = contains signs of DR (Accumulative label for the Messidor classes 1, 2, 3), 0 = no signs of DR.
+
+
+    data.to_csv('CHIRPS\\datafiles\\diaretin.csv.gz', index=False, compression='gzip')
+    '''

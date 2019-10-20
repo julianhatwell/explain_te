@@ -494,7 +494,7 @@ def lending(random_state=123, project_dir=None):
     random_state=random_state,
     spiel = '''
     Data Set Information:
-    Orignates from: https://www.lendingclub.com/info/download-data.action
+    Originates from: https://www.lendingclub.com/info/download-data.action
 
     See also:
     https://www.kaggle.com/wordsforthewise/lending-club
@@ -514,7 +514,7 @@ def lending_samp(random_state=123, project_dir=None):
     random_state=random_state,
     spiel = '''
     Data Set Information:
-    Orignates from: https://www.lendingclub.com/info/download-data.action
+    Originates from: https://www.lendingclub.com/info/download-data.action
 
     See also:
     https://www.kaggle.com/wordsforthewise/lending-club
@@ -534,7 +534,7 @@ def lending_small_samp(random_state=123, project_dir=None):
     random_state=random_state,
     spiel = '''
     Data Set Information:
-    Orignates from: https://www.lendingclub.com/info/download-data.action
+    Originates from: https://www.lendingclub.com/info/download-data.action
 
     See also:
     https://www.kaggle.com/wordsforthewise/lending-club
@@ -554,7 +554,7 @@ def lending_tiny_samp(random_state=123, project_dir=None):
     random_state=random_state,
     spiel = '''
     Data Set Information:
-    Orignates from: https://www.lendingclub.com/info/download-data.action
+    Originates from: https://www.lendingclub.com/info/download-data.action
 
     See also:
     https://www.kaggle.com/wordsforthewise/lending-club
@@ -1947,5 +1947,93 @@ def thyroid_samp(random_state=123, project_dir=None):
         general health (K)
         replacement therapy (L, M, N)
         discordant results (R)
+        ''')
+        return(data_cont)
+
+def heart(random_state=123, project_dir=None):
+        data_cont = data_container(
+        data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'heart.csv.gz',
+                        compression='gzip'),
+        class_col = 'HDisease',
+
+        project_dir = project_dir,
+        save_dir = 'heart',
+        random_state=random_state,
+        spiel = '''
+        Creators:
+        1. Hungarian Institute of Cardiology. Budapest: Andras Janosi, M.D.
+        2. University Hospital, Zurich, Switzerland: William Steinbrunn, M.D.
+        3. University Hospital, Basel, Switzerland: Matthias Pfisterer, M.D.
+        4. V.A. Medical Center, Long Beach and Cleveland Clinic Foundation: Robert Detrano, M.D., Ph.D.
+
+        Donor:
+        David W. Aha (aha '@' ics.uci.edu) (714) 856-8779
+
+
+        Data Set Information:
+        This database contains 76 attributes, but all published experiments refer to using a subset of 14 of them. In particular, the Cleveland database is the only one that has been used by ML researchers to
+        this date. The "goal" field refers to the presence of heart disease in the patient. It is integer valued from 0 (no presence) to 4. Experiments with the Cleveland database have concentrated on simply attempting to distinguish presence (values 1,2,3,4) from absence (value 0).
+        The names and social security numbers of the patients were recently removed from the database, replaced with dummy values.
+        One file has been "processed", that one containing the Cleveland database. All four unprocessed files also exist in this directory.
+        To see Test Costs (donated by Peter Turney), please see the folder "Costs"
+
+        Attribute Information:
+        Only 14 attributes used:
+        1. (Age)
+        2. (Sex)
+        3. (ChestPain)
+        4. (RestBP)
+        5. (Chol)
+        6. (Fbs)
+        7. (RestECG)
+        8. (MaxHR)
+        9. (ExAng)
+        10. (Oldpeak)
+        11. (Slope)
+        12. (Ca)
+        13. (Thal)
+        14. (HDisease) (the predicted attribute)
+        ''')
+        return(data_cont)
+
+def diaretino(random_state=123, project_dir=None):
+        data_cont = data_container(
+        data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'diaretino.csv.gz',
+                        compression='gzip'),
+        class_col = 'dr',
+
+        project_dir = project_dir,
+        save_dir = 'diaretino',
+        random_state=random_state,
+        spiel = '''
+        Source:
+        1. Dr. Balint Antal, Department of Computer Graphics and Image Processing
+        Faculty of Informatics, University of Debrecen, 4010, Debrecen, POB 12, Hungary
+        antal.balint '@' inf.unideb.hu
+        2. Dr. Andras Hajdu, Department of Computer Graphics and Image Processing
+        Faculty of Informatics, University of Debrecen, 4010, Debrecen, POB 12, Hungary
+        hajdu.andras '@' inf.unideb.hu
+
+        Data Set Information:
+        This dataset contains features extracted from the Messidor image set to predict whether an image contains signs of diabetic retinopathy or not. All features represent either a detected lesion, a descriptive feature of a anatomical part or an image-level descriptor. The underlying method image analysis and feature extraction as well as our classification technique is described in Balint Antal, Andras Hajdu: An ensemble-based system for automatic screening of diabetic retinopathy, Knowledge-Based Systems 60 (April 2014), 20-27. The image set (Messidor) is available at [Web Link].
+
+        Attribute Information:
+        0) The binary result of quality assessment. 0 = bad quality 1 = sufficient quality.
+        1) The binary result of pre-screening, where 1 indicates severe retinal abnormality and 0 its lack.
+        2-7) The results of MA detection. Each feature value stand for the
+        number of MAs found at the confidence levels alpha = 0.5, . . . , 1, respectively.
+        8-15) contain the same information as 2-7) for exudates. However,
+        as exudates are represented by a set of points rather than the number of
+        pixels constructing the lesions, these features are normalized by dividing the
+        number of lesions with the diameter of the ROI to compensate different image
+        sizes.
+        Note - 2-7 and 8-15 are not equal in number. Not sure what to call the last two ex.
+        16) The euclidean distance of the center of
+        the macula and the center of the optic disc to provide important information
+        regarding the patientâ€™s condition. This feature
+        is also normalized with the diameter of the ROI.
+        17) The diameter of the optic disc.
+        18) The binary result of the AM/FM-based classification.
+        19) Class label. 1 = contains signs of DR (Accumulative label for the Messidor classes 1, 2, 3), 0 = no signs of DR.
         ''')
         return(data_cont)
