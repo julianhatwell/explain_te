@@ -1184,7 +1184,7 @@ def ypsalc(random_state=123, project_dir=None):
     data = data,
     class_col = class_col,
     project_dir = project_dir,
-    save_dir = 'ypssmk',
+    save_dir = 'ypsalc',
     random_state=random_state,
     spiel = '''
     https://www.kaggle.com/miroslavsabo/young-people-survey

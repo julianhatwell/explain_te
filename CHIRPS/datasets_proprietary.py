@@ -714,7 +714,7 @@ def usoc2_samp(random_state=123, project_dir=None):
                         dtype=vtypes),
     class_col = 'mh',
     project_dir = project_dir,
-    save_dir = 'usoc2',
+    save_dir = 'usoc2_samp',
     random_state=random_state,
     spiel = '''
     University of Essex, Institute for Social and Economic Research. (2019).
