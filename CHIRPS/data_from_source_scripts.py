@@ -1335,8 +1335,10 @@ if True:
                          8 : 'ex0.5', 9 : 'ex0.6', 10 : 'ex0.7', 11 : 'ex0.8',
                          12 : 'ex0.9', 13 : 'ex1.0', 14 : 'exm1', 15 : 'exm2',
                          16 : 'eucmac', 17 : 'diaopt', 18 : 'amfm', 19 : 'dr'}, inplace=True)
+    dr = ['yes' if ddr == 1 else 'no' for ddr in data.dr]
+    data['dr'] = dr
 
-    # 0) The binary result of quality assessment. 0 = bad quality 1 = sufficient quality. 
+    # 0) The binary result of quality assessment. 0 = bad quality 1 = sufficient quality.
     # 1) The binary result of pre-screening, where 1 indicates severe retinal abnormality and 0 its lack.
     # 2-7) The results of MA detection. Each feature value stand for the
     # number of MAs found at the confidence levels alpha = 0.5, . . . , 1, respectively.
@@ -1355,5 +1357,5 @@ if True:
     # 19) Class label. 1 = contains signs of DR (Accumulative label for the Messidor classes 1, 2, 3), 0 = no signs of DR.
 
 
-    data.to_csv('CHIRPS\\datafiles\\diaretin.csv.gz', index=False, compression='gzip')
+    data.to_csv('CHIRPS\\datafiles\\diaretino.csv.gz', index=False, compression='gzip')
     '''

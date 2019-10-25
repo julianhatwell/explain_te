@@ -981,10 +981,30 @@ def ypssmk(random_state=123, project_dir=None):
     var_names = [vn for vn in data.columns if vn != class_col]
     var_names.append(class_col)
     data = data[var_names]
+    var_types = ['continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'nominal', 'continuous', 'continuous',
+     'continuous', 'continuous', 'nominal', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'nominal',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'nominal', 'continuous', 'nominal', 'nominal', 'nominal', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'continuous', 'continuous', 'nominal', 'continuous', 'continuous', 'continuous', 'continuous',
+     'continuous', 'nominal', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'nominal',
+     'nominal', 'nominal', 'nominal', 'nominal', 'nominal', 'nominal']
 
     data_cont = data_container(
     data = data,
     class_col = class_col,
+    var_types = var_types,
     project_dir = project_dir,
     save_dir = 'ypssmk',
     random_state=random_state,
@@ -1179,10 +1199,27 @@ def ypsalc(random_state=123, project_dir=None):
     var_names = [vn for vn in data.columns if vn != class_col]
     var_names.append(class_col)
     data = data[var_names]
-
+    var_types = ['continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'nominal', 'continuous', 'continuous',
+    'continuous', 'continuous', 'nominal', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'nominal', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'nominal', 'continuous', 'nominal', 'nominal', 'nominal',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'nominal', 'continuous', 'continuous', 'continuous',
+    'continuous', 'continuous', 'nominal', 'continuous', 'continuous', 'continuous', 'continuous', 'continuous', 'nominal',
+    'nominal', 'nominal', 'nominal', 'nominal', 'nominal', 'nominal']
     data_cont = data_container(
     data = data,
     class_col = class_col,
+    var_types = var_types,
     project_dir = project_dir,
     save_dir = 'ypsalc',
     random_state=random_state,
