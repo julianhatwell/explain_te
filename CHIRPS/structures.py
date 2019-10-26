@@ -1310,6 +1310,32 @@ class CHIRPS_runner(rule_evaluator):
         self.merge_rule_iter = None
         self.algorithm = None
 
+    # def reduce_paths(self, var_dict=None):
+    #     var_dict, _ = self.init_dicts(var_dict=var_dict)
+    #     cont_vars = [vn for vn in var_dict if var_dict[vn]['data_type'] == 'continuous' and var_dict[vn]['class_col'] == False]
+    #
+    #     # iterate over all the paths to find least upper and greatest lower partitioning nodes
+    #     for n, nodes in enumerate(self.paths):
+    #         least_upper = defaultdict(lambda: np.Inf)
+    #         greatest_lower = defaultdict(lambda : np.NINF)
+    #
+    #         for item in nodes:
+    #             if item[0] in cont_vars:
+    #                 if item[1]: # node is a 'less than' test
+    #                     least_upper[item[0]] = min(least_upper[item[0]], item[2])
+    #                 else: # node is a 'greater than' test
+    #                     greatest_lower[item[0]] = max(greatest_lower[item[0]], item[2])
+    #
+    #
+    #         if n < 10:
+    #             print(dict(least_upper))
+    #             print(dict(greatest_lower))
+    #             print(self.paths[n])
+    #             self.paths[n] = [item for item in nodes if not item[0] in cont_vars] + \
+    #             [(k, True, v) for k, v in least_upper.items()] + \
+    #             [(k, False, v) for k, v in greatest_lower.items()]
+    #             print(self.paths[n])
+
     def discretize_paths(self, bins=4, equal_counts=False, var_dict=None):
         # check if bins is not numeric or can't be cast, then force equal width (equal_counts = False)
         var_dict, _ = self.init_dicts(var_dict=var_dict)
@@ -1352,7 +1378,7 @@ class CHIRPS_runner(rule_evaluator):
                                 np.histogram(lowers, lower_bins)[0]).round(5) # can result in nans
             lower_bin_mids = [i if not np.isnan(i) else j for i, j in zip(lower_bin_means, lower_bin_midpoints)]
 
-                        # discretize functions from histogram means
+            # discretize functions from histogram means
             upper_discretize = lambda x: upper_bin_mids[np.max([np.min([np.digitize(x, upper_bins), len(upper_bin_mids)]), 1]) - 1]
             lower_discretize = lambda x: lower_bin_mids[np.max([np.min([np.digitize(x, lower_bins, right= True), len(upper_bin_mids)]), 1]) - 1]
 
@@ -1368,7 +1394,11 @@ class CHIRPS_runner(rule_evaluator):
                     nodes_discretized.append((f, t, v))
                 paths_discretized.append(nodes_discretized)
             # at the end of each loop, update the instance variable
-            self.paths = paths_discretized
+
+            # descretised paths can result in duplicates items, which results in redundancy in the FP
+            self.paths = [[]] * len(paths_discretized)
+            for p, path in enumerate(paths_discretized):
+                self.paths[p] = [i for i in set(path)]
 
     def mine_patterns(self, sample_instances=None, paths_lengths_threshold=2, support=0.1):
 
@@ -1577,8 +1607,10 @@ class CHIRPS_runner(rule_evaluator):
                 # accumlate points from any deleted terms
                 accumulated_points += self.patterns[ur][2]
                 accumulated_weights += self.patterns[ur][1]
-        for rmv in reversed(to_remove):
-            self.unapplied_rules.remove(rmv)
+        if to_remove: # length > 0
+            for rmv in reversed(to_remove):
+                self.unapplied_rules.remove(rmv)
+            
         # make up a new tuple
         t, w, p = next_rule_term
         next_rule_term = (t, w + accumulated_weights, p + accumulated_points)
@@ -1919,6 +1951,8 @@ class CHIRPS_runner(rule_evaluator):
             print('pruned away: restoring previous rule')
             self.pruned_rule = self.__previous_rule
 
+        print(self.pruned_rule)
+
     def get_CHIRPS_explainer(self, elapsed_time=0):
         return(CHIRPS_explainer(self.random_state,
         self.features, self.features_enc, self.class_names,
@@ -1969,8 +2003,8 @@ class CHIRPS_container(object):
 
         # extract the paths we want by filtering on tree performance
         n_paths = len(self.path_detail[batch_idx])
-        print('longest path for ' + str(batch_idx) + ': ' +  str(max([len(pd['path']['feature_idx']) for pd in self.path_detail[batch_idx]])))
-        print('mean path length for ' + str(batch_idx) + ': ' +  str(np.mean([len(pd['path']['feature_idx']) for pd in self.path_detail[batch_idx]])))
+        # print('longest path for ' + str(batch_idx) + ': ' +  str(max([len(pd['path']['feature_idx']) for pd in self.path_detail[batch_idx]])))
+        # print('mean path length for ' + str(batch_idx) + ': ' +  str(np.mean([len(pd['path']['feature_idx']) for pd in self.path_detail[batch_idx]])))
         if which_trees == 'majority':
             # get the paths that agree with the target class
             paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == target_class]))]
