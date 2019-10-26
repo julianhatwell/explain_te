@@ -24,7 +24,7 @@ from CHIRPS import config as cfg
 import warnings
 warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
 
-n_jobs = mp.cpu_count()-2
+n_jobs = mp.cpu_count()-4
 
 def get_file_stem(model='RandomForest'):
     if model=='RandomForest':
