@@ -91,9 +91,10 @@ def accident_small_samp(random_state=123, project_dir=None):
 
 # adult
 def adult(random_state=123, project_dir=None):
-    data_cont = data_container(
     data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult.csv.gz',
-                        compression='gzip'),
+                        compression='gzip')
+    data.drop(columns='education', inplace=True)
+    data_cont = data_container(data,
     class_col = 'income',
     project_dir = project_dir,
     save_dir = 'adult',
@@ -121,9 +122,10 @@ def adult(random_state=123, project_dir=None):
 
 # adult sample: 0.25
 def adult_samp(random_state=123, project_dir=None):
-    data_cont = data_container(
-    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult_samp.csv.gz',
-                        compression='gzip'),
+    data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult.csv.gz',
+                        compression='gzip')
+    data.drop(columns='education', inplace=True)
+    data_cont = data_container(data,
     class_col = 'income',
     project_dir = project_dir,
     save_dir = 'adult_samp',

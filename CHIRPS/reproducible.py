@@ -220,7 +220,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
     evaluator = strcts.evaluator()
     for i in range(len(labels)):
         instance_id = labels.index[i]
-        if i % 10 == 0: o_print('Working on ' + method + ' for instance ' + str(instance_id), verbose)
+        if i % 10 == 0: o_print(str(i) + ': Working on ' + method + ' for instance ' + str(instance_id), verbose)
 
         # get test sample by leave-one-out on current instance
         _, loo_instances_matrix, loo_instances_enc, _, loo_true_labels = ds_container.get_loo_instances(instance_id, which_split='test')
@@ -411,7 +411,7 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
     evaluator = strcts.evaluator()
     for i in range(len(labels)):
         instance_id = labels.index[i]
-        if i % 10 == 0: o_print('Working on ' + method + ' for instance ' + str(instance_id), verbose)
+        if i % 10 == 0: o_print(str(i) + ': Working on ' + method + ' for instance ' + str(instance_id), verbose)
 
         # get test sample by leave-one-out on current instance
         _, _, loo_instances_enc, loo_instances_enc_matrix, loo_true_labels = ds_container.get_loo_instances(instance_id,
@@ -1173,7 +1173,7 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
     for i in range(len(labels)):
         instance_id = labels.index[i]
         #if i % 10 == 0:
-        o_print('Working on ' + method + ' for instance ' + str(instance_id), verbose)
+        o_print(str(i) + ': Working on ' + method + ' for instance ' + str(instance_id), verbose)
 
         # get test sample by leave-one-out on current instance
         loo_instances, _, loo_instances_enc, _, loo_true_labels = ds_container.get_loo_instances(instance_id, which_split='test')

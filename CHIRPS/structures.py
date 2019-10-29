@@ -633,7 +633,7 @@ class evaluator(object):
 
         # coverage
         # tp + fp / tp + fp + tn + fn
-        coverage = c / all_c
+        coverage = (c + 1)/ (all_c + 1)
         # xcov = tp + fp / tp + fp + tn + fn + current instance, laplace corrected
         xcoverage = (c + 1)/(all_c + len(class_names) + 1)
 
@@ -899,7 +899,7 @@ class CHIRPS_explainer(rule_evaluator):
 
     def __init__(self, random_state,
                 features, features_enc, class_names,
-                class_col, get_label,
+                class_col, n_classes, get_label,
                 var_dict, var_dict_enc,
                 paths, paths_weights, patterns,
                 rule, pruned_rule,
@@ -920,6 +920,8 @@ class CHIRPS_explainer(rule_evaluator):
                 ncc,
                 nci,
                 npv,
+                coverage,
+                xcoverage,
                 lift,
                 chisq,
                 kl_div,
@@ -930,6 +932,7 @@ class CHIRPS_explainer(rule_evaluator):
         self.features_enc = features_enc
         self.class_names = class_names
         self.class_col = class_col
+        self.n_classes = n_classes
         self.get_label = get_label
         self.var_dict = var_dict
         self.var_dict_enc = var_dict_enc
@@ -956,6 +959,8 @@ class CHIRPS_explainer(rule_evaluator):
         self.ncc = ncc
         self.nci = nci
         self.npv = npv
+        self.coverage = coverage
+        self.xcoverage = xcoverage
         self.lift = lift
         self.chisq = chisq
         self.kl_div = kl_div
@@ -967,11 +972,17 @@ class CHIRPS_explainer(rule_evaluator):
         self.forest_vote_share = self.model_votes['p_counts'][self.target_class]
         self.conf_weight_forest_vote_share = self.confidence_weights['p_counts'][self.target_class]
         remaining_values = self.model_votes['p_counts'][[i for i in range(len(self.class_names)) if i != self.target_class]]
-        second_greatest = remaining_values[np.argmax(remaining_values)]
-        self.forest_vote_margin = self.forest_vote_share - second_greatest
+        if remaining_values:
+            second_greatest = remaining_values[np.argmax(remaining_values)]
+            self.forest_vote_margin = self.forest_vote_share - second_greatest
+        else: # there is no class discrimination
+            self.forest_vote_margin = 0
         remaining_values = self.confidence_weights['p_counts'][np.where(self.confidence_weights['p_counts'] != self.conf_weight_forest_vote_share)]
-        second_greatest = remaining_values[np.argmax(remaining_values)]
-        self.conf_weight_forest_vote_margin = self.conf_weight_forest_vote_share - second_greatest
+        if remaining_values:
+            second_greatest = remaining_values[np.argmax(remaining_values)]
+            self.conf_weight_forest_vote_margin = self.conf_weight_forest_vote_share - second_greatest
+        else: # there is no class discrimination
+            self.conf_weight_forest_vote_margin = 0
 
         self.pretty_rule = self.prettify_rule()
         self.rule_len = len(self.pruned_rule)
@@ -988,11 +999,11 @@ class CHIRPS_explainer(rule_evaluator):
         self.est_npv = list(reversed(self.npv))[0][self.target_class]
         self.est_acc = list(reversed(self.accuracy))[0][self.target_class]
         self.est_lift = list(reversed(self.lift))[0][self.target_class]
-        self.est_coverage = list(reversed(self.counts))[0].sum() / self.counts[0].sum()
-        self.est_xcoverage = list(reversed(self.counts))[0].sum() / (self.counts[0].sum() + 1)
-        self.est_kl_div = list(reversed(self.kl_div))[0]
         self.posterior_counts = list(reversed(self.counts))[0]
         self.prior_counts = self.counts[0]
+        self.est_coverage = list(reversed(self.coverage))[0]
+        self.est_xcoverage = list(reversed(self.xcoverage))[0]
+        self.est_kl_div = list(reversed(self.kl_div))[0]
 
     def get_distribution_by_rule(self, sample_instances, size=None,
                                     rule='pruned', features=None,
@@ -1296,6 +1307,8 @@ class CHIRPS_runner(rule_evaluator):
         self.stability = None
         self.accuracy = None
         self.counts = None
+        self.coverage = None
+        self.xcoverage = None
         self.recall = None
         self.f1 = None
         self.cc = None
@@ -1310,31 +1323,6 @@ class CHIRPS_runner(rule_evaluator):
         self.merge_rule_iter = None
         self.algorithm = None
 
-    # def reduce_paths(self, var_dict=None):
-    #     var_dict, _ = self.init_dicts(var_dict=var_dict)
-    #     cont_vars = [vn for vn in var_dict if var_dict[vn]['data_type'] == 'continuous' and var_dict[vn]['class_col'] == False]
-    #
-    #     # iterate over all the paths to find least upper and greatest lower partitioning nodes
-    #     for n, nodes in enumerate(self.paths):
-    #         least_upper = defaultdict(lambda: np.Inf)
-    #         greatest_lower = defaultdict(lambda : np.NINF)
-    #
-    #         for item in nodes:
-    #             if item[0] in cont_vars:
-    #                 if item[1]: # node is a 'less than' test
-    #                     least_upper[item[0]] = min(least_upper[item[0]], item[2])
-    #                 else: # node is a 'greater than' test
-    #                     greatest_lower[item[0]] = max(greatest_lower[item[0]], item[2])
-    #
-    #
-    #         if n < 10:
-    #             print(dict(least_upper))
-    #             print(dict(greatest_lower))
-    #             print(self.paths[n])
-    #             self.paths[n] = [item for item in nodes if not item[0] in cont_vars] + \
-    #             [(k, True, v) for k, v in least_upper.items()] + \
-    #             [(k, False, v) for k, v in greatest_lower.items()]
-    #             print(self.paths[n])
 
     def discretize_paths(self, bins=4, equal_counts=False, var_dict=None):
         # check if bins is not numeric or can't be cast, then force equal width (equal_counts = False)
@@ -1594,6 +1582,9 @@ class CHIRPS_runner(rule_evaluator):
 
         # remove the first item from unapplied_rules as it's just been applied or ignored for being out of range
         del self.unapplied_rules[0]
+        return(candidate, candidate_terms, next_rule_term)
+
+    def reduce_unapplied(self, candidate):
         # accumlate all the freq patts that are subsets of the current rules
         # remove the index from the unapplied rules list (including the current rule just added)
         to_remove = []
@@ -1601,20 +1592,20 @@ class CHIRPS_runner(rule_evaluator):
         accumulated_weights = 0
         for ur in self.unapplied_rules:
             # check if all items are already part of the rule (i.e. it's a subset)
-            if all([item in candidate for item in self.patterns[ur][0]]):
+            # if len(self.patterns[ur][0]) == 0:
+            #     print('found an empty one')
+            if len(self.patterns[ur][0]) == 0 or all([item in candidate for item in self.patterns[ur][0]]):
                 # collect up the values to remove. don't want to edit the iterator in progress
                 to_remove.append(ur)
                 # accumlate points from any deleted terms
                 accumulated_points += self.patterns[ur][2]
                 accumulated_weights += self.patterns[ur][1]
+
         if to_remove: # length > 0
             for rmv in reversed(to_remove):
                 self.unapplied_rules.remove(rmv)
-            
-        # make up a new tuple
-        t, w, p = next_rule_term
-        next_rule_term = (t, w + accumulated_weights, p + accumulated_points)
-        return(candidate, candidate_terms, next_rule_term)
+            # print('removed ' + str(len(to_remove)) + ' unapplied patterns. new len ' + str(len(self.unapplied_rules)))
+        return(accumulated_points, accumulated_weights)
 
     def prune_rule(self):
         # removes all other binary items if one Greater than is found.
@@ -1736,6 +1727,8 @@ class CHIRPS_runner(rule_evaluator):
         self.ncc = np.array([prior_eval['ncc'].tolist()])
         self.nci = np.array([prior_eval['nci'].tolist()])
         self.npv = np.array([prior_eval['npv'].tolist()])
+        self.coverage = np.array([prior_eval['coverage'].tolist()])
+        self.xcoverage = np.array([prior_eval['xcoverage'].tolist()])
 
         # pre-loop set up
         # rule based measures - prior/empty rule
@@ -1809,13 +1802,12 @@ class CHIRPS_runner(rule_evaluator):
                 self.reverted.append(should_continue)
                 current_metric = b_curr.mean()
 
+            # clean up the unapplied list and make up a new tuple of accumulated points
+            accumulated_points1, accumulated_weights1 = self.reduce_unapplied(candidate)
+
             if should_continue:
                 continue # don't update all the metrics, just go to the next round
             # otherwise accept the candidate, update everything and save all the metrics
-            self.rule = deepcopy(candidate)
-            rule_length_counter += 1
-            self.accumulated_points += (next_rule_term[2] / self.total_points)
-            self.accumulated_weights += (next_rule_term[1] / self.total_weights)
 
             # check for end conditions; no target class instances
             if eval_rule['counts'][np.where(eval_rule['labels'] == self.target_class)] == 0:
@@ -1836,8 +1828,11 @@ class CHIRPS_runner(rule_evaluator):
             self.ncc = np.append(self.ncc, [eval_rule['ncc']], axis=0 )
             self.nci = np.append(self.nci, [eval_rule['nci']], axis=0 )
             self.npv = np.append(self.npv, [eval_rule['npv']], axis=0 )
+            self.coverage = np.append(self.coverage, [eval_rule['coverage']], axis=0 )
+            self.xcoverage = np.append(self.xcoverage, [eval_rule['xcoverage']], axis=0 )
 
             # update the var_dict with the new rule term values
+            # remove redundancy from the unapplied list - reduce_unapplied() will do the clean up.
             for item in candidate_terms:
                 if item[0] in self.var_dict_enc: # binary feature
                     # find the parent feature of item
@@ -1847,25 +1842,93 @@ class CHIRPS_runner(rule_evaluator):
                     position = self.var_dict[parent_feature]['labels_enc'].index(item[0])
                     if item[1]: # leq_threshold True
                         self.var_dict[parent_feature]['upper_bound'][position] = item[2]
+                        # print('false enc value')
+                        for ur in self.unapplied_rules:
+                            nodes, w, p = self.patterns[ur]
+                            new_nodes = []
+                            for node in nodes:
+                                if item == node:
+                                    pass
+                                else:
+                                    new_nodes.append(node)
+                            if len(nodes) != len(new_nodes):
+                                # print(nodes)
+                                self.patterns[ur] = tuple((tuple(nn for nn in new_nodes), w, p))
+                                # print(self.patterns[ur])
+
                     else: # a known True feature value
                         self.var_dict[parent_feature]['lower_bound'][position] = item[2]
                         # set all other options to False (less that 0.5 is True i.e. False = 0)
                         ub = [item[2]] * len(self.var_dict[parent_feature]['upper_bound'])
                         ub[position] = np.inf
                         self.var_dict[parent_feature]['upper_bound'] = ub
+                        # print('false enc value - all others true')
+                        # print(item)
+                        # print(self.var_dict[parent_feature]['labels_enc'])
+                        for ur in self.unapplied_rules:
+                            nodes, w, p = self.patterns[ur]
+                            new_nodes = []
+                            for node in nodes:
+                                if node[0] in self.var_dict[parent_feature]['labels_enc']:
+                                    pass
+                                else:
+                                    new_nodes.append(node)
+                            if len(nodes) != len(new_nodes):
+                                # print(nodes)
+                                self.patterns[ur] = tuple((tuple(nn for nn in new_nodes), w, p))
+                                # print(self.patterns[ur])
 
                 else: # continuous
                     if item[1]: # leq_threshold True
-                        if item[2] <= self.var_dict[item[0]]['upper_bound'][0]:
+                        if item[2] < self.var_dict[item[0]]['upper_bound'][0]:
                             self.var_dict[item[0]]['upper_bound'][0] = item[2]
+                            for ur in self.unapplied_rules:
+                                nodes, w, p = self.patterns[ur]
+                                new_nodes = []
+                                for node in nodes:
+                                    if item[0] == node[0] and item[2] <= node[2]:
+                                        pass
+                                    else:
+                                        new_nodes.append(node)
+                                if len(new_nodes) < len(nodes):
+                                    # print('reducing continuous 1')
+                                    # print(nodes)
+                                    self.patterns[ur] = tuple((tuple(nn for nn in new_nodes), w, p))
+                                    # print(self.patterns[ur])
 
                     else:
                         if item[2] > self.var_dict[item[0]]['lower_bound'][0]:
                             self.var_dict[item[0]]['lower_bound'][0] = item[2]
+                            for ur in self.unapplied_rules:
+                                nodes, w, p = self.patterns[ur]
+                                new_nodes = []
+                                for node in nodes:
+                                    if item[0] == node[0] and item[2] >= node[2]:
+                                        pass
+                                    else:
+                                        new_nodes.append(node)
+                                if len(new_nodes) < len(nodes):
+                                    # print('reducing continuous 2')
+                                    # print(nodes)
+                                    self.patterns[ur] = tuple((tuple(nn for nn in new_nodes), w, p))
+                                    # print(self.patterns[ur])
 
+            # clean up the unapplied list and make up a new tuple of accumulated points
+            accumulated_points2, accumulated_weights2 = self.reduce_unapplied(candidate)
+
+            # reset for beginning of loop
+            _, w, p = next_rule_term
+            if accumulated_points1 + accumulated_weights1 + accumulated_points2 + accumulated_weights2 > 0:
+                w += (accumulated_weights1 + accumulated_weights2)
+                p += (accumulated_points1 + accumulated_points2)
+
+            self.rule = deepcopy(candidate)
+            rule_length_counter += 1
+            self.accumulated_points += (p / self.total_points)
+            self.accumulated_weights += (w / self.total_weights)
             previous = current_metric
         # end while
-        print(current_metric, rule_length_counter, len(self.unapplied_rules), self.accumulated_points, self.accumulated_weights)
+
         # case no solution was found
         if rule_length_counter == 0:
             print('no solution')
@@ -1951,12 +2014,19 @@ class CHIRPS_runner(rule_evaluator):
             print('pruned away: restoring previous rule')
             self.pruned_rule = self.__previous_rule
 
+        # this is just to diagnose, should be del before final runnings
+        eval_rule = self.evaluate_rule(sample_instances=instances,
+                                sample_labels=labels)
         print(self.pruned_rule)
+        print('indicative:')
+        print(eval_rule['stability'][self.target_class],
+                eval_rule['xcoverage'] * (eval_rule['nci']/(eval_rule['ci'] + eval_rule['nci']))[self.target_class],
+                self.accumulated_points, self.accumulated_weights)
 
     def get_CHIRPS_explainer(self, elapsed_time=0):
         return(CHIRPS_explainer(self.random_state,
         self.features, self.features_enc, self.class_names,
-        self.class_col, self.get_label,
+        self.class_col, self.n_classes, self.get_label,
         self.var_dict, self.var_dict_enc,
         self.paths, self.paths_weights, self.patterns,
         self.rule, self.pruned_rule,
@@ -1977,6 +2047,8 @@ class CHIRPS_runner(rule_evaluator):
         self.ncc,
         self.nci,
         self.npv,
+        self.coverage,
+        self.xcoverage,
         self.lift,
         self.chisq,
         self.kl_div,

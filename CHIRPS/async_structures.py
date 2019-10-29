@@ -108,10 +108,10 @@ def as_CHIRPS(c_runner,
     # score and sort
     if len(c_runner.patterns) > 100000:
         print('batch_idx ' + str(batch_idx) + ': very long one')
-        print([cp for i, cp in enumerate(c_runner.paths) if i < 100])
-        print([cp for i, cp in enumerate(c_runner.patterns) if i < 100])
+        print([cp for i, cp in enumerate(c_runner.paths) if i < 10])
+        print([cp for i, cp in enumerate(c_runner.patterns) if i < 10])
     print('found ' + str(len(c_runner.patterns)) + ' patterns from ' + str(len(c_runner.paths)) + ' for batch_idx ' +  str(batch_idx))
-    print('start score sort for batch_idx ' + str(batch_idx))
+    print('start score sort for batch_idx ' + str(batch_idx) + ' (' + str(len(c_runner.patterns)) + ') patterns')
     c_runner.score_sort_path_snippets(alpha_paths=alpha_paths,
                                         score_func=score_func,
                                         weighting=weighting)
@@ -119,7 +119,7 @@ def as_CHIRPS(c_runner,
     # greedily add terms to create rule
     if len(c_runner.patterns) > 100000:
         print('batch_idx ' + str(batch_idx) + ': very long one')
-        print([cp for i, cp in enumerate(c_runner.patterns) if i < 100])
+        print([cp for i, cp in enumerate(c_runner.patterns) if i < 10])
     print('start merge rule for batch_idx ' + str(batch_idx) + ' (' + str(len(c_runner.patterns)) + ') patterns')
     c_runner.merge_rule(forest=forest,
                 algorithm=algorithm,
@@ -127,7 +127,7 @@ def as_CHIRPS(c_runner,
                 pruning_bootstraps=pruning_bootstraps,
                 delta=delta,
                 precis_threshold=precis_threshold)
-    print('merge complete for batch_idx ' + str(batch_idx))
+    print('merge complete for batch_idx ' + str(batch_idx) + ' (' + str(len(c_runner.patterns)) + ') patterns')
 
     cr_end_time = timeit.default_timer()
     cr_elapsed_time = cr_end_time - cr_start_time
