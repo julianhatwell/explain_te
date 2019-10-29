@@ -1456,6 +1456,43 @@ class CHIRPS_runner(rule_evaluator):
             self.patterns = {((p), ) : scaler.transform([[w]])[0][0] for p, w in dict(entropy_weighted_patterns).items() \
                                     if scaler.transform([[w]]) >= support }
 
+    def reduce_patterns(self):
+        # iterate over all the patterns to find least upper and greatest lower partitioning nodes
+        # removes redundancy
+        reduced_patterns = defaultdict(lambda: 0)
+        for pattern in self.patterns:
+            least_upper = defaultdict(lambda: [math.inf, 0])
+            greatest_lower = defaultdict(lambda : [-math.inf, 0])
+
+            for item in pattern:
+                if item[1]: # node is a 'less than' test
+                    least_upper[item[0]][0] = min(least_upper[item[0]][0], item[2])
+                    least_upper[item[0]][1] += 1
+                else: # node is a 'greater than' test
+                    greatest_lower[item[0]][0] = max(greatest_lower[item[0]][0], item[2])
+                    greatest_lower[item[0]][1] += 1
+
+            if any([True if least_upper[vn][1] > 1 else False for vn in least_upper]) or \
+                any([True if greatest_lower[vn][1] > 1 else False for vn in greatest_lower]):
+                # collect this reduced pattern and accumulate the previous score
+                reduced_patterns[tuple((t for t in [(k, True, v[0]) for k, v in least_upper.items()] + \
+                            [(k, False, v[0]) for k, v in greatest_lower.items()]))] += self.patterns[pattern]
+                # print({tuple((t for t in [(k, True, v[0]) for k, v in least_upper.items()] + \
+                #             [(k, False, v[0]) for k, v in greatest_lower.items()])) : \
+                #             reduced_patterns[tuple((t for t in [(k, True, v[0]) for k, v in least_upper.items()] + \
+                #             [(k, False, v[0]) for k, v in greatest_lower.items()]))]})
+                # print({pattern: self.patterns[pattern]})
+                # print()
+            else: # pass the unchanged pattern
+                reduced_patterns[pattern] += self.patterns[pattern]
+                # print('straight through')
+                # print({pattern: reduced_patterns[pattern]})
+                # print()
+
+        if len(self.patterns) > len(reduced_patterns):
+            print('Reduced ' + str(len(self.patterns) - len(reduced_patterns)) + ' patterns by numeric redundancy')
+        self.patterns = dict(reduced_patterns)
+
     def mine_path_snippets(self, paths_lengths_threshold=2, support_paths=0.1,
                             disc_path_bins=4, disc_path_eqcounts=False):
 
@@ -1465,6 +1502,10 @@ class CHIRPS_runner(rule_evaluator):
 
         # the patterns are found but not scored and sorted yet
         self.mine_patterns(paths_lengths_threshold=paths_lengths_threshold, support=support_paths)
+
+        # patterns may contain redundant nodes
+        # e.g. two greater than tests in the same path, the second being more specific
+        self.reduce_patterns()
 
     def sort_patterns(self, alpha=0.0, weights=None, score_func=1):
         alpha = float(alpha)
@@ -1525,7 +1566,6 @@ class CHIRPS_runner(rule_evaluator):
             # to be created each item iteration
             # as the order is important can be rarranged by inserts
             feature_appears = [f for (f, _, _) in candidate]
-
             # skip duplicates (essential for pruning reasons)
             if item in candidate:
                 continue
@@ -1558,7 +1598,7 @@ class CHIRPS_runner(rule_evaluator):
             else: # continuous feature
                 append_or_update = False
                 if item[1]: # leq_threshold True
-                    if item[2] <= self.var_dict[item[0]]['upper_bound'][0]:
+                    if item[2] < self.var_dict[item[0]]['upper_bound'][0]:
                         append_or_update = True
 
                 else:
@@ -1570,10 +1610,8 @@ class CHIRPS_runner(rule_evaluator):
                         # print(item, 'feature appears already')
                         valueless_rule = [(f, t) for (f, t, _) in self.rule]
                         if (item[0], item[1]) in valueless_rule: # it's already there and needs updating
-                            # print(item, 'feature values appears already')
                             candidate[valueless_rule.index((item[0], item[1]))] = item
                         else: # feature has been used at the opposite end (either lower or upper bound) and needs inserting
-                            # print(item, 'feature values with new discontinuity')
                             candidate.insert(feature_appears.index(item[0]) + 1, item)
                     else:
                         # print(item, 'feature first added')
