@@ -554,14 +554,15 @@ class forest_walker(object):
                 tree_pred_proba, \
                 tree_agree_maj_vote, feature, threshold, path)
 
-    def forest_walk(self, instances, labels = None, forest_walk_async=False):
+    def forest_walk(self, instances, labels = None, forest_walk_async=False, n_cores=None):
 
         features = self.features
         n_instances = instances.shape[0]
 
         if forest_walk_async:
             async_out = []
-            n_cores = mp.cpu_count()-2
+            if n_cores is None:
+                n_cores = mp.cpu_count()-4
             pool = mp.Pool(processes=n_cores)
 
             for i, (t, est_wt) in enumerate(zip(self.forest.estimators_, self.forest.estimator_weights_)):
@@ -972,13 +973,13 @@ class CHIRPS_explainer(rule_evaluator):
         self.forest_vote_share = self.model_votes['p_counts'][self.target_class]
         self.conf_weight_forest_vote_share = self.confidence_weights['p_counts'][self.target_class]
         remaining_values = self.model_votes['p_counts'][[i for i in range(len(self.class_names)) if i != self.target_class]]
-        if remaining_values:
+        if len(remaining_values) > 0:
             second_greatest = remaining_values[np.argmax(remaining_values)]
             self.forest_vote_margin = self.forest_vote_share - second_greatest
         else: # there is no class discrimination
             self.forest_vote_margin = 0
         remaining_values = self.confidence_weights['p_counts'][np.where(self.confidence_weights['p_counts'] != self.conf_weight_forest_vote_share)]
-        if remaining_values:
+        if len(remaining_values) > 0:
             second_greatest = remaining_values[np.argmax(remaining_values)]
             self.conf_weight_forest_vote_margin = self.conf_weight_forest_vote_share - second_greatest
         else: # there is no class discrimination
@@ -2018,7 +2019,6 @@ class CHIRPS_runner(rule_evaluator):
         eval_rule = self.evaluate_rule(sample_instances=instances,
                                 sample_labels=labels)
         print(self.pruned_rule)
-        print('indicative:')
         print(eval_rule['stability'][self.target_class],
                 eval_rule['xcoverage'] * (eval_rule['nci']/(eval_rule['ci'] + eval_rule['nci']))[self.target_class],
                 self.accumulated_points, self.accumulated_weights)
@@ -2121,7 +2121,7 @@ class CHIRPS_container(object):
 
     def batch_run_CHIRPS(self, target_classes=None,
                         chirps_explanation_async=False,
-                        random_state=123,
+                        random_state=123, n_cores=None,
                         **kwargs):
         # defaults
         options = {'which_trees' : 'majority',
@@ -2136,7 +2136,7 @@ class CHIRPS_container(object):
             'algorithm' : 'greedy_stab',
             'merging_bootstraps' : 20,
             'pruning_bootstraps' : 20,
-            'delta' : 0.1 }
+            'delta' : 0.1}
         options.update(kwargs)
 
         # convenience function to orient the top level of bpc
@@ -2154,7 +2154,8 @@ class CHIRPS_container(object):
         if chirps_explanation_async:
 
             async_out = []
-            n_cores = mp.cpu_count()-2
+            if n_cores is None:
+                n_cores = mp.cpu_count()-4
             pool = mp.Pool(processes=n_cores)
 
             # loop for each instance
