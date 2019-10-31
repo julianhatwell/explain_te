@@ -972,13 +972,13 @@ class CHIRPS_explainer(rule_evaluator):
         self.forest_vote_share = self.model_votes['p_counts'][self.target_class]
         self.conf_weight_forest_vote_share = self.confidence_weights['p_counts'][self.target_class]
         remaining_values = self.model_votes['p_counts'][[i for i in range(len(self.class_names)) if i != self.target_class]]
-        if remaining_values:
+        if len(remaining_values) > 0:
             second_greatest = remaining_values[np.argmax(remaining_values)]
             self.forest_vote_margin = self.forest_vote_share - second_greatest
         else: # there is no class discrimination
             self.forest_vote_margin = 0
         remaining_values = self.confidence_weights['p_counts'][np.where(self.confidence_weights['p_counts'] != self.conf_weight_forest_vote_share)]
-        if remaining_values:
+        if len(remaining_values) > 0:
             second_greatest = remaining_values[np.argmax(remaining_values)]
             self.conf_weight_forest_vote_margin = self.conf_weight_forest_vote_share - second_greatest
         else: # there is no class discrimination
@@ -1490,7 +1490,7 @@ class CHIRPS_runner(rule_evaluator):
                 # print()
 
         if len(self.patterns) > len(reduced_patterns):
-            print('Reduced ' + str(len(self.patterns) - len(reduced_patterns)) + ' patterns by numeric redundancy')
+            print('reduced ' + str(len(self.patterns) - len(reduced_patterns)) + ' patterns out of ' + str(len(self.patterns)) + ' by numeric redundancy')
         self.patterns = dict(reduced_patterns)
 
     def mine_path_snippets(self, paths_lengths_threshold=2, support_paths=0.1,
@@ -2053,10 +2053,10 @@ class CHIRPS_runner(rule_evaluator):
             self.pruned_rule = self.__previous_rule
 
         # this is just to diagnose, should be del before final runnings
-        eval_rule = self.evaluate_rule(sample_instances=instances,
+        eval_rule = self.evaluate_rule(rule='pruned',
+                                sample_instances=instances,
                                 sample_labels=labels)
         print(self.pruned_rule)
-        print('indicative:')
         print(eval_rule['stability'][self.target_class],
                 eval_rule['xcoverage'] * (eval_rule['nci']/(eval_rule['ci'] + eval_rule['nci']))[self.target_class],
                 self.accumulated_points, self.accumulated_weights)
