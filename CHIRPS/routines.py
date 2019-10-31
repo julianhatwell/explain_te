@@ -24,8 +24,6 @@ from CHIRPS import config as cfg
 import warnings
 warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
 
-n_jobs = mp.cpu_count()-2
-
 def get_file_stem(model='RandomForest'):
     if model=='RandomForest':
         return('rf_')
@@ -57,7 +55,9 @@ def extend_path(stem, extensions, is_dir=False):
 
 def do_rf_tuning(X, y, model, # model redundant, just here for same interface
                     grid,
-                    random_state=123, save_path = None):
+                    n_cores,
+                    random_state=123,
+                    save_path = None):
 
     grid = ParameterGrid(grid)
     start_time = timeit.default_timer()
@@ -68,7 +68,7 @@ def do_rf_tuning(X, y, model, # model redundant, just here for same interface
     for g in grid:
         print('Trying params: ' + str(g))
         fitting_start_time = timeit.default_timer()
-        rf.set_params(n_jobs=n_jobs,
+        rf.set_params(n_jobs=n_cores,
             oob_score = True,
             random_state=random_state,
             **g)
@@ -97,13 +97,14 @@ def do_rf_tuning(X, y, model, # model redundant, just here for same interface
 
     return(best_params, forest_performance)
 
-def do_ada_tuning(X, y, model, grid,
-                    random_state=123, save_path = None):
+def do_ada_tuning(X, y, model, grid, n_cores,
+                    random_state=123,
+                    save_path = None):
 
     start_time = timeit.default_timer()
     print('Finding best params with 10-fold CV')
     rf = DaskGridSearchCV(AdaBoostClassifier(random_state=random_state),
-    param_grid=grid, n_jobs=n_jobs, cv=10)
+    param_grid=grid, n_jobs=n_cores, cv=10)
     rf.fit(X, y)
     means = rf.cv_results_['mean_test_score']
     stds = rf.cv_results_['std_test_score']
@@ -126,13 +127,14 @@ def do_ada_tuning(X, y, model, grid,
 
     return(best_params, forest_performance)
 
-def do_gbm_tuning(X, y, model, grid,
-                    random_state=123, save_path = None, verbose=True):
+def do_gbm_tuning(X, y, model, grid, n_cores,
+                    random_state=123, save_path = None,
+                    verbose=True):
 
     start_time = timeit.default_timer()
     o_print('Finding best params with 10-fold CV', verbose)
     rf = Dask(GradientBoostingClassifier(random_state=random_state),
-    param_grid=grid, n_jobs=n_jobs, cv=10)
+    param_grid=grid, n_jobs=n_cores, cv=10)
     rf.fit(X, y)
     means = rf.cv_results_['mean_test_score']
     stds = rf.cv_results_['std_test_score']
@@ -157,7 +159,11 @@ def tune_wrapper(X, y, model, grid,
             random_state=123,
             save_path = None,
             override_tuning=False,
-            verbose=True):
+            verbose=True,
+            n_cores=None):
+
+    if n_cores is None:
+        n_cores = mp.cpu_count()-4
 
     file_stem = get_file_stem(model)
     # to do - test allowable structure of grid input
@@ -181,16 +187,19 @@ def tune_wrapper(X, y, model, grid,
     if model == 'RandomForest':
         best_params, forest_performance = do_rf_tuning(X, y, model,
                                                     grid=grid,
+                                                    n_cores=n_cores,
                                                     random_state=random_state,
                                                     save_path=save_path)
     elif model in ('AdaBoost1', 'AdaBoost2'):
         best_params, forest_performance = do_ada_tuning(X, y, model,
                                                     grid=grid,
+                                                    n_cores=n_cores,
                                                     random_state=random_state,
                                                     save_path=save_path)
     elif model == 'GBM':
         best_params, forest_performance = do_gbm_tuning(X, y, model,
                                                     grid=grid,
+                                                    n_cores=n_cores,
                                                     random_state=random_state,
                                                     save_path=save_path)
     else:
@@ -251,7 +260,10 @@ def forest_prep(ds_container, meta_data, tuning_grid,
                 save_path=None, override_tuning=False,
                 method='main',
                 plot_cm=False, plot_cm_norm=False,
-                verbose=True):
+                verbose=True, n_cores=None):
+
+    if n_cores is None:
+        n_cores = mp.cpu_count()-4
 
     if meta_data['needs_balance']:
         # run SMOTE oversampling
@@ -284,13 +296,14 @@ def forest_prep(ds_container, meta_data, tuning_grid,
      grid=tuning_grid,
      save_path=save_path,
      override_tuning=override_tuning,
-     random_state=random_state, verbose=verbose)
+     random_state=random_state, verbose=verbose,
+     n_cores=n_cores)
 
     if model == 'RandomForest':
         best_params.update({'oob_score' : True, 'random_state' : random_state})
         del(best_params['score'])
         rf = RandomForestClassifier()
-        rf.set_params(n_jobs=n_jobs, **best_params)
+        rf.set_params(n_jobs=n_cores, **best_params)
         rf.fit(X=X_train, y=y_train)
 
     elif model in ['AdaBoost1', 'AdaBoost2']:

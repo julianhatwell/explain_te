@@ -4,8 +4,8 @@ import timeit
 import random
 import numpy as np
 import pandas as pd
-import math
-from math import sqrt
+import multiprocessing as mp
+from math import sqrt, ceil
 import warnings
 import scipy.stats as st
 from copy import deepcopy
@@ -59,7 +59,11 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
                     chirps_explanation_async=True,
                     save_path='', save_sensitivity_path=None,
                     dataset_name='',
-                    random_state=123, verbose=True, **kwargs):
+                    random_state=123, verbose=True, n_cores=None,
+                    **kwargs):
+
+    if n_cores is None:
+        n_cores = mp.cpu_count()-4
 
     if save_sensitivity_path is None:
         save_sensitivity_path=save_path
@@ -87,9 +91,11 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
 
     # do the walk - returns a batch_paths_container (even for just one instance)
     # requires the X instances in a matrix (dense, ordinary numpy matrix) - this is available in the data_split_container
-    f_walker.forest_walk(instances = instances_enc_matrix
-                        , labels = preds # we're explaining the prediction, not the true label!
-                        , forest_walk_async = forest_walk_async)
+    f_walker.forest_walk(instances = instances_enc_matrix,
+                            labels = preds, # we're explaining the prediction, not the true label!
+                            forest_walk_async = forest_walk_async,
+                            n_cores = n_cores)
+
 
     # stop the timer
     forest_walk_end_time = timeit.default_timer()
@@ -117,7 +123,9 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
     ce_start_time = timeit.default_timer()
 
     CHIRPS.batch_run_CHIRPS(target_classes=preds, # we're explaining the prediction, not the true label!
-                            chirps_explanation_async=chirps_explanation_async, random_state=random_state, **kwargs)
+                            chirps_explanation_async=chirps_explanation_async,
+                            random_state=random_state, n_cores=n_cores,
+                            **kwargs)
 
     ce_end_time = timeit.default_timer()
     ce_elapsed_time = ce_end_time - ce_start_time
@@ -824,13 +832,13 @@ def gpdg_freedman_diaconis(x):
     iqr = np.subtract(*np.percentile(x, [75, 25]))
     n = len(x)
     h = 2.0 * iqr / n**(1.0/3.0)
-    k = math.ceil((np.max(x) - np.min(x))/h)
+    k = ceil((np.max(x) - np.min(x))/h)
     return k
 
 
 def gpdg_struges(x):
     n = len(x)
-    k = math.ceil( np.log2(n) ) + 1
+    k = ceil( np.log2(n) ) + 1
     return k
 
 
@@ -1276,11 +1284,15 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
         rt.save_results(cfg.summary_results_headers, summary_results, save_path, save_results_file + '_summary')
 
 
-
 def benchmarking_prep(datasets, model, tuning, project_dir,
                         random_state, random_state_splits,
                         do_raw=True, do_discretise=False,
-                        start_instance=0, verbose=True):
+                        start_instance=0, verbose=True,
+                        n_cores=None):
+
+    if n_cores is None:
+        n_cores = mp.cpu_count()-4
+
     benchmark_items = {}
     for d_constructor in datasets:
         dataset_name = d_constructor.__name__
@@ -1310,7 +1322,8 @@ def benchmarking_prep(datasets, model, tuning, project_dir,
                         tuning_grid=tuning['grid'],
                         model=model,
                         override_tuning=tuning['override'],
-                        save_path=save_path, verbose=verbose)
+                        save_path=save_path, verbose=verbose,
+                        n_cores=n_cores)
         else:
             rf = None
 
@@ -1329,7 +1342,8 @@ def benchmarking_prep(datasets, model, tuning, project_dir,
                 model=model,
                 override_tuning=False,
                 save_path=save_path,
-                method='Anchors', verbose=verbose)
+                method='Anchors', verbose=verbose,
+                n_cores=n_cores)
         else:
             rf_anch = None
             tt_anch = None

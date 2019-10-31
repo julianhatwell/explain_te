@@ -554,14 +554,15 @@ class forest_walker(object):
                 tree_pred_proba, \
                 tree_agree_maj_vote, feature, threshold, path)
 
-    def forest_walk(self, instances, labels = None, forest_walk_async=False):
+    def forest_walk(self, instances, labels = None, forest_walk_async=False, n_cores=None):
 
         features = self.features
         n_instances = instances.shape[0]
 
         if forest_walk_async:
             async_out = []
-            n_cores = mp.cpu_count()-2
+            if n_cores is None:
+                n_cores = mp.cpu_count()-4
             pool = mp.Pool(processes=n_cores)
 
             for i, (t, est_wt) in enumerate(zip(self.forest.estimators_, self.forest.estimator_weights_)):
@@ -2159,7 +2160,7 @@ class CHIRPS_container(object):
 
     def batch_run_CHIRPS(self, target_classes=None,
                         chirps_explanation_async=False,
-                        random_state=123,
+                        random_state=123, n_cores=None,
                         **kwargs):
         # defaults
         options = {'which_trees' : 'majority',
@@ -2174,7 +2175,7 @@ class CHIRPS_container(object):
             'algorithm' : 'greedy_stab',
             'merging_bootstraps' : 20,
             'pruning_bootstraps' : 20,
-            'delta' : 0.1 }
+            'delta' : 0.1}
         options.update(kwargs)
 
         # convenience function to orient the top level of bpc
@@ -2192,7 +2193,8 @@ class CHIRPS_container(object):
         if chirps_explanation_async:
 
             async_out = []
-            n_cores = mp.cpu_count()-2
+            if n_cores is None:
+                n_cores = mp.cpu_count()-4
             pool = mp.Pool(processes=n_cores)
 
             # loop for each instance
