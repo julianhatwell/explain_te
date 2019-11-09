@@ -31,13 +31,14 @@ def p_count_corrected(arr, classes, weights=None):
         weights = np.ones(len(arr))
     else:
         weights = np.array(weights)
-        try: # for 2D weights, take the sum of weights where the class is listed
-            _ = np.shape(weights)[1] # 1D test
+        if len(weights.shape) == 1:
+            pass
+        else:
             n_weights = np.shape(weights)[0]
             weights = weights[range(n_weights), arr] # this will fail if there is no second dimension
             weights = weights / (n_weights * len(classes)) # this is the formula for SAMME.R and scikit
-        except:
-            pass
+
+
     c = np.bincount(arr, weights=np.array(weights))
     # correct for any classes at the end of the sequence not represented e.g. a string of 0, 1, but there are 0, 1 and 2 classes
     # the bincount function cuts off the last unrepresented class

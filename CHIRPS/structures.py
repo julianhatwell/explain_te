@@ -1,7 +1,8 @@
 import sys
 import math
 import multiprocessing as mp
-# import traceback
+import time
+import timeit
 import numpy as np
 from pandas import DataFrame, Series
 from CHIRPS import p_count_corrected, if_nexists_make_dir, chisq_indep_test, entropy_corrected, contingency_test, confidence_weight
@@ -615,6 +616,22 @@ class forest_walker(object):
 # this is to have the evaluator function inherited from one place
 class evaluator(object):
 
+    def evaluate_quick(self, prior_labels, post_idx, class_names=None):
+
+        if class_names is None:
+            class_names = [i for i in range(len(np.unique(prior_labels)))]
+        # basic results
+        p_counts = p_count_corrected(prior_labels[post_idx], class_names)
+        counts = p_counts['counts']
+        labels = p_counts['labels']
+        # stab = tp / tp + fp + current instance, laplace corrected
+        stability = (counts) / (np.sum(counts) + len(class_names) + 1)
+
+        output = {'labels' : labels,
+                    'stability' : stability}
+
+        return(output)
+
     def evaluate(self, prior_labels, post_idx, class_names=None):
 
         if class_names is None:
@@ -782,17 +799,48 @@ class rule_evaluator(non_deterministic, evaluator):
 
         return(var_dict, var_dict_enc)
 
+    def get_lt_gt(self, y, z):
+        def lt_gt(x):
+            if z:
+                return(x <= y)
+            else:
+                return(x > y)
+
+        return(lt_gt)
+
     # apply a rule on an instance space, returns covered instance idx
     def apply_rule(self, rule=None, instances=None, features=None):
+        return(np.all([self.get_lt_gt(r[2], r[1])(instances.getcol(features.index(r[0])).toarray().flatten()) for r in rule], axis=0))
 
-        lt_gt = lambda x, y, z : x <= y if z else x > y # if z is True, x <= y else x > y
-        idx = np.full(instances.shape[0], 1, dtype='bool')
-        for r in rule:
-            idx = np.logical_and(idx, lt_gt(instances.getcol(features.index(r[0])).toarray().flatten(), r[2], r[1]))
-            if np.isnan(r[2]):
-                print('nan:', str(rule))
-        return(idx)
+    # def apply_rule(self, rule=None, instances=None, features=None):
+    #
+    #     lt_gt = lambda x, y, z : x <= y if z else x > y # if z is True, x <= y else x > y
+    #     idx = np.full(instances.shape[0], 1, dtype='bool')
+    #     for r in rule:
+    #         idx = np.logical_and(idx, lt_gt(instances.getcol(features.index(r[0])).toarray().flatten(), r[2], r[1]))
+    #         if np.isnan(r[2]):
+    #             print('nan:', str(rule))
+    #     return(idx)
+
+
     # score a rule on an instance space
+    def evaluate_rule_quick(self, rule=None, features=None, class_names=None,
+                        sample_instances=None, sample_labels=None, target_class=None):
+
+        # allow new values or get self properties
+        rule, features, class_names = self.init_values(rule=rule, features=features, class_names=class_names)
+        instances, labels = self.init_instances(instances=sample_instances, labels=sample_labels)
+
+        # get the covered idx
+        if rule: # the rule has terms
+            idx = self.apply_rule(rule=rule, instances=instances, features=features)
+        else: # empty rule
+            idx = np.full(instances.shape[0], 1, dtype='bool')
+
+        metrics = self.evaluate_quick(prior_labels=labels, post_idx=idx)
+        # collect metrics
+        return(metrics)
+
     def evaluate_rule(self, rule=None, features=None, class_names=None,
                         sample_instances=None, sample_labels=None, target_class=None):
 
@@ -801,7 +849,10 @@ class rule_evaluator(non_deterministic, evaluator):
         instances, labels = self.init_instances(instances=sample_instances, labels=sample_labels)
 
         # get the covered idx
-        idx = self.apply_rule(rule=rule, instances=instances, features=features)
+        if rule: # the rule has terms
+            idx = self.apply_rule(rule=rule, instances=instances, features=features)
+        else: # empty rule
+            idx = np.full(instances.shape[0], 1, dtype='bool')
 
         metrics = self.evaluate(prior_labels=labels, post_idx=idx)
         # collect metrics
@@ -862,11 +913,15 @@ class rule_evaluator(non_deterministic, evaluator):
                             rule_complement.append((var_dict[prnt]['labels_enc'][i], True, 0.5))
                     rule_complements.update({ prnt : rule_complement})
             elif parent_features[prnt] == 'continuous':
-                rule_complement = rule.copy()
                 for i, item in enumerate(rule):
-                        if item[0] == prnt: # basic flip - won't work for both because rule eval is logical AND
-                            rule_complement[i] = (item[0], not item[1], item[2])
-                            rule_complements.update({ prnt : rule_complement})
+                    rule_complement = rule.copy()
+                    if item[0] == prnt:
+                        if item[1]: # less than, upper bound
+                            rule_complement[i] = (item[0], False, item[2])
+                            rule_complements.update({ prnt + '_less_than_upper_bound' : rule_complement})
+                        else: # greater than, lower bound
+                            rule_complement[i] = (item[0], True, item[2])
+                            rule_complements.update({ prnt + '_greater_than_lower_bound' : rule_complement})
             else: # its a single False (greater than thresh) - simple flip
                 rule_complement = rule.copy()
                 for i, item in enumerate(rule):
@@ -894,7 +949,28 @@ class rule_evaluator(non_deterministic, evaluator):
                                             'eval' :  eval,
                                             'kl_div' : kl_div } )
 
+
         return(rule_complement_results)
+
+    def get_complement_feature_parent(self, feature_name):
+        return(feature_name.replace('_less_than_upper_bound', '').replace('_greater_than_lower_bound', ''))
+
+    def prune_one(self, rcr, var_dict=None, var_dict_enc=None):
+        var_dict, _ = self.init_dicts(var_dict=var_dict, var_dict_enc=var_dict_enc)
+        prnt = self.get_complement_feature_parent(rcr['feature'])
+        if var_dict[prnt]['data_type'] == 'nominal':
+            # to_remove = to_remove + self.var_dict[rule_complement_results[rc]['feature']]['labels_enc']
+            self.pruned_rule = [(f, t, v) for f, t, v in self.pruned_rule if f not in var_dict[rcr['feature']]['labels_enc']]
+        else:
+            # to_remove = to_remove + [rule_complement_results[rc]['feature']]
+            if rcr['feature'].find('_less_than_upper_bound') != -1: # found upper bound
+                self.pruned_rule = [(f, t, v) for f, t, v in self.pruned_rule if (f, t) != (prnt, True)] # second argument is True
+            elif rcr['feature'].find('_greater_than_lower_bound') != -1: # found upper bound:
+                self.pruned_rule = [(f, t, v) for f, t, v in self.pruned_rule if (f, t) != (prnt, False)] # second argument is True
+            else: # something is wrong
+                print('pruning ' + rcr['feature'] + ' went wrong')
+                stop
+
 
 class CHIRPS_explainer(rule_evaluator):
 
@@ -986,7 +1062,10 @@ class CHIRPS_explainer(rule_evaluator):
             self.conf_weight_forest_vote_margin = 0
 
         self.pretty_rule = self.prettify_rule()
-        self.rule_len = len(self.pruned_rule)
+        parent_features = self.categorise_rule_features(rule='pruned',
+                                                        var_dict=self.var_dict,
+                                                        var_dict_enc=self.var_dict_enc)
+        self.rule_len = len(parent_features)
 
         # final metrics from rule merge step (usually based on training set)
         self.est_prec = list(reversed(self.posterior))[0][self.target_class]
@@ -1022,7 +1101,10 @@ class CHIRPS_explainer(rule_evaluator):
         # get instances covered by rule
         idx = self.apply_rule(rule=rule, instances=instances, features=features)
 
-        instances = instances[idx]
+        # rare case there might not be any, in which case keep all instances
+        if any(idx):
+            instances = instances[idx]
+
         n_instances = instances.shape[0]
 
         # reproducibility
@@ -1164,9 +1246,10 @@ class CHIRPS_explainer(rule_evaluator):
         # for each rule comp, create datasets of the same size as the leave-one-out test set
         for feature in rule_complements:
             rc = rule_complements[feature]
+            prnt = self.get_complement_feature_parent(feature)
             instance_specific_mask, allowed_values_mask, mask_cover = self.mask_by_instance(instance=instance,
                                                                                                             sample_instances=instances,
-                                                                                                            rule=rc, feature=feature,
+                                                                                                            rule=rc, feature=prnt,
                                                                                                             size=size)
             ism_preds = forest.predict(instance_specific_mask)
             ism_post = p_count_corrected(ism_preds, [i for i in range(len(self.class_names))])
@@ -1549,6 +1632,11 @@ class CHIRPS_runner(rule_evaluator):
 
                 if weighting in ['chisq', 'kldiv', 'lodds']:
                     weights[j] = contingency_test(covered, all_instances, weighting)
+                else: # metric weighting
+                    eval_wp = self.evaluate_rule(rule=wp, sample_instances=instances,
+                                            sample_labels=labels)
+                    weights[j] = eval_wp[weighting][self.target_class]
+
             # correct any uncalculable weights
             weights = [w if not n else min(weights) for w, n in zip(weights, np.isnan(weights))] # clean up any nans
             # normalise
@@ -1773,18 +1861,20 @@ class CHIRPS_runner(rule_evaluator):
         # rule based measures - prior/empty rule
         current_metric = prior_eval['posterior'][np.where(prior_eval['labels'] == self.target_class)][0] # based on prior
         # choosing from a range of possible metrics and learning improvement
+        quick = False
         if self.algorithm == 'greedy_prec':
             metric = 'posterior'
-            previous = self.posterior
+            previous = self.posterior[0][np.where(prior_eval['labels'] == self.target_class)][0]
         elif self.algorithm == 'greedy_f1':
             metric = 'f1'
-            previous = self.f1
+            previous = self.f1[0][np.where(prior_eval['labels'] == self.target_class)][0]
         elif self.algorithm == 'greedy_acc':
             metric = 'accuracy'
-            previous = self.accuracy
+            previous = self.accuracy[0][np.where(prior_eval['labels'] == self.target_class)][0]
         else: # 'greedy_stab'
+            quick = True
             metric = 'stability'
-            previous = self.stability
+            previous = self.stability[0][np.where(prior_eval['labels'] == self.target_class)][0]
 
         # accumulate rule terms
         rule_length_counter = 0
@@ -1793,9 +1883,9 @@ class CHIRPS_runner(rule_evaluator):
 
         while current_metric != 1.0 \
             and current_metric != 0.0 \
-            and current_metric < precis_threshold \
             and (fixed_length is None or rule_length_counter < max(1, fixed_length)) \
             and len(self.unapplied_rules) > 0:
+            # and current_metric < precis_threshold:
 
             self.merge_rule_iter += 1
 
@@ -1827,13 +1917,22 @@ class CHIRPS_runner(rule_evaluator):
                     b_sample_instances = instances[idx]
                     b_sample_labels = labels[idx]
 
-                    b_eval_rule = self.evaluate_rule(rule=candidate, sample_instances=b_sample_instances,
-                                                sample_labels=b_sample_labels)
-                    b_curr[b] = b_eval_rule[metric][np.where(eval_rule['labels'] == self.target_class)]
+                    if quick:
+                        b_eval_rule = self.evaluate_rule_quick(rule=candidate, sample_instances=b_sample_instances,
+                                                    sample_labels=b_sample_labels)
 
-                    b_eval_prev = self.evaluate_rule(rule = self.rule,
-                                                sample_instances=b_sample_instances,
-                                                sample_labels=b_sample_labels)
+                        b_eval_prev = self.evaluate_rule_quick(rule = self.rule,
+                                                    sample_instances=b_sample_instances,
+                                                    sample_labels=b_sample_labels)
+                    else:
+                        b_eval_rule = self.evaluate_rule(rule=candidate, sample_instances=b_sample_instances,
+                                                    sample_labels=b_sample_labels)
+
+                        b_eval_prev = self.evaluate_rule(rule = self.rule,
+                                                    sample_instances=b_sample_instances,
+                                                    sample_labels=b_sample_labels)
+
+                    b_curr[b] = b_eval_rule[metric][np.where(eval_rule['labels'] == self.target_class)]
                     b_prev[b] = b_eval_prev[metric][np.where(b_eval_prev['labels'] == self.target_class)]
 
                 # test for continue to next, or update rule
@@ -1887,11 +1986,13 @@ class CHIRPS_runner(rule_evaluator):
                             new_nodes = []
                             for node in nodes:
                                 if item == node:
+                                    # print(node)
                                     pass
                                 else:
                                     new_nodes.append(node)
-                            if len(nodes) != len(new_nodes):
+                            if len(new_nodes) < len(nodes):
                                 # print(nodes)
+                                # print('cleaned ' + str(len(nodes) - len(new_nodes)) + ' nodes')
                                 self.patterns[ur] = tuple((tuple(nn for nn in new_nodes), w, p))
                                 # print(self.patterns[ur])
 
@@ -1909,10 +2010,12 @@ class CHIRPS_runner(rule_evaluator):
                             new_nodes = []
                             for node in nodes:
                                 if node[0] in self.var_dict[parent_feature]['labels_enc']:
+                                    # print(node)
                                     pass
                                 else:
                                     new_nodes.append(node)
-                            if len(nodes) != len(new_nodes):
+                            if len(new_nodes) < len(nodes):
+                                # print('cleaned ' + str(len(nodes) - len(new_nodes)) + ' nodes')
                                 # print(nodes)
                                 self.patterns[ur] = tuple((tuple(nn for nn in new_nodes), w, p))
                                 # print(self.patterns[ur])
@@ -1926,10 +2029,12 @@ class CHIRPS_runner(rule_evaluator):
                                 new_nodes = []
                                 for node in nodes:
                                     if item[0] == node[0] and item[2] <= node[2]:
+                                        # print(node)
                                         pass
                                     else:
                                         new_nodes.append(node)
                                 if len(new_nodes) < len(nodes):
+                                    # print('cleaned ' + str(len(nodes) - len(new_nodes)) + ' nodes')
                                     # print('reducing continuous 1')
                                     # print(nodes)
                                     self.patterns[ur] = tuple((tuple(nn for nn in new_nodes), w, p))
@@ -1943,10 +2048,12 @@ class CHIRPS_runner(rule_evaluator):
                                 new_nodes = []
                                 for node in nodes:
                                     if item[0] == node[0] and item[2] >= node[2]:
+                                        # print(node)
                                         pass
                                     else:
                                         new_nodes.append(node)
                                 if len(new_nodes) < len(nodes):
+                                    # print('cleaned ' + str(len(nodes) - len(new_nodes)) + ' nodes')
                                     # print('reducing continuous 2')
                                     # print(nodes)
                                     self.patterns[ur] = tuple((tuple(nn for nn in new_nodes), w, p))
@@ -1985,71 +2092,84 @@ class CHIRPS_runner(rule_evaluator):
         self.prune_rule()
 
         # pruning: remove any redundant rule terms that add less that delta to current metric
-        if pruning_bootstraps > 0:
-            # get a bootstrapped evaluation
-            b_current = np.full(pruning_bootstraps, np.nan)
-            for b in range(pruning_bootstraps):
-                # bootstrap the instances
-                idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
-                b_sample_instances = instances[idx]
-                b_sample_labels = labels[idx]
+        stop_prune = False
+        self.__previous_rule = deepcopy(self.pruned_rule)
+        while not stop_prune:
+            # this routine will try removing a rule term
+            # to see if metric drops below threshold
+            if pruning_bootstraps > 0:
+                # get a bootstrapped evaluation
+                b_current = np.full(pruning_bootstraps, np.nan)
+                for b in range(pruning_bootstraps):
+                    # bootstrap the instances
+                    idx = np.random.choice(self.n_instances, size = self.n_instances, replace=True)
+                    b_sample_instances = instances[idx]
+                    b_sample_labels = labels[idx]
 
-                # evaluate on the bootstrap
-                eval_current = self.evaluate_rule(rule='pruned', sample_instances=b_sample_instances, sample_labels=b_sample_labels)
+                    # evaluate on the bootstrap
+                    eval_current = self.evaluate_rule(rule='pruned', sample_instances=b_sample_instances, sample_labels=b_sample_labels)
+                    eval_current_post = eval_current[metric]
+                    eval_current_counts = eval_current['counts']
+                    b_current[b] = eval_current_post[np.where(eval_rule['labels'] == self.target_class)]
+
+                    rule_complement_results = self.eval_rule_complements(sample_instances=b_sample_instances, sample_labels=b_sample_labels)
+                    n_rule_complements = len(rule_complement_results)
+                    b_rc = np.full(n_rule_complements, np.nan)
+
+                    for rc, rcr in enumerate(rule_complement_results):
+                        eval_rcr = rcr['eval']
+                        rcr_posterior = eval_rcr[metric]
+                        b_rc[rc] = rcr_posterior[np.where(eval_rcr['labels'] == self.target_class)]
+
+                    if b == 0:
+                        b_rcr = np.array(b_rc)
+                    else:
+                        b_rcr = np.vstack((b_rcr, b_rc))
+
+
+                rc = b_rcr.mean(axis=0).argmax()
+                if (b_rcr[:,rc] < precis_threshold - delta).sum() < bootstrap_confidence * pruning_bootstraps:
+                    self.prune_one(rule_complement_results[rc], var_dict=self.var_dict)
+                else: # no more to do
+                    stop_prune = True
+            else:
+                # evaluate on the input sample
+                eval_current = self.evaluate_rule(rule='pruned', sample_instances=instances, sample_labels=labels)
                 eval_current_post = eval_current[metric]
                 eval_current_counts = eval_current['counts']
-                b_current[b] = eval_current_post[np.where(eval_rule['labels'] == self.target_class)]
+                current = eval_current_post[np.where(eval_rule['labels'] == self.target_class)]
 
-                rule_complement_results = self.eval_rule_complements(sample_instances=b_sample_instances, sample_labels=b_sample_labels)
+                rule_complement_results = self.eval_rule_complements(sample_instances=instances, sample_labels=labels)
                 n_rule_complements = len(rule_complement_results)
-                b_rc = np.full(n_rule_complements, np.nan)
+                rcomp = np.full(n_rule_complements, np.nan)
 
                 for rc, rcr in enumerate(rule_complement_results):
                     eval_rcr = rcr['eval']
                     rcr_posterior = eval_rcr[metric]
-                    b_rc[rc] = rcr_posterior[np.where(eval_rcr['labels'] == self.target_class)]
+                    rcomp[rc] = rcr_posterior[np.where(eval_rcr['labels'] == self.target_class)]
 
-                if b == 0:
-                    b_rcr = np.array(b_rc)
-                else:
-                    b_rcr = np.vstack((b_rcr, b_rc))
+                # print(rule_complement_results)
+                rc = rcomp.argmax()
+                if precis_threshold - delta < rcomp[rc]:
+                    self.prune_one(rule_complement_results[rc], var_dict=self.var_dict)
+                else: # no more to do
+                    stop_prune = True
 
+        # end while
 
-            to_remove = []
-            for rc in range(n_rule_complements):
-                if (b_current - delta >= b_rcr[:,rc]).sum() < bootstrap_confidence * pruning_bootstraps:
-                    if self.var_dict[rule_complement_results[rc]['feature']]['data_type'] == 'nominal':
-                        to_remove = to_remove + self.var_dict[rule_complement_results[rc]['feature']]['labels_enc']
-                    else:
-                        to_remove = to_remove + [rule_complement_results[rc]['feature']]
-        else:
-            # evaluate on the input sample
-            eval_current = self.evaluate_rule(rule='pruned', sample_instances=instances, sample_labels=labels)
-            eval_current_post = eval_current[metric]
-            eval_current_counts = eval_current['counts']
-            current = eval_current_post[np.where(eval_rule['labels'] == self.target_class)]
+        # now just see if the feature that contributes the least can be removed
+        # if len(self.pruned_rule) == len(self.__previous_rule):
+        #     print('in pruning two')
+        #     if pruning_bootstraps > 0:
+        #         if (b_rcr[:,rc] < b_current - delta).sum() < bootstrap_confidence * pruning_bootstraps:
+        #             print('pruning two')
+        #             self.prune_one(rule_complement_results[rc], var_dict=self.var_dict)
+        #     else:
+        #         if current - delta < rcomp[rc]:
+        #             print('pruning two')
+        #             self.prune_one(rule_complement_results[rc], var_dict=self.var_dict)
 
-            rule_complement_results = self.eval_rule_complements(sample_instances=instances, sample_labels=labels)
-            n_rule_complements = len(rule_complement_results)
-            rcomp = np.full(n_rule_complements, np.nan)
-
-            for rc, rcr in enumerate(rule_complement_results):
-                eval_rcr = rcr['eval']
-                rcr_posterior = eval_rcr[metric]
-                rcomp[rc] = rcr_posterior[np.where(eval_rcr['labels'] == self.target_class)]
-            to_remove = []
-            for rc in range(n_rule_complements):
-                if current - delta < rcomp[rc]:
-                    if self.var_dict[rule_complement_results[rc]['feature']]['data_type'] == 'nominal':
-                        to_remove = to_remove + self.var_dict[rule_complement_results[rc]['feature']]['labels_enc']
-                    else:
-                        to_remove = to_remove + [rule_complement_results[rc]['feature']]
-
-        # now can prune any items in to_remove
-        self.__previous_rule = self.pruned_rule
-        self.pruned_rule = [(f, t, v) for f, t, v in self.pruned_rule if f not in to_remove]
-        new_len = len(self.pruned_rule)
-        if new_len == 0:
+        if len(self.pruned_rule) == 0:
             print('pruned away: restoring previous rule')
             self.pruned_rule = self.__previous_rule
 

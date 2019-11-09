@@ -106,10 +106,6 @@ def as_CHIRPS(c_runner,
                             disc_path_bins, disc_path_eqcounts)
 
     # score and sort
-    if len(c_runner.patterns) > 100000:
-        print('batch_idx ' + str(batch_idx) + ': very long one')
-        print([cp for i, cp in enumerate(c_runner.paths) if i < 10])
-        print([cp for i, cp in enumerate(c_runner.patterns) if i < 10])
     print('found ' + str(len(c_runner.patterns)) + ' patterns from ' + str(len(c_runner.paths)) + ' for batch_idx ' +  str(batch_idx))
     print('start score sort for batch_idx ' + str(batch_idx) + ' (' + str(len(c_runner.patterns)) + ') patterns')
     c_runner.score_sort_path_snippets(alpha_paths=alpha_paths,
@@ -117,9 +113,9 @@ def as_CHIRPS(c_runner,
                                         weighting=weighting)
 
     # greedily add terms to create rule
-    if len(c_runner.patterns) > 100000:
-        print('batch_idx ' + str(batch_idx) + ': very long one')
-        print([cp for i, cp in enumerate(c_runner.patterns) if i < 10])
+    # if len(c_runner.patterns) > 10000:
+    #     print('batch_idx ' + str(batch_idx) + ': very long one')
+    #     print([cp for i, cp in enumerate(c_runner.patterns) if i < 1000])
     print('start merge rule for batch_idx ' + str(batch_idx) + ' (' + str(len(c_runner.patterns)) + ') patterns')
     c_runner.merge_rule(forest=forest,
                 algorithm=algorithm,
