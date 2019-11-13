@@ -1880,12 +1880,11 @@ class CHIRPS_runner(rule_evaluator):
         rule_length_counter = 0
         self.merge_rule_iter = 0
         default_metric = 0.0
-
         while current_metric != 1.0 \
             and current_metric != 0.0 \
+            and current_metric < precis_threshold \
             and (fixed_length is None or rule_length_counter < max(1, fixed_length)) \
             and len(self.unapplied_rules) > 0:
-            # and current_metric < precis_threshold:
 
             self.merge_rule_iter += 1
 
@@ -2029,12 +2028,10 @@ class CHIRPS_runner(rule_evaluator):
                                 new_nodes = []
                                 for node in nodes:
                                     if item[0] == node[0] and item[2] <= node[2]:
-                                        # print(node)
                                         pass
                                     else:
                                         new_nodes.append(node)
                                 if len(new_nodes) < len(nodes):
-                                    # print('cleaned ' + str(len(nodes) - len(new_nodes)) + ' nodes')
                                     # print('reducing continuous 1')
                                     # print(nodes)
                                     self.patterns[ur] = tuple((tuple(nn for nn in new_nodes), w, p))
@@ -2048,12 +2045,10 @@ class CHIRPS_runner(rule_evaluator):
                                 new_nodes = []
                                 for node in nodes:
                                     if item[0] == node[0] and item[2] >= node[2]:
-                                        # print(node)
                                         pass
                                     else:
                                         new_nodes.append(node)
                                 if len(new_nodes) < len(nodes):
-                                    # print('cleaned ' + str(len(nodes) - len(new_nodes)) + ' nodes')
                                     # print('reducing continuous 2')
                                     # print(nodes)
                                     self.patterns[ur] = tuple((tuple(nn for nn in new_nodes), w, p))

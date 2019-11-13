@@ -928,6 +928,47 @@ def lore_build_df2explain(bb, X, dataset):
     dfZ = loreutil.label_decode(dfZ, discrete, label_encoder)
     return dfZ
 
+def lore_get_closest_diffoutcome(df, x, x_enc, discrete, continuous, class_name, blackbox, label_encoder, distance_function,
+                            k=100, diff_out_ratio=0.1):
+
+    distances = list()
+    distances_0 = list()
+    idx0 = list()
+    distances_1 = list()
+    idx1 = list()
+    Z, _ = loreutil.label_encode(df, discrete, label_encoder)
+    Z = Z.iloc[:, Z.columns != class_name].values
+    idx = 0
+    for z, z1 in zip(df.to_dict('records'), Z):
+        d = distance_function(x, z, discrete, continuous, class_name)
+        distances.append(d)
+        # the way this is done, it's only good for binary classification
+        if blackbox.predict(x_enc.transform(z1.reshape(1, -1)).todense())[0] == 0:
+            distances_0.append(d)
+            idx0.append(idx)
+        else:
+            distances_1.append(d)
+            idx1.append(idx)
+        idx += 1
+
+    idx0 = np.array(idx0)
+    idx1 = np.array(idx1)
+
+    all_indexs = np.argsort(distances).tolist()[:k]
+    indexes0 = list(idx0[np.argsort(distances_0).tolist()[:k]])
+    indexes1 = list(idx1[np.argsort(distances_1).tolist()[:k]])
+
+    if 1.0 * len(set(all_indexs) & set(indexes0)) / len(all_indexs) < diff_out_ratio:
+        k_index = k - int(k * diff_out_ratio)
+        final_indexes = all_indexs[:k_index] + indexes0[:int(k * diff_out_ratio)]
+    elif 1.0 * len(set(all_indexs) & set(indexes1)) < diff_out_ratio:
+        k_index = k - int(k * diff_out_ratio)
+        final_indexes = all_indexs[:k_index] + indexes1[:int(k * diff_out_ratio)]
+    else:
+        final_indexes = all_indexs
+
+    return final_indexes
+
 
 def lore_genetic_neighborhood(dfZ, x, blackbox, dataset, popsize=1000):
     discrete = dataset['discrete']
@@ -954,56 +995,17 @@ def lore_genetic_neighborhood(dfZ, x, blackbox, dataset, popsize=1000):
         return(None, Z)
     zy = blackbox.predict(x_enc.transform(Z).todense())
     if len(np.unique(zy)) == 1: # the model is predicting everything the same
-        # print('qui')
         label_encoder = dataset['label_encoder']
         dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0]
         dfZ = lore_build_df2explain(blackbox, dfZ, dataset)
-        neig_indexes = loreutil.get_closest_diffoutcome(dfZ, dfx, discrete, continuous, class_name,
+        neig_indexes = lore_get_closest_diffoutcome(dfZ, dfx, x_enc, discrete, continuous, class_name,
                                                blackbox, label_encoder, distance_function, k=100)
         Zn, _ = loreutil.label_encode(dfZ, discrete, label_encoder)
         Zn = Zn.iloc[neig_indexes, Zn.columns != class_name].values
         Z = np.concatenate((Z, Zn), axis=0)
+
     dfZ = lore_build_df2explain(blackbox, Z, dataset)
     return dfZ, Z
-
-
-def lore_random_neighborhood(dfZ, x, blackbox, dataset, popsize=1000, stratified=True):
-    discrete = dataset['discrete']
-    continuous = dataset['continuous']
-    label_encoder = dataset['label_encoder']
-    class_name = dataset['class_name']
-    columns = dataset['columns']
-    features_type = dataset['features_type']
-    x_enc = dataset['instance_encoder']
-
-    if stratified:
-
-        def distance_function(x0, x1, discrete, continuous, class_name):
-            return loredistfun.mixed_distance(x0, x1, discrete, continuous, class_name,
-                                  ddist=loredistfun.simple_match_distance,
-                                  cdist=loredistfun.normalized_euclidean_distance)
-
-        dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0]
-        # need to add the predictions back in
-        dfZ = lore_build_df2explain(blackbox, dfZ, dataset)
-        neig_indexes = loreutil.get_closest_diffoutcome(dfZ, dfx, discrete, continuous, class_name,
-                                               blackbox, label_encoder, distance_function, k=100)
-
-        Z, _ = loreutil.label_encode(dfZ, discrete, label_encoder)
-        Z = Z.iloc[neig_indexes, Z.columns != class_name].values
-        Z = lore_generate_random_data(Z, class_name, columns, discrete, continuous, features_type, size=popsize, uniform=True)
-        dfZ = lore_build_df2explain(blackbox, Z, dataset)
-
-        return dfZ, Z
-
-    else:
-
-        Z, _ = lroeutil.label_encode(dfZ, discrete, label_encoder)
-        Z = Z.iloc[:, Z.columns != class_name].values
-        Z = lore_generate_random_data(Z, class_name, columns, discrete, continuous, features_type, size=popsize, uniform=True)
-        dfZ = util.build_df2explain(blackbox, Z, dataset)
-
-        return dfZ, Z
 
 
 def lore_generate_random_data(X, class_name, columns, discrete, continuous, features_type, size=1000, uniform=True):
@@ -1035,6 +1037,44 @@ def lore_generate_random_data(X, class_name, columns, discrete, continuous, feat
     if isinstance(X, pd.DataFrame):
         X1 = pd.DataFrame(data=X1, columns=columns1)
     return X1
+
+
+def lore_random_neighborhood(dfZ, x, blackbox, dataset, popsize=1000, stratified=True):
+    discrete = dataset['discrete']
+    continuous = dataset['continuous']
+    label_encoder = dataset['label_encoder']
+    class_name = dataset['class_name']
+    columns = dataset['columns']
+    features_type = dataset['features_type']
+    x_enc = dataset['instance_encoder']
+
+    if stratified:
+
+        def distance_function(x0, x1, discrete, continuous, class_name):
+            return loredistfun.mixed_distance(x0, x1, discrete, continuous, class_name,
+                                  ddist=loredistfun.simple_match_distance,
+                                  cdist=loredistfun.normalized_euclidean_distance)
+
+        dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0]
+        # need to add the predictions back in
+        dfZ = lore_build_df2explain(blackbox, dfZ, dataset)
+        neig_indexes = lore_get_closest_diffoutcome(dfZ, dfx, x_enc, discrete, continuous, class_name,
+                                               blackbox, label_encoder, distance_function, k=100)
+
+        Z, _ = loreutil.label_encode(dfZ, discrete, label_encoder)
+        Z = Z.iloc[neig_indexes, Z.columns != class_name].values
+        Z = lore_generate_random_data(Z, class_name, columns, discrete, continuous, features_type, size=popsize, uniform=True)
+        dfZ = lore_build_df2explain(blackbox, Z, dataset)
+
+        return dfZ, Z
+
+    else:
+        Z, _ = lroeutil.label_encode(dfZ, discrete, label_encoder)
+        Z = Z.iloc[:, Z.columns != class_name].values
+        Z = lore_generate_random_data(Z, class_name, columns, discrete, continuous, features_type, size=popsize, uniform=True)
+        dfZ = util.build_df2explain(blackbox, Z, dataset)
+
+        return dfZ, Z
 
 
 # modified to return a boolean index
