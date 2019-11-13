@@ -100,13 +100,17 @@ def as_CHIRPS(c_runner,
     c_runner.sample_instances = sample_instances
     c_runner.sample_labels = sample_labels
 
-    print('start mining for batch_idx ' + str(batch_idx))
-    # extract path snippets with highest suppert/weight
-    c_runner.mine_path_snippets(paths_lengths_threshold, support_paths,
-                            disc_path_bins, disc_path_eqcounts)
+    # extract path snippets with highest support/weight
+    sp_decrease = support_paths / 10
+    while c_runner.patterns is None or len(c_runner.patterns) == 0:
+        print('start mining for batch_idx ' + str(batch_idx) + ' with support = ' + str(support_paths))
+        c_runner.mine_path_snippets(paths_lengths_threshold, support_paths,
+                                disc_path_bins, disc_path_eqcounts)
 
-    # score and sort
-    print('found ' + str(len(c_runner.patterns)) + ' patterns from ' + str(len(c_runner.paths)) + ' for batch_idx ' +  str(batch_idx))
+        # score and sort
+        print('found ' + str(len(c_runner.patterns)) + ' patterns from ' + str(len(c_runner.paths)) + ' for batch_idx ' +  str(batch_idx))
+        support_paths = support_paths - sp_decrease
+
     print('start score sort for batch_idx ' + str(batch_idx) + ' (' + str(len(c_runner.patterns)) + ') patterns')
     c_runner.score_sort_path_snippets(alpha_paths=alpha_paths,
                                         score_func=score_func,
