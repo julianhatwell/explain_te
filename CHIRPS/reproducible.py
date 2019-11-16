@@ -228,7 +228,8 @@ def Anchors_benchmark(forest, ds_container, meta_data,
     evaluator = strcts.evaluator()
     for i in range(len(labels)):
         instance_id = labels.index[i]
-        if i % 10 == 0: o_print(str(i) + ': Working on ' + method + ' for instance ' + str(instance_id), verbose)
+        # if i % 10 == 0:
+        o_print(str(i) + ': Working on ' + method + ' for instance ' + str(instance_id), verbose)
 
         # get test sample by leave-one-out on current instance
         _, loo_instances_matrix, loo_instances_enc, _, loo_true_labels = ds_container.get_loo_instances(instance_id, which_split='test')
@@ -969,6 +970,11 @@ def lore_get_closest_diffoutcome(df, x, x_enc, discrete, continuous, class_name,
 
     return final_indexes
 
+def lore_normalized_euclidean_distance(x, y):
+    if np.var(x) + np.var(y) == 0.0:
+        return 0.0
+    else:
+        return (0.5 * np.var(x - y) / (np.var(x) + np.var(y)))
 
 def lore_genetic_neighborhood(dfZ, x, blackbox, dataset, popsize=1000):
     discrete = dataset['discrete']
@@ -984,7 +990,7 @@ def lore_genetic_neighborhood(dfZ, x, blackbox, dataset, popsize=1000):
     def distance_function(x0, x1, discrete, continuous, class_name):
         return loredistfun.mixed_distance(x0, x1, discrete, continuous, class_name,
                               ddist=loredistfun.simple_match_distance,
-                              cdist=loredistfun.normalized_euclidean_distance)
+                              cdist=lore_normalized_euclidean_distance)
 
     Z = gpdg_generate_data(x, x_enc, feature_values, blackbox, discrete_no_class, continuous, class_name, idx_features,
                       distance_function,
@@ -1053,7 +1059,7 @@ def lore_random_neighborhood(dfZ, x, blackbox, dataset, popsize=1000, stratified
         def distance_function(x0, x1, discrete, continuous, class_name):
             return loredistfun.mixed_distance(x0, x1, discrete, continuous, class_name,
                                   ddist=loredistfun.simple_match_distance,
-                                  cdist=loredistfun.normalized_euclidean_distance)
+                                  cdist=lore_normalized_euclidean_distance)
 
         dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0]
         # need to add the predictions back in
