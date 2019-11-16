@@ -1173,6 +1173,26 @@ def lore_explain(instance, X_train, dataset, blackbox,
 
     return(rule, counterfactuals, infos)
 
+
+def lore_recognize_features_type(df, class_name):
+    integer_features = list(df.select_dtypes(include=np.sctypes['int']).columns)
+    double_features = list(df.select_dtypes(include=np.sctypes['float']).columns)
+    string_features = list(df.select_dtypes(include=np.object).columns)
+    type_features = {
+        'integer': integer_features,
+        'double': double_features,
+        'string': string_features,
+    }
+    features_type = dict()
+    for col in integer_features:
+        features_type[col] = 'integer'
+    for col in double_features:
+        features_type[col] = 'double'
+    for col in string_features:
+        features_type[col] = 'string'
+
+    return type_features, features_type
+
 def lore_prepare_dataset(name, mydata, meta_data):
     # don't need tt splits
     # this object is just required to inform other routines of avalable columns and types
@@ -1180,7 +1200,7 @@ def lore_prepare_dataset(name, mydata, meta_data):
     class_name = meta_data['class_col']
     # class_col must be at front for this method
     columns = [meta_data['class_col']] + meta_data['features']
-    type_features, features_type = loreutil.recognize_features_type(df, class_name)
+    type_features, features_type = lore_recognize_features_type(df, class_name)
     dataset = {
         'name': name,
         'df': mydata.data[columns],
