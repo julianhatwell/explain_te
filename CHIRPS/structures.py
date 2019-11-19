@@ -810,7 +810,10 @@ class rule_evaluator(non_deterministic, evaluator):
 
     # apply a rule on an instance space, returns covered instance idx
     def apply_rule(self, rule=None, instances=None, features=None):
-        return(np.all([self.get_lt_gt(r[2], r[1])(instances.getcol(features.index(r[0])).toarray().flatten()) for r in rule], axis=0))
+        if not rule:
+            return([True] * instances.shape[0])
+        else:
+            return(np.all([self.get_lt_gt(r[2], r[1])(instances.getcol(features.index(r[0])).toarray().flatten()) for r in rule], axis=0))
 
     # def apply_rule(self, rule=None, instances=None, features=None):
     #
@@ -2151,18 +2154,6 @@ class CHIRPS_runner(rule_evaluator):
                     stop_prune = True
 
         # end while
-
-        # now just see if the feature that contributes the least can be removed
-        # if len(self.pruned_rule) == len(self.__previous_rule):
-        #     print('in pruning two')
-        #     if pruning_bootstraps > 0:
-        #         if (b_rcr[:,rc] < b_current - delta).sum() < bootstrap_confidence * pruning_bootstraps:
-        #             print('pruning two')
-        #             self.prune_one(rule_complement_results[rc], var_dict=self.var_dict)
-        #     else:
-        #         if current - delta < rcomp[rc]:
-        #             print('pruning two')
-        #             self.prune_one(rule_complement_results[rc], var_dict=self.var_dict)
 
         if len(self.pruned_rule) == 0:
             print('pruned away: restoring previous rule')

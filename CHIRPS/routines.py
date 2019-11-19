@@ -551,6 +551,8 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # CHIRPS_container
                     else:
                         print()
 
+        # end for
+
     if save_results_path is not None:
         # save to file between each loop, in case of crashes/restarts
         save_results(cfg.results_headers, results, save_results_path, save_results_file)

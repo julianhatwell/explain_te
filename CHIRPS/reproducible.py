@@ -1,3 +1,4 @@
+import csv
 import json
 import time
 import timeit
@@ -212,6 +213,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
 
     method = 'Anchors'
     file_stem = rt.get_file_stem(model)
+    save_results_file = method + '_rnst_' + str(random_state)
     # 2. Prepare Unseen Data and Predictions
     o_print('Prepare Unseen Data and Predictions for Anchors benchmark', verbose)
     # OPTION 1 - batching (to be implemented in the new code, right now it will do just one batch)
@@ -306,8 +308,19 @@ def Anchors_benchmark(forest, ds_container, meta_data,
             test_metrics['kl_div'],
             anch_elapsed_time]
 
+        # save an intermediate file
+        if save_path is not None:
+            if i == 0:
+                rt.save_results(cfg.results_headers, np.array(results[i]).reshape(1, -1), save_results_path=save_path,
+                                save_results_file=save_results_file)
+            else:
+                with open(save_path + save_results_file + '.csv','a') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([i] + results[i])
+
+        # end for
+
     if save_path is not None:
-        save_results_file = method + '_rnst_' + str(random_state)
         # save to file between each loop, in case of crashes/restarts
         rt.save_results(cfg.results_headers, results, save_results_path=save_path,
                         save_results_file=save_results_file)
@@ -1227,6 +1240,7 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
 
     method = 'lore'
     file_stem = rt.get_file_stem(model)
+    save_results_file = method + '_rnst_' + str(random_state)
     o_print('lore benchmark', verbose)
 
     instances, _ , instances_enc, instances_enc_matrix, labels = unseen_data_prep(ds_container,
@@ -1327,8 +1341,20 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
             test_metrics['kl_div'],
             lore_elapsed_time]
 
+        # save an intermediate file
+        print(results[i].reshape(1, -1))
+        if save_path is not None:
+            if i == 0:
+                rt.save_results(cfg.results_headers, np.array(results[i]).reshape(1, -1), save_results_path=save_path,
+                                save_results_file=save_results_file)
+            else:
+                with open(save_path + save_results_file + '.csv','a') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([i] + results[i])
+
+        # end for
+
     if save_path is not None:
-        save_results_file = method + '_rnst_' + str(random_state)
         # save to file between each loop, in case of crashes/restarts
         rt.save_results(cfg.results_headers, results, save_results_path=save_path,
                         save_results_file=save_results_file)
