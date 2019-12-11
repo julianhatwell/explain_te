@@ -1342,7 +1342,6 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
             lore_elapsed_time]
 
         # save an intermediate file
-        print(results[i].reshape(1, -1))
         if save_path is not None:
             if i == 0:
                 rt.save_results(cfg.results_headers, np.array(results[i]).reshape(1, -1), save_results_path=save_path,

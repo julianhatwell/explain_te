@@ -2088,6 +2088,7 @@ class CHIRPS_runner(rule_evaluator):
 
         # set up the rule for clean up
         self.prune_rule()
+        #
 
         # pruning: remove any redundant rule terms that add less that delta to current metric
         stop_prune = False
@@ -2124,9 +2125,9 @@ class CHIRPS_runner(rule_evaluator):
                     else:
                         b_rcr = np.vstack((b_rcr, b_rc))
 
-
                 rc = b_rcr.mean(axis=0).argmax()
-                if (b_rcr[:,rc] < precis_threshold - delta).sum() < bootstrap_confidence * pruning_bootstraps:
+                if (b_rcr[:,rc] < precis_threshold - delta).sum() < bootstrap_confidence * pruning_bootstraps \
+                and len(self.pruned_rule) > 1: # don't prune away a rule with just one term
                     self.prune_one(rule_complement_results[rc], var_dict=self.var_dict)
                 else: # no more to do
                     stop_prune = True
