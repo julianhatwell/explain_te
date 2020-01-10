@@ -596,8 +596,8 @@ if True:
     usoc2 = usoc[np.logical_and(np.logical_and(usoc.scghq1_dv >=0, usoc.bmival >=0), usoc.wstval >=0)]
     usoc2.reset_index(inplace=True)
     mh = np.array(['neutral'] * len(usoc2.scghq1_dv))
-    mh[usoc2.scghq1_dv < 7.0] = 'unhappy'
-    mh[usoc2.scghq1_dv > 13.0] = 'happy'
+    mh[usoc2.scghq1_dv < 7.0] = 'poor'
+    mh[usoc2.scghq1_dv > 13.0] = 'good'
     usoc2 = usoc2.assign(mh = pd.Series(mh, index = usoc2.index))
     usoc2.drop(columns='scghq1_dv', inplace=True)
     usoc2.to_csv('CHIRPS\\datafiles_proprietary\\usoc2.csv.gz', index=False, compression='gzip')

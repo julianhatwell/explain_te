@@ -93,7 +93,7 @@ def do_rf_tuning(X, y, model, # model redundant, just here for same interface
     forest_performance = {'score' : best_grid['score'],
                         'fitting_time' : fitting_elapsed_time}
 
-    save_tuning_results(save_path, random_state, best_params, forest_performance, model='RandomForest')
+    save_tuning_results(save_path, random_state, best_params, forest_performance, model=model)
 
     return(best_params, forest_performance)
 
@@ -133,7 +133,7 @@ def do_gbm_tuning(X, y, model, grid, n_cores,
 
     start_time = timeit.default_timer()
     o_print('Finding best params with 10-fold CV', verbose)
-    rf = Dask(GradientBoostingClassifier(random_state=random_state),
+    rf = DaskGridSearchCV(GradientBoostingClassifier(random_state=random_state),
     param_grid=grid, n_jobs=n_cores, cv=10)
     rf.fit(X, y)
     means = rf.cv_results_['mean_test_score']
