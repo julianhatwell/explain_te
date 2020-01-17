@@ -411,11 +411,9 @@ class data_container(data_preprocessor):
                 })
 
 # classes and functions for the parallelisable tree_walk
-class forest_walker(object):
+class forest_container(object):
 
-    def __init__(self
-    , forest
-    , meta_data):
+    def __init__(self, forest, meta_data):
         self.forest = forest
         self.features = meta_data['features_enc']
         self.n_features = len(self.features)
@@ -431,104 +429,14 @@ class forest_walker(object):
         # else:
         #     self.get_label = None
 
-        # weights for standard Boosted models, random forests don't have this attribute
+class classification_trees_walker(forest_container):
+
+    def __init__(self, forest, meta_data):
+        super().__init__(forest, meta_data)
+        # weights for standard Boosted models, random forests and GBM don't have this attribute
         # SAMME has weighted trees, SAMME.R all weights are 1.0
         if not hasattr(forest, 'estimator_weights_'):
             self.forest.estimator_weights_ = np.ones(len(forest.estimators_))
-
-    def full_survey(self
-        , instances
-        , labels):
-
-        self.instances = instances
-        self.labels = labels
-        self.n_instances = instances.shape[0]
-
-        if labels is not None:
-            if len(labels) != self.n_instances:
-                raise ValueError("number of labels and instances does not match")
-
-        # base counts for all trees
-        self.root_child_lower = {}
-
-        # walk through each tree to get the structure
-        for t, trees in enumerate(self.forest.estimators_):
-            # because gbm does one versus all for multiclass
-            if type(self.forest) == GradientBoostingClassifier:
-                class_trees = trees
-            else:
-                class_trees = [trees]
-            for ct, ctree in enumerate(class_trees): # this is an individual estimator
-                if t == 0:
-                    self.root_child_lower[ct] = {'root_features' : np.zeros(len(self.features)),  # set up a 1d feature array to count features appearing as root nodes
-                    'child_features' : np.zeros(len(self.features)),
-                    'lower_features' : np.zeros(len(self.features))}
-
-                # root, child and lower counting, one time only (first class)
-                structure = ctree.tree_
-                feature = structure.feature
-                children_left = structure.children_left
-                children_right = structure.children_right
-
-                self.root_child_lower[ct]['root_features'][feature[0]] += 1
-                if children_left[0] >= 0:
-                    self.root_child_lower[ct]['child_features'][feature[children_left[0]]] +=1
-                if children_right[0] >= 0:
-                    self.root_child_lower[ct]['child_features'][feature[children_right[0]]] +=1
-
-                for j, f in enumerate(feature):
-                    if j < 3: continue # root and children
-                    if f < 0: continue # leaf nodes
-                    self.root_child_lower[ct]['lower_features'][f] += 1
-        self.tree_outputs = {}
-
-        # walk through each tree
-        self.n_trees = len(self.forest.estimators_)
-        for t, trees in enumerate(self.forest.estimators_):
-            # because gbm does one versus all for multiclass
-            if type(self.forest) == GradientBoostingClassifier:
-                class_trees = trees
-            else:
-                class_trees = [trees]
-            for ct, ctree in enumerate(class_trees): # this is an individual estimator
-                if t == 0: # initialise the dictionary
-                    self.tree_outputs[ct] = {'feature_depth' : np.full((self.n_instances, self.n_trees, self.n_features), np.nan), # set up a 1d feature array for counting
-                    'tree_predictions' : np.full((self.n_instances, self.n_trees), np.nan),
-                    'tree_pred_labels' : np.full((self.n_instances, self.n_trees), np.nan),
-                    'tree_performance' : np.full((self.n_instances, self.n_trees), np.nan),
-                    'path_lengths' : np.zeros((self.n_instances, self.n_trees))
-                    }
-
-                # get the feature vector out of the tree object
-                feature = ctree.tree_.feature
-
-                self.tree_outputs[ct]['tree_predictions'][:, t] = ctree.predict(self.instances)
-                if type(self.forest) == GradientBoostingClassifier:
-                    tpr = np.sign(self.tree_outputs[ct]['tree_predictions'][:, t])
-                    tpr[tpr < 0] = 0
-                    self.tree_outputs[ct]['tree_pred_labels'][:, t] = tpr
-                else:
-                    self.tree_outputs[ct]['tree_pred_labels'][:, t] = self.tree_outputs[ct]['tree_predictions'][:, t]
-                self.tree_outputs[ct]['tree_performance'][:, t] = self.tree_outputs[ct]['tree_pred_labels'][:, t] == self.labels
-
-                # extract path and get path lengths
-                path = ctree.decision_path(self.instances).indices
-                paths_begin = np.where(path == 0)
-                paths_end = np.append(np.where(path == 0)[0][1:], len(path))
-                self.tree_outputs[ct]['path_lengths'][:, t] = paths_end - paths_begin
-
-                depth = 0
-                instance = -1
-                for p in path:
-                    if feature[p] < 0: # leaf node
-                        # TO DO: what's in a leaf node
-                        continue
-                    if p == 0: # root node
-                        instance += 1 # a new instance
-                        depth = 0 # a new path
-                    else:
-                        depth += 1 # same instance, descends tree one more node
-                    self.tree_outputs[ct]['feature_depth'][instance][t][feature[p]] = depth
 
     def tree_structures(self, tree, instances, labels, n_instances):
 
@@ -572,9 +480,10 @@ class forest_walker(object):
                 tree_pred, tree_pred_labels, \
                 tree_pred_proba, \
                 tree_agree_maj_vote, \
-                feature, threshold, path = self.tree_structures(t, instances, labels, n_instances)
+                feature, threshold, path \
+                = self.tree_structures(t, instances, labels, n_instances)
                 # walk the tree
-                async_out.append(pool.apply_async(as_tree_walk,
+                async_out.append(pool.apply_async(as_classification_tree_walk,
                                                 (i, instances, labels, n_instances,
                                                 tree_pred, tree_pred_labels,
                                                 tree_pred_proba,
@@ -601,11 +510,78 @@ class forest_walker(object):
                 tree_agree_maj_vote, \
                 feature, threshold, path = self.tree_structures(t, instances, labels, n_instances)
                 # walk the tree
-                _, tree_paths[i] = as_tree_walk(i, instances, labels, n_instances,
+                _, tree_paths[i] = as_classification_tree_walk(i, instances, labels, n_instances,
                                                 tree_pred, tree_pred_labels,
                                                 tree_pred_proba,
                                                 tree_agree_maj_vote,
                                                 feature, threshold, path, features, est_wt)
+
+        # flip/transpose the orientation to by instance
+        self.path_detail = list(map(list, zip(*tree_paths)))
+
+class regression_trees_walker(forest_container):
+
+    # def __init__(self, forest, meta_data):
+    #     super().__init__(forest, meta_data)
+
+    def forest_walk(self, instances, labels = None, forest_walk_async=False, n_cores=None):
+
+        features = self.features
+        n_instances = instances.shape[0]
+
+        # step 1: what is the initial guess f_0(x)
+        # all instances get the same init guess
+        # predict the priors
+        if str(type(self.forest.init_)) == "<class 'sklearn.ensemble.gradient_boosting.LogOddsEstimator'>":
+            print('in LogOddsEstimator')
+            # this is some windows bullshit. should be a dummy classifier with prior
+            # but instead it's a LogOddsClassifier
+            prior_lodds = self.forest.init_.predict(instances[0])[0][0]
+            prior_lodds = [-prior_lodds, prior_lodds] # lodds of class 1, needs to be symmetric for class 0
+            prior_odds = np.exp(prior_lodds)
+            prior_probas = prior_odds / (1 + prior_odds)
+        else:
+            print('in DummyEstimator')
+            prior_probas = self.forest.init_.predict_proba(instance[0])[0]
+            prior_odds = prior_probas / (1 - prior_probas)
+            prior_lodds = np.log(prior_odds)
+
+        # step 2: predicted results
+        preds = self.forest.predict(instances)
+        pred_probas = self.forest.predict_proba(instances)[0]
+        pred_odds = pred_probas / (1 - pred_probas)
+        pred_lodds = np.log(pred_odds)
+
+        # step 3: which direction compared to initial guess? and how big of a step was it?
+        diff_lodds = pred_lodds - prior_lodds
+
+        # step 4: calculate the delta lodds
+        # staged decision function is the incremental change as the estimators are added
+        # take the difference (include init)
+        staged_lodds = np.diff(np.append(prior_lodds[0], [np.log(sp[0][0]/sp[0][1]) for sp in self.forest.staged_predict_proba(instances)]))
+
+        # step 5: filter by sign for which_trees
+        tree_agree_maj_vote = np.sign(staged_lodds) == np.sign(diff_lodds[0])
+
+        tree_paths = [[]] * len(self.forest.estimators_)
+        for i, tree in enumerate(self.forest.estimators_):
+            # process the tree
+            # for GBM, t is an array containing n_classes-1 tree estimators
+            if self.n_classes == 2:
+                t_id = 0
+            else:
+                t_id = preds[i]
+                print('estimator for class ' + str(t_id) + ' vs. all')
+
+            feature = tree[t_id].tree_.feature
+            threshold = tree[t_id].tree_.threshold
+            path = tree[t_id].decision_path(instances).indices
+            # get the real valued prediction as the estimator_weight
+            est_wt = tree[t_id].predict(instances)
+
+            # walk the tree
+            _, tree_paths[i] = as_regression_tree_walk(i, instances, preds, n_instances,
+                                            tree_agree_maj_vote[i], feature, threshold, path, features, est_wt)
 
         # flip/transpose the orientation to by instance
         self.path_detail = list(map(list, zip(*tree_paths)))

@@ -84,7 +84,10 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
     o_print('Walking forest for ' + str(len(labels)) + ' instances... (please wait)', verbose)
 
     # wrapper object needs the decision forest itself and the dataset meta data (we have a convenience function for this)
-    f_walker = strcts.forest_walker(forest = forest, meta_data=meta_data)
+    if model == 'GBM':
+        f_walker = strcts.regression_trees_walker(forest = forest, meta_data=meta_data)
+    else:
+        f_walker = strcts.classification_trees_walker(forest = forest, meta_data=meta_data)
 
     # set the timer
     eval_start_time = time.asctime( time.localtime(time.time()) )

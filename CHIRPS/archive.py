@@ -1,3 +1,100 @@
+# full survey from forest_walker objects
+    def full_survey(self
+        , instances
+        , labels):
+
+        self.instances = instances
+        self.labels = labels
+        self.n_instances = instances.shape[0]
+
+        if labels is not None:
+            if len(labels) != self.n_instances:
+                raise ValueError("number of labels and instances does not match")
+
+        # base counts for all trees
+        self.root_child_lower = {}
+
+        # walk through each tree to get the structure
+        for t, trees in enumerate(self.forest.estimators_):
+            # because gbm does one versus all for multiclass
+            if type(self.forest) == GradientBoostingClassifier:
+                class_trees = trees
+            else:
+                class_trees = [trees]
+            for ct, ctree in enumerate(class_trees): # this is an individual estimator
+                if t == 0:
+                    self.root_child_lower[ct] = {'root_features' : np.zeros(len(self.features)),  # set up a 1d feature array to count features appearing as root nodes
+                    'child_features' : np.zeros(len(self.features)),
+                    'lower_features' : np.zeros(len(self.features))}
+
+                # root, child and lower counting, one time only (first class)
+                structure = ctree.tree_
+                feature = structure.feature
+                children_left = structure.children_left
+                children_right = structure.children_right
+
+                self.root_child_lower[ct]['root_features'][feature[0]] += 1
+                if children_left[0] >= 0:
+                    self.root_child_lower[ct]['child_features'][feature[children_left[0]]] +=1
+                if children_right[0] >= 0:
+                    self.root_child_lower[ct]['child_features'][feature[children_right[0]]] +=1
+
+                for j, f in enumerate(feature):
+                    if j < 3: continue # root and children
+                    if f < 0: continue # leaf nodes
+                    self.root_child_lower[ct]['lower_features'][f] += 1
+        self.tree_outputs = {}
+
+        # walk through each tree
+        self.n_trees = len(self.forest.estimators_)
+        for t, trees in enumerate(self.forest.estimators_):
+            # because gbm does one versus all for multiclass
+            if type(self.forest) == GradientBoostingClassifier:
+                class_trees = trees
+            else:
+                class_trees = [trees]
+            for ct, ctree in enumerate(class_trees): # this is an individual estimator
+                if t == 0: # initialise the dictionary
+                    self.tree_outputs[ct] = {'feature_depth' : np.full((self.n_instances, self.n_trees, self.n_features), np.nan), # set up a 1d feature array for counting
+                    'tree_predictions' : np.full((self.n_instances, self.n_trees), np.nan),
+                    'tree_pred_labels' : np.full((self.n_instances, self.n_trees), np.nan),
+                    'tree_performance' : np.full((self.n_instances, self.n_trees), np.nan),
+                    'path_lengths' : np.zeros((self.n_instances, self.n_trees))
+                    }
+
+                # get the feature vector out of the tree object
+                feature = ctree.tree_.feature
+
+                self.tree_outputs[ct]['tree_predictions'][:, t] = ctree.predict(self.instances)
+                if type(self.forest) == GradientBoostingClassifier:
+                    tpr = np.sign(self.tree_outputs[ct]['tree_predictions'][:, t])
+                    tpr[tpr < 0] = 0
+                    self.tree_outputs[ct]['tree_pred_labels'][:, t] = tpr
+                else:
+                    self.tree_outputs[ct]['tree_pred_labels'][:, t] = self.tree_outputs[ct]['tree_predictions'][:, t]
+                self.tree_outputs[ct]['tree_performance'][:, t] = self.tree_outputs[ct]['tree_pred_labels'][:, t] == self.labels
+
+                # extract path and get path lengths
+                path = ctree.decision_path(self.instances).indices
+                paths_begin = np.where(path == 0)
+                paths_end = np.append(np.where(path == 0)[0][1:], len(path))
+                self.tree_outputs[ct]['path_lengths'][:, t] = paths_end - paths_begin
+
+                depth = 0
+                instance = -1
+                for p in path:
+                    if feature[p] < 0: # leaf node
+                        # TO DO: what's in a leaf node
+                        continue
+                    if p == 0: # root node
+                        instance += 1 # a new instance
+                        depth = 0 # a new path
+                    else:
+                        depth += 1 # same instance, descends tree one more node
+                    self.tree_outputs[ct]['feature_depth'][instance][t][feature[p]] = depth
+
+
+
 # stats from forest_walker object
     def forest_stats_by_label(self, label = None):
         if label is None:

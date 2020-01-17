@@ -10,7 +10,7 @@ from copy import deepcopy
 from scipy.stats import chi2_contingency
 
 # parallelisable function for the forest_walker class
-def as_tree_walk(tree_idx, instances, labels, n_instances,
+def as_classification_tree_walk(tree_idx, instances, labels, n_instances,
                 tree_pred, tree_pred_labels,
                 tree_pred_proba,
                 tree_agree_maj_vote,
@@ -80,6 +80,77 @@ def as_tree_walk(tree_idx, instances, labels, n_instances,
                 tree_paths[ic]['path']['leq_threshold'].append(leq_threshold)
 
     return(tree_idx, tree_paths)
+
+# parallelisable function for the forest_walker class
+def as_regression_tree_walk(tree_idx, instances, labels, n_instances,
+                tree_agree_maj_vote, feature, threshold, path, features, est_wt):
+
+    # object for the results
+    tree_paths = [{}] * n_instances
+
+    # case that tree is a single node stump (rare in RF, normal in AdaBoost)
+    if len(feature) == 1:
+        print(str(tree_idx) + ' is a stump tree')
+        for ic in range(n_instances):
+            if labels is None:
+                pred_class = None
+            else:
+                pred_class = labels[ic]
+            tree_paths[ic] = {'estimator_weight' : est_wt[ic],
+                                    'pred_class' : np.nan,
+                                    'pred_class_label' : '',
+                                    'pred_proba' : np.nan,
+                                    'forest_pred_class' : pred_class,
+                                    'agree_maj_vote' : tree_agree_maj_vote[ic],
+                                    'path' : {'feature_idx' : [],
+                                                            'feature_name' : [],
+                                                            'feature_value' : [],
+                                                            'threshold' : [],
+                                                            'leq_threshold' : []
+                                                }
+                                    }
+    # usual case
+    else:
+        ic = -1 # instance_count
+        for p in path:
+            if feature[p] < 0: # leaf node
+                continue
+            if features is None:
+                feature_name = None
+            else:
+                feature_name = features[feature[p]]
+            if p == 0: # root node
+                ic += 1
+                feature_value = instances[ic, [feature[p]]].item(0)
+                leq_threshold = feature_value <= threshold[p]
+                if labels is None:
+                    pred_class = None
+                else:
+                    pred_class = labels[ic]
+                tree_paths[ic] = {'estimator_weight' : est_wt[ic],
+                                        'pred_class' : np.nan,
+                                        'pred_class_label' : '',
+                                        'pred_proba' : np.nan,
+                                        'forest_pred_class' : pred_class,
+                                        'agree_maj_vote' : tree_agree_maj_vote[ic],
+                                        'path' : {'feature_idx' : [feature[p]],
+                                                                'feature_name' : [feature_name],
+                                                                'feature_value' : [feature_value],
+                                                                'threshold' : [threshold[p]],
+                                                                'leq_threshold' : [leq_threshold]
+                                                    }
+                                        }
+            else:
+                feature_value = instances[ic, [feature[p]]].item(0)
+                leq_threshold = feature_value <= threshold[p]
+                tree_paths[ic]['path']['feature_idx'].append(feature[p])
+                tree_paths[ic]['path']['feature_name'].append(feature_name)
+                tree_paths[ic]['path']['feature_value'].append(feature_value)
+                tree_paths[ic]['path']['threshold'].append(threshold[p])
+                tree_paths[ic]['path']['leq_threshold'].append(leq_threshold)
+
+    return(tree_idx, tree_paths)
+
 
 def as_CHIRPS(c_runner,
                 sample_instances, sample_labels, forest, forest_walk_mean_elapsed_time,
