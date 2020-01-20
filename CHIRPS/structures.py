@@ -542,46 +542,87 @@ class regression_trees_walker(forest_container):
             prior_probas = prior_odds / (1 + prior_odds)
         else:
             print('in DummyEstimator')
-            prior_probas = self.forest.init_.predict_proba(instance[0])[0]
+            prior_probas = self.forest.init_.predict_proba(instances[0])[0]
             prior_odds = prior_probas / (1 - prior_probas)
             prior_lodds = np.log(prior_odds)
 
         # step 2: predicted results
         preds = self.forest.predict(instances)
-        pred_probas = self.forest.predict_proba(instances)[0]
+        pred_probas = self.forest.predict_proba(instances)
         pred_odds = pred_probas / (1 - pred_probas)
         pred_lodds = np.log(pred_odds)
 
         # step 3: which direction compared to initial guess? and how big of a step was it?
-        diff_lodds = pred_lodds - prior_lodds
+        diff_lodds = (pred_lodds - prior_lodds)[:,0] # first column is lodds of being class zero
 
         # step 4: calculate the delta lodds
         # staged decision function is the incremental change as the estimators are added
         # take the difference (include init)
-        staged_lodds = np.diff(np.append(prior_lodds[0], [np.log(sp[0][0]/sp[0][1]) for sp in self.forest.staged_predict_proba(instances)]))
+        def staged_pred_probas(instance):
+             return(np.diff(np.append(prior_lodds[0], [np.log(sp[0][0]/sp[0][1]) for sp in self.forest.staged_predict_proba(instance)])))
+
+        staged_lodds = np.transpose(np.apply_along_axis(staged_pred_probas, 1, instances))
 
         # step 5: filter by sign for which_trees
-        tree_agree_maj_vote = np.sign(staged_lodds) == np.sign(diff_lodds[0])
+        tree_agree_maj_vote = np.sign(staged_lodds) == np.sign(diff_lodds)
 
-        tree_paths = [[]] * len(self.forest.estimators_)
-        for i, tree in enumerate(self.forest.estimators_):
-            # process the tree
-            # for GBM, t is an array containing n_classes-1 tree estimators
-            if self.n_classes == 2:
-                t_id = 0
-            else:
-                t_id = preds[i]
-                print('estimator for class ' + str(t_id) + ' vs. all')
+        if forest_walk_async:
+            async_out = []
+            if n_cores is None:
+                n_cores = mp.cpu_count()-4
+            pool = mp.Pool(processes=n_cores)
 
-            feature = tree[t_id].tree_.feature
-            threshold = tree[t_id].tree_.threshold
-            path = tree[t_id].decision_path(instances).indices
-            # get the real valued prediction as the estimator_weight
-            est_wt = tree[t_id].predict(instances)
+            for i, tree in enumerate(self.forest.estimators_):
+                # process the tree
+                # for GBM, t is an array containing n_classes-1 tree estimators
+                if self.n_classes == 2:
+                    t_id = 0
+                else:
+                    t_id = preds[i]
+                    print('estimator for class ' + str(t_id) + ' vs. all')
 
-            # walk the tree
-            _, tree_paths[i] = as_regression_tree_walk(i, instances, preds, n_instances,
-                                            tree_agree_maj_vote[i], feature, threshold, path, features, est_wt)
+                feature = tree[t_id].tree_.feature
+                threshold = tree[t_id].tree_.threshold
+                path = tree[t_id].decision_path(instances).indices
+                # get the real valued prediction as the estimator_weight
+                est_wt = tree[t_id].predict(instances)
+
+                # walk the tree
+                async_out.append(pool.apply_async(as_regression_tree_walk,
+                                                (i, instances, preds, n_instances,
+                                                tree_agree_maj_vote[i], feature, threshold, path, features, est_wt)
+                                                ))
+
+            # block and collect the pool
+            pool.close()
+            pool.join()
+
+            # get the async results and sort to ensure original tree order and remove tree index
+            tp = [async_out[j].get() for j in range(len(async_out))]
+            tp.sort()
+            tree_paths = [tp[k][1] for k in range(len(tp))]
+
+        else:
+
+            tree_paths = [[]] * len(self.forest.estimators_)
+            for i, tree in enumerate(self.forest.estimators_):
+                # process the tree
+                # for GBM, t is an array containing n_classes-1 tree estimators
+                if self.n_classes == 2:
+                    t_id = 0
+                else:
+                    t_id = preds[i]
+                    print('estimator for class ' + str(t_id) + ' vs. all')
+
+                feature = tree[t_id].tree_.feature
+                threshold = tree[t_id].tree_.threshold
+                path = tree[t_id].decision_path(instances).indices
+                # get the real valued prediction as the estimator_weight
+                est_wt = tree[t_id].predict(instances)
+
+                # walk the tree
+                _, tree_paths[i] = as_regression_tree_walk(i, instances, preds, n_instances,
+                                                tree_agree_maj_vote[i], feature, threshold, path, features, est_wt)
 
         # flip/transpose the orientation to by instance
         self.path_detail = list(map(list, zip(*tree_paths)))
