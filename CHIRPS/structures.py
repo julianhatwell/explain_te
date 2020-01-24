@@ -521,13 +521,8 @@ class classification_trees_walker(forest_container):
 
 class regression_trees_walker(forest_container):
 
-    # def __init__(self, forest, meta_data):
-    #     super().__init__(forest, meta_data)
-
     def forest_walk(self, instances, labels = None, forest_walk_async=False, n_cores=None):
-
         features = self.features
-        n_instances = instances.shape[0]
 
         # step 1: what is the initial guess f_0(x)
         # all instances get the same init guess
@@ -547,13 +542,25 @@ class regression_trees_walker(forest_container):
             prior_lodds = np.log(prior_odds)
 
         # step 2: predicted results
-        preds = self.forest.predict(instances)
+        if labels is None:
+            labels = self.forest.predict(instances)
+        print(labels)
         pred_probas = self.forest.predict_proba(instances)
+        print('prior probas')
+        print(prior_probas)
+        print('pred probas')
+        print(pred_probas)
         pred_odds = pred_probas / (1 - pred_probas)
         pred_lodds = np.log(pred_odds)
+        print('prior lodds')
+        print(prior_lodds)
+        print('pred_lodds')
+        print(pred_lodds)
 
         # step 3: which direction compared to initial guess? and how big of a step was it?
-        diff_lodds = (pred_lodds - prior_lodds)[:,0] # first column is lodds of being class zero
+        delta_lodds = (pred_lodds - prior_lodds)
+        print('delta_lodds')
+        print(delta_lodds)
 
         # step 4: calculate the delta lodds
         # staged decision function is the incremental change as the estimators are added
@@ -562,9 +569,11 @@ class regression_trees_walker(forest_container):
              return(np.diff(np.append(prior_lodds[0], [np.log(sp[0][0]/sp[0][1]) for sp in self.forest.staged_predict_proba(instance)])))
 
         staged_lodds = np.transpose(np.apply_along_axis(staged_pred_probas, 1, instances))
+        print(staged_lodds)
 
         # step 5: filter by sign for which_trees
-        tree_agree_maj_vote = np.sign(staged_lodds) == np.sign(diff_lodds)
+        tree_agree_sign_delta = np.sign(staged_lodds) == np.sign(delta_lodds[:,0]) # first column is lodds of being class zero
+        print(tree_agree_sign_delta.sum(axis=0))
 
         if forest_walk_async:
             async_out = []
@@ -589,8 +598,11 @@ class regression_trees_walker(forest_container):
 
                 # walk the tree
                 async_out.append(pool.apply_async(as_regression_tree_walk,
-                                                (i, instances, preds, n_instances,
-                                                tree_agree_maj_vote[i], feature, threshold, path, features, est_wt)
+                                                (i, instances,
+                                                labels, pred_probas, pred_lodds,
+                                                prior_probas, prior_lodds, delta_lodds,
+                                                tree_agree_sign_delta[i],
+                                                feature, threshold, path, features, est_wt)
                                                 ))
 
             # block and collect the pool
@@ -621,8 +633,11 @@ class regression_trees_walker(forest_container):
                 est_wt = tree[t_id].predict(instances)
 
                 # walk the tree
-                _, tree_paths[i] = as_regression_tree_walk(i, instances, preds, n_instances,
-                                                tree_agree_maj_vote[i], feature, threshold, path, features, est_wt)
+                _, tree_paths[i] = as_regression_tree_walk(i, instances,
+                labels, pred_probas, pred_lodds,
+                prior_probas, prior_lodds, delta_lodds,
+                tree_agree_sign_delta[i],
+                feature, threshold, path, features, est_wt)
 
         # flip/transpose the orientation to by instance
         self.path_detail = list(map(list, zip(*tree_paths)))
@@ -1350,12 +1365,12 @@ class CHIRPS_runner(rule_evaluator):
 
     def __init__(self, meta_data,
                 paths, paths_weights,
-                paths_pred_proba,
                 tree_preds,
                 model_votes,
                 confidence_weights,
                 target_class,
                 random_state=123,
+                paths_pred_proba=None,
                 patterns=None):
 
         self.random_state = random_state
@@ -1426,7 +1441,6 @@ class CHIRPS_runner(rule_evaluator):
         self.isolation_pos = None
         self.merge_rule_iter = None
         self.algorithm = None
-
 
     def discretize_paths(self, bins=4, equal_counts=False, var_dict=None):
         # check if bins is not numeric or can't be cast, then force equal width (equal_counts = False)
@@ -2218,7 +2232,7 @@ class CHIRPS_runner(rule_evaluator):
         self.algorithm,
         elapsed_time))
 
-class CHIRPS_container(object):
+class explainer_container(object):
 
     def __init__(self, path_detail, # from forest_walker
                         forest, sample_instances, sample_labels, meta_data,
@@ -2229,10 +2243,12 @@ class CHIRPS_container(object):
         self.sample_instances = sample_instances
         self.sample_labels = sample_labels
         self.meta_data = meta_data
-        self.CHIRPS_explainers = None
+        self.explainers = None
         self.fwmet = forest_walk_mean_elapsed_time
 
-    def get_CHIRPS_runner(self, batch_idx, target_class, meta_data, random_state=123, feature_values=True, which_trees = 'majority'):
+class CHIRPS_container(explainer_container):
+
+    def get_runner(self, batch_idx, target_class, meta_data, random_state=123, feature_values=True, which_trees = 'majority'):
 
         true_to_lt = lambda x: '<' if x == True else '>'
 
@@ -2276,10 +2292,17 @@ class CHIRPS_container(object):
         confidence_weights = p_count_corrected([i for i in range(len(meta_data['class_names']))], [i for i in range(len(meta_data['class_names']))], confidence_weights)
 
         # return an object for requested instance
-        c_runner = CHIRPS_runner(meta_data, paths, paths_weights, paths_pred_proba, # these should be for generating the rule
-                                    tree_preds, model_votes, confidence_weights, # these are just for the display output
-                                    target_class,
-                                    random_state)
+        c_runner = CHIRPS_runner(meta_data=meta_data,
+                                # these should be for generating the rule
+                                paths=paths,
+                                paths_weights=paths_weights,
+                                paths_pred_proba=paths_pred_proba,
+                                # these are just for the display output
+                                tree_preds=tree_preds,
+                                model_votes=model_votes,
+                                confidence_weights=confidence_weights,
+                                target_class=target_class,
+                                random_state=random_state)
         return(c_runner)
 
     def batch_run_CHIRPS(self, target_classes=None,
@@ -2312,7 +2335,7 @@ class CHIRPS_container(object):
         if target_classes is None:
             target_classes = [None] * n_instances
         # initialise a list for the results
-        CHIRPS_explainers = [[]] * n_instances
+        explainers = [[]] * n_instances
         # generate the explanations
         if chirps_explanation_async:
 
@@ -2326,7 +2349,7 @@ class CHIRPS_container(object):
                 # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
                 # use deepcopy to ensure by_value, not by_reference instantiation
-                c_runner = self.get_CHIRPS_runner(i, target_classes[i], deepcopy(self.meta_data), random_state=random_state, which_trees=options['which_trees'])
+                c_runner = self.get_runner(i, target_classes[i], deepcopy(self.meta_data), random_state=random_state, which_trees=options['which_trees'])
                 # run the chirps process on each instance paths
                 async_out.append(pool.apply_async(as_CHIRPS,
                     (c_runner,
@@ -2346,7 +2369,7 @@ class CHIRPS_container(object):
             CHIRPS_exps = [async_out[j].get() for j in range(len(async_out))]
             CHIRPS_exps.sort()
             for i in range(n_instances):
-                CHIRPS_explainers[i] = CHIRPS_exps[i][1]  # return in list
+                explainers[i] = CHIRPS_exps[i][1]  # return in list
 
         else:
             for i in range(n_instances):
@@ -2354,7 +2377,7 @@ class CHIRPS_container(object):
                 # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
                 # use deepcopy to ensure by_value, not by_reference instantiation
-                c_runner = self.get_CHIRPS_runner(i, target_classes[i], deepcopy(self.meta_data), random_state=random_state, which_trees=options['which_trees'])
+                c_runner = self.get_runner(i, target_classes[i], deepcopy(self.meta_data), random_state=random_state, which_trees=options['which_trees'])
                 # run the chirps process on each instance paths
                 _, CHIRPS_exp = \
                     as_CHIRPS(c_runner,
@@ -2366,6 +2389,140 @@ class CHIRPS_container(object):
                     options['delta'], options['precis_threshold'], i)
 
                 # add the finished rule accumulator to the results
-                CHIRPS_explainers[i] = CHIRPS_exp
+                explainers[i] = CHIRPS_exp
 
-        self.CHIRPS_explainers = CHIRPS_explainers
+        self.explainers = explainers
+
+class GBHIPS_container(explainer_container):
+
+    def get_runner(self, batch_idx, target_class, meta_data, random_state=123, feature_values=True, which_trees = 'signdelta'):
+
+        true_to_lt = lambda x: '<' if x == True else '>'
+
+        # extract the paths we want by filtering on tree performance
+        n_paths = len(self.path_detail[batch_idx])
+        if which_trees == 'signdelta':
+            # get the paths that contributed to the majority gradient - they have the same sign as the sum of deltas
+            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['agree_sign_delta']]))]
+            print(len(paths_weights))
+        elif which_trees == 'targetclass':
+            # get the trees that moved towards the given class (requires error handling)
+            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class']  == target_class]))]
+            print(len(paths_weights))
+        else:
+            # get the trees that moved towards the forest predicted class
+            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == self.path_detail[batch_idx][pd]['forest_pred_class']]))]
+            print(len(paths_weights))
+        # path formatting - should it be on values level or features level
+        if feature_values:
+            paths = [[]] * len(paths_info)
+            for i, p in enumerate(paths_info):
+                paths[i] = [(f, leq, t) for f, leq, t in zip(p['feature_name'], p['leq_threshold'], p['threshold'])]
+        else:
+            paths = [p['feature_name'] for p in paths_info]
+
+        # per tree performance stats for the whole ensemble (not filtered)
+        tree_preds, estimator_weights = [i for i in map(list, zip(*[itemgetter('pred_class', 'estimator_weight')(self.path_detail[batch_idx][t]) for t in range(n_paths)]))]
+
+        # simply determine the count and proportion of trees according to votes
+        gradient_weights = p_count_corrected(tree_preds, [i for i in range(len(meta_data['class_names']))], weights=estimator_weights)
+
+        # return an object for requested instance
+        c_runner = CHIRPS_runner(meta_data=meta_data,
+                                paths=paths,
+                                paths_weights=paths_weights,
+                                tree_preds=tree_preds,
+                                model_votes=gradient_weights,
+                                confidence_weights=gradient_weights,
+                                target_class=target_class,
+                                random_state=random_state)
+        return(c_runner)
+
+    def batch_run_CHIRPS(self, target_classes=None,
+                        chirps_explanation_async=False,
+                        random_state=123, n_cores=None,
+                        **kwargs):
+        # defaults
+        options = {'which_trees' : 'signdelta',
+            'paths_lengths_threshold' : 2,
+            'support_paths' : 0.05,
+            'alpha_paths' : 0.0,
+            'disc_path_bins' : 4,
+            'disc_path_eqcounts' : False,
+            'score_func' : 1,
+            'precis_threshold' : 0.95,
+            'weighting' : 'chisq',
+            'algorithm' : 'greedy_stab',
+            'merging_bootstraps' : 20,
+            'pruning_bootstraps' : 20,
+            'delta' : 0.1}
+        options.update(kwargs)
+
+        # convenience function to orient the top level of bpc
+        # a bit like reshaping an array
+        # reason: rf paths quickly extracted per tree for all instances
+        # so when constructed, this structure is oriented by tree
+        # and we would like to easily iterate by instance
+        n_instances = len(self.path_detail)
+
+        if target_classes is None and options['which_trees'] == 'targetclass':
+            print('must provide target classes when filtering by targetclass')
+            stop
+        # initialise a list for the results
+        explainers = [[]] * n_instances
+        # generate the explanations
+        if chirps_explanation_async:
+
+            async_out = []
+            if n_cores is None:
+                n_cores = mp.cpu_count()-4
+            pool = mp.Pool(processes=n_cores)
+
+            # loop for each instance
+            for i in range(n_instances):
+                # get a CHIRPS_runner per instance
+                # filtering by the chosen set of trees - default: majority voting
+                # use deepcopy to ensure by_value, not by_reference instantiation
+                c_runner = self.get_runner(i, target_classes[i], deepcopy(self.meta_data), random_state=random_state, which_trees=options['which_trees'])
+                # run the chirps process on each instance paths
+                async_out.append(pool.apply_async(as_CHIRPS,
+                    (c_runner,
+                    self.sample_instances, self.sample_labels,
+                    self.forest, self.fwmet,
+                    options['paths_lengths_threshold'], options['support_paths'], options['alpha_paths'],
+                    options['disc_path_bins'], options['disc_path_eqcounts'], options['score_func'],
+                    options['weighting'], options['algorithm'], options['merging_bootstraps'], options['pruning_bootstraps'],
+                    options['delta'], options['precis_threshold'], i)
+                ))
+
+            # block and collect the pool
+            pool.close()
+            pool.join()
+
+            # get the async results and sort to ensure original batch index order and remove batch index
+            CHIRPS_exps = [async_out[j].get() for j in range(len(async_out))]
+            CHIRPS_exps.sort()
+            for i in range(n_instances):
+                explainers[i] = CHIRPS_exps[i][1]  # return in list
+
+        else:
+            for i in range(n_instances):
+                if i % 5 == 0: print('Working on CHIRPS for instance ' + str(i) + ' of ' + str(n_instances))
+                # get a CHIRPS_runner per instance
+                # filtering by the chosen set of trees - default: majority voting
+                # use deepcopy to ensure by_value, not by_reference instantiation
+                c_runner = self.get_runner(i, target_classes[i], deepcopy(self.meta_data), random_state=random_state, which_trees=options['which_trees'])
+                # run the chirps process on each instance paths
+                _, CHIRPS_exp = \
+                    as_CHIRPS(c_runner,
+                    self.sample_instances, self.sample_labels,
+                    self.forest, self.fwmet,
+                    options['paths_lengths_threshold'], options['support_paths'], options['alpha_paths'],
+                    options['disc_path_bins'], options['disc_path_eqcounts'], options['score_func'],
+                    options['weighting'], options['algorithm'], options['merging_bootstraps'], options['pruning_bootstraps'],
+                    options['delta'], options['precis_threshold'], i)
+
+                # add the finished rule accumulator to the results
+                explainers[i] = CHIRPS_exp
+
+        self.explainers = explainers

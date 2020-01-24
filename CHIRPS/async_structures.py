@@ -82,9 +82,14 @@ def as_classification_tree_walk(tree_idx, instances, labels, n_instances,
     return(tree_idx, tree_paths)
 
 # parallelisable function for the forest_walker class
-def as_regression_tree_walk(tree_idx, instances, labels, n_instances,
-                tree_agree_maj_vote, feature, threshold, path, features, est_wt):
+def as_regression_tree_walk(tree_idx, instances,
+                labels, pred_probas, pred_lodds,
+                prior_probas, prior_lodds, delta_lodds,
+                tree_agree_sign_delta,
+                feature, threshold, path,
+                features, est_wt):
 
+    n_instances = len(labels)
     # object for the results
     tree_paths = [{}] * n_instances
 
@@ -92,23 +97,13 @@ def as_regression_tree_walk(tree_idx, instances, labels, n_instances,
     if len(feature) == 1:
         print(str(tree_idx) + ' is a stump tree')
         for ic in range(n_instances):
-            if labels is None:
-                pred_class = None
-            else:
-                pred_class = labels[ic]
-            tree_paths[ic] = {'estimator_weight' : est_wt[ic],
-                                    'pred_class' : np.nan,
-                                    'pred_class_label' : '',
-                                    'pred_proba' : np.nan,
-                                    'forest_pred_class' : pred_class,
-                                    'agree_maj_vote' : tree_agree_maj_vote[ic],
-                                    'path' : {'feature_idx' : [],
-                                                            'feature_name' : [],
-                                                            'feature_value' : [],
-                                                            'threshold' : [],
-                                                            'leq_threshold' : []
-                                                }
-                                    }
+            tree_paths[ic] = {'path' : {'feature_idx' : [],
+                                        'feature_name' : [],
+                                        'feature_value' : [],
+                                        'threshold' : [],
+                                        'leq_threshold' : []
+                                        }
+                            }
     # usual case
     else:
         ic = -1 # instance_count
@@ -123,23 +118,13 @@ def as_regression_tree_walk(tree_idx, instances, labels, n_instances,
                 ic += 1
                 feature_value = instances[ic, [feature[p]]].item(0)
                 leq_threshold = feature_value <= threshold[p]
-                if labels is None:
-                    pred_class = None
-                else:
-                    pred_class = labels[ic]
-                tree_paths[ic] = {'estimator_weight' : est_wt[ic],
-                                        'pred_class' : np.nan,
-                                        'pred_class_label' : '',
-                                        'pred_proba' : np.nan,
-                                        'forest_pred_class' : pred_class,
-                                        'agree_maj_vote' : tree_agree_maj_vote[ic],
-                                        'path' : {'feature_idx' : [feature[p]],
-                                                                'feature_name' : [feature_name],
-                                                                'feature_value' : [feature_value],
-                                                                'threshold' : [threshold[p]],
-                                                                'leq_threshold' : [leq_threshold]
-                                                    }
-                                        }
+                tree_paths[ic] = {'path' : {'feature_idx' : [feature[p]],
+                                            'feature_name' : [feature_name],
+                                            'feature_value' : [feature_value],
+                                            'threshold' : [threshold[p]],
+                                            'leq_threshold' : [leq_threshold]
+                                            }
+                                }
             else:
                 feature_value = instances[ic, [feature[p]]].item(0)
                 leq_threshold = feature_value <= threshold[p]
@@ -148,6 +133,19 @@ def as_regression_tree_walk(tree_idx, instances, labels, n_instances,
                 tree_paths[ic]['path']['feature_value'].append(feature_value)
                 tree_paths[ic]['path']['threshold'].append(threshold[p])
                 tree_paths[ic]['path']['leq_threshold'].append(leq_threshold)
+
+    for ic in range(n_instances):
+        tree_paths[ic].update({'estimator_weight' : abs(est_wt[ic]),
+        'pred_class' : int((np.sign(est_wt[ic]) + 1) / 2),
+        'pred_value' : est_wt[ic],
+        'agree_sign_delta' : tree_agree_sign_delta[ic],
+        'forest_pred_class' : labels[ic],
+        'forest_pred_probas' : pred_probas[ic],
+        'forest_pred_lodds' : pred_lodds[ic],
+        'prior_probas' : prior_probas,
+        'prior_lodds' : prior_lodds,
+        'delta_lodds' : delta_lodds[ic]
+        })
 
     return(tree_idx, tree_paths)
 

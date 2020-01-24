@@ -361,7 +361,7 @@ def save_results(headers, results, save_results_path, save_results_file):
     output_df = DataFrame(results, columns=headers)
     output_df.to_csv(save_results_path + save_results_file + '.csv')
 
-def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # CHIRPS_container
+def evaluate_explainers(b_CHIRPS_exp, # CHIRPS_container
                                 ds_container, # data_split_container (for the test data and the LOO function
                                 instance_idx, # should match the instances in the batch
                                 forest,
@@ -377,9 +377,9 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # CHIRPS_container
                                 save_CHIRPS=False):
 
     preds = forest.predict(ds_container.X_test_enc)
-    results = [[]] * len(b_CHIRPS_exp.CHIRPS_explainers)
+    results = [[]] * len(b_CHIRPS_exp.explainers)
 
-    for i, c in enumerate(b_CHIRPS_exp.CHIRPS_explainers):
+    for i, c in enumerate(b_CHIRPS_exp.explainers):
 
         # get test sample by leave-one-out on current instance
         instance_id = instance_idx[i]
@@ -569,10 +569,10 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # CHIRPS_container
         if f_perf == 1.0:
             sd_f_perf = 0.0
         else:
-            sd_f_perf = sqrt((f_perf/(1-f_perf))/len(b_CHIRPS_exp.CHIRPS_explainers))
+            sd_f_perf = sqrt((f_perf/(1-f_perf))/len(b_CHIRPS_exp.explainers))
 
         # save summary results
-        summary_results = [[dataset_name, results[0][2], len(b_CHIRPS_exp.CHIRPS_explainers), 1, \
+        summary_results = [[dataset_name, results[0][2], len(b_CHIRPS_exp.explainers), 1, \
                             1, 1, 1, 0, \
                             np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
                             eval_start_time, time.asctime( time.localtime(time.time()) ), \
@@ -584,6 +584,6 @@ def evaluate_CHIRPS_explainers(b_CHIRPS_exp, # CHIRPS_container
 
     if save_CHIRPS:
         # save the CHIRPS_container object
-        CHIRPS_explainers_store = open(save_results_path + save_results_file + '.pickle', "wb")
-        pickle.dump(b_CHIRPS_exp.CHIRPS_explainers, CHIRPS_explainers_store)
-        CHIRPS_explainers_store.close()
+        explainers_store = open(save_results_path + save_results_file + '.pickle', "wb")
+        pickle.dump(b_CHIRPS_exp.explainers, explainers_store)
+        explainers_store.close()
