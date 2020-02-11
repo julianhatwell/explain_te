@@ -527,23 +527,32 @@ class regression_trees_walker(forest_container):
         # step 1: what is the initial guess f_0(x)
         # all instances get the same init guess
         # predict the priors
+        # Documentation says DummyEstimator is used but
+        # but instead in windows it's a LogOddsClassifier for binary and a PriorProbabilityEstimator for multiclass
         if str(type(self.forest.init_)) == "<class 'sklearn.ensemble.gradient_boosting.LogOddsEstimator'>":
             print('in LogOddsEstimator')
-            # this is some windows bullshit. should be a dummy classifier with prior
-            # but instead it's a LogOddsClassifier
             prior_lodds = self.forest.init_.predict(instances[0])[0][0]
             prior_lodds = [-prior_lodds, prior_lodds] # lodds of class 1, needs to be symmetric for class 0
             prior_odds = np.exp(prior_lodds)
             prior_probas = prior_odds / (1 + prior_odds)
-        else:
+        elif str(type(self.forest.init_)) == "<class 'sklearn.ensemble.gradient_boosting.PriorProbabilityEstimator'>":
+            print('in PriorProbabilityEstimator')
+            prior_probas = self.forest.init_.priors
+            prior_odds = prior_probas / (1 - prior_probas)
+            prior_lodds = np.log(prior_odds)
+        elif str(type(self.forest.init_)) == "<class 'sklearn.ensemble.gradient_boosting.DummyEstimator'>":
             print('in DummyEstimator')
             prior_probas = self.forest.init_.predict_proba(instances[0])[0]
             prior_odds = prior_probas / (1 - prior_probas)
             prior_lodds = np.log(prior_odds)
+        else:
+            print('unimplemented estimator' + str(type(self.forest.init_)))
+            stop
 
         # step 2: predicted results
         if labels is None:
             labels = self.forest.predict(instances)
+        print('labels')
         print(labels)
         pred_probas = self.forest.predict_proba(instances)
         print('prior probas')
@@ -561,19 +570,40 @@ class regression_trees_walker(forest_container):
         delta_lodds = (pred_lodds - prior_lodds)
         print('delta_lodds')
         print(delta_lodds)
+        print(delta_lodds.shape)
 
         # step 4: calculate the delta lodds
         # staged decision function is the incremental change as the estimators are added
         # take the difference (include init)
-        def staged_pred_probas(instance):
-             return(np.diff(np.append(prior_lodds[0], [np.log(sp[0][0]/sp[0][1]) for sp in self.forest.staged_predict_proba(instance)])))
-
-        staged_lodds = np.transpose(np.apply_along_axis(staged_pred_probas, 1, instances))
-        print(staged_lodds)
-
+        # and
         # step 5: filter by sign for which_trees
-        tree_agree_sign_delta = np.sign(staged_lodds) == np.sign(delta_lodds[:,0]) # first column is lodds of being class zero
-        print(tree_agree_sign_delta.sum(axis=0))
+        def staged_pred_probas(instance, label):
+            return(np.diff(np.append(prior_lodds[label], [np.log(sp[0][label]/(1-sp[0][label])) for sp in self.forest.staged_predict_proba(instance)])))
+            # return(np.diff(np.append(prior_lodds[label], [np.log(sp[0][label]/(1-sp[0][label])) for sp in self.forest.staged_predict_proba(instance)])))
+
+        if self.n_classes > 2:
+            staged_lodds = [[]] * self.n_classes
+            for c in range(self.n_classes):
+                staged_lodds[c] = np.apply_along_axis(staged_pred_probas, 1, instances, label = c)
+            staged_lodds = np.array(staged_lodds)
+            print('staged_lodds_sum')
+            print(staged_lodds.sum(axis=2))
+            print(delta_lodds.shape)
+            tree_agree_sign_delta = np.transpose(np.sign(staged_lodds)) == np.sign(delta_lodds) # first column is lodds of being class zero
+            print('tree agree sign')
+            print(tree_agree_sign_delta.shape)
+            print(tree_agree_sign_delta.sum(axis=0))
+        else:
+            print('in eq 2')
+            staged_lodds = np.transpose(np.apply_along_axis(staged_pred_probas, 1, instances, label = 0))
+            print('staged_lodds_sum')
+            print(staged_lodds.sum(axis=0))
+            tree_agree_sign_delta = np.sign(staged_lodds) == np.sign(delta_lodds[:,0]) # first column is lodds of being class zero
+            print('tree agree sign')
+            print(tree_agree_sign_delta.sum(axis=0))
+
+
+        stop
 
         if forest_walk_async:
             async_out = []
