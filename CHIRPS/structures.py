@@ -540,7 +540,7 @@ class regression_trees_walker(forest_container):
             prior_probas = self.forest.init_.priors
             prior_odds = prior_probas / (1 - prior_probas)
             prior_lodds = np.log(prior_odds)
-        elif str(type(self.forest.init_)) == "<class 'sklearn.ensemble.gradient_boosting.DummyEstimator'>":
+        elif str(type(self.forest.init_)) == "<class 'sklearn.dummy.DummyClassifier'>":
             print('in DummyEstimator')
             prior_probas = self.forest.init_.predict_proba(instances[0])[0]
             prior_odds = prior_probas / (1 - prior_probas)
@@ -586,6 +586,8 @@ class regression_trees_walker(forest_container):
             for c in range(self.n_classes):
                 staged_lodds[c] = np.apply_along_axis(staged_pred_probas, 1, instances, label = c)
             staged_lodds = np.array(staged_lodds)
+            print('staged_lodds shape')
+            print(staged_lodds.shape)
             print('staged_lodds_sum')
             print(staged_lodds.sum(axis=2))
             print(delta_lodds.shape)
@@ -595,6 +597,9 @@ class regression_trees_walker(forest_container):
             print(tree_agree_sign_delta.sum(axis=0))
         else:
             print('in eq 2')
+            # this just gets the staged lodds diffs and the tree sign agreement
+            # tree sign agreement is high for all classes
+            # later we pick out the boosting chain that relates to the predicted class
             staged_lodds = np.transpose(np.apply_along_axis(staged_pred_probas, 1, instances, label = 0))
             print('staged_lodds_sum')
             print(staged_lodds.sum(axis=0))
@@ -602,75 +607,71 @@ class regression_trees_walker(forest_container):
             print('tree agree sign')
             print(tree_agree_sign_delta.sum(axis=0))
 
-
-        stop
-
-        if forest_walk_async:
-            async_out = []
-            if n_cores is None:
-                n_cores = mp.cpu_count()-4
-            pool = mp.Pool(processes=n_cores)
-
-            for i, tree in enumerate(self.forest.estimators_):
-                # process the tree
-                # for GBM, t is an array containing n_classes-1 tree estimators
-                if self.n_classes == 2:
-                    t_id = 0
-                else:
-                    t_id = preds[i]
-                    print('estimator for class ' + str(t_id) + ' vs. all')
-
-                feature = tree[t_id].tree_.feature
-                threshold = tree[t_id].tree_.threshold
-                path = tree[t_id].decision_path(instances).indices
-                # get the real valued prediction as the estimator_weight
-                est_wt = tree[t_id].predict(instances)
-
-                # walk the tree
-                async_out.append(pool.apply_async(as_regression_tree_walk,
-                                                (i, instances,
-                                                labels, pred_probas, pred_lodds,
-                                                prior_probas, prior_lodds, delta_lodds,
-                                                tree_agree_sign_delta[i],
-                                                feature, threshold, path, features, est_wt)
-                                                ))
-
-            # block and collect the pool
-            pool.close()
-            pool.join()
-
-            # get the async results and sort to ensure original tree order and remove tree index
-            tp = [async_out[j].get() for j in range(len(async_out))]
-            tp.sort()
-            tree_paths = [tp[k][1] for k in range(len(tp))]
-
+        # for GBM, t is an array containing n_classes-1 tree estimators
+        if self.n_classes == 2:
+            classes = [0]
         else:
+            classes = range(self.n_classes)
 
-            tree_paths = [[]] * len(self.forest.estimators_)
-            for i, tree in enumerate(self.forest.estimators_):
-                # process the tree
-                # for GBM, t is an array containing n_classes-1 tree estimators
-                if self.n_classes == 2:
-                    t_id = 0
-                else:
-                    t_id = preds[i]
-                    print('estimator for class ' + str(t_id) + ' vs. all')
+        tree_paths = [[]] * len(classes)
+        for c in classes:
 
-                feature = tree[t_id].tree_.feature
-                threshold = tree[t_id].tree_.threshold
-                path = tree[t_id].decision_path(instances).indices
-                # get the real valued prediction as the estimator_weight
-                est_wt = tree[t_id].predict(instances)
+            if forest_walk_async:
+                async_out = []
+                if n_cores is None:
+                    n_cores = mp.cpu_count()-4
+                pool = mp.Pool(processes=n_cores)
 
-                # walk the tree
-                _, tree_paths[i] = as_regression_tree_walk(i, instances,
-                labels, pred_probas, pred_lodds,
-                prior_probas, prior_lodds, delta_lodds,
-                tree_agree_sign_delta[i],
-                feature, threshold, path, features, est_wt)
+                for i, tree in enumerate(self.forest.estimators_):
+                    # process the tree
+                    feature = tree[c].tree_.feature
+                    threshold = tree[c].tree_.threshold
+                    path = tree[c].decision_path(instances).indices
+                    # get the real valued prediction as the estimator_weight
+                    est_wt = tree[c].predict(instances)
 
-        # flip/transpose the orientation to by instance
-        self.path_detail = list(map(list, zip(*tree_paths)))
+                    # walk the tree
+                    async_out.append(pool.apply_async(as_regression_tree_walk,
+                                                    (i, instances,
+                                                    labels, pred_probas, pred_lodds,
+                                                    prior_probas, prior_lodds, delta_lodds,
+                                                    tree_agree_sign_delta[i],
+                                                    feature, threshold, path, features, est_wt)
+                                                    ))
+
+                # block and collect the pool
+                pool.close()
+                pool.join()
+
+                # get the async results and sort to ensure original tree order and remove tree index
+                tp = [async_out[j].get() for j in range(len(async_out))]
+                tp.sort()
+                tree_paths[c] = [tp[k][1] for k in range(len(tp))]
+
+            else:
+
+                tree_paths[c] = [[]] * len(self.forest.estimators_)
+                for i, tree in enumerate(self.forest.estimators_):
+                    # process the tree
+                    feature = tree[c].tree_.feature
+                    threshold = tree[c].tree_.threshold
+                    path = tree[c].decision_path(instances).indices
+                    # get the real valued prediction as the estimator_weight
+                    est_wt = tree[c].predict(instances)
+
+                    # walk the tree
+                    _, tree_paths[c][i] = as_regression_tree_walk(i, instances,
+                    labels, pred_probas, pred_lodds,
+                    prior_probas, prior_lodds, delta_lodds,
+                    tree_agree_sign_delta[i],
+                    feature, threshold, path, features, est_wt)
+
+            # flip/transpose the orientation to by instance
+            tree_paths[c] = list(map(list, zip(*tree_paths[c])))
+        # end for
+
+        # [class][instance][path]
+        self.path_detail = tree_paths
 
 
 # classes and functions for the parallelisable CHIRPS algorithm
@@ -2275,24 +2276,29 @@ class explainer_container(object):
         self.meta_data = meta_data
         self.explainers = None
         self.fwmet = forest_walk_mean_elapsed_time
+        # extract the paths we want by filtering on tree performance
+        if len(self.meta_data['class_names']) == 2:
+            self.n_paths = len(self.path_detail[0])
+        else:
+            self.n_paths = len(self.path_detail[0][0])
+
+    # def true_to_lt(self, x):
+    #     return('<' if x == True else '>')
 
 class CHIRPS_container(explainer_container):
 
     def get_runner(self, batch_idx, target_class, meta_data, random_state=123, feature_values=True, which_trees = 'majority'):
 
-        true_to_lt = lambda x: '<' if x == True else '>'
 
-        # extract the paths we want by filtering on tree performance
-        n_paths = len(self.path_detail[batch_idx])
         # print('longest path for ' + str(batch_idx) + ': ' +  str(max([len(pd['path']['feature_idx']) for pd in self.path_detail[batch_idx]])))
         # print('mean path length for ' + str(batch_idx) + ': ' +  str(np.mean([len(pd['path']['feature_idx']) for pd in self.path_detail[batch_idx]])))
         if which_trees == 'majority':
             # get the paths that agree with the target class
-            paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == target_class]))]
+            paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(self.n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == target_class]))]
         else: # confidence weighted for SAMME.R
             # get the paths that made a positive contribution to the target class
             # remember estimator_weights are all 1.0 for SAMME.R
-            paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(n_paths)]))]
+            paths_info, paths_weights, paths_pred_proba = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][pd]) for pd in range(self.n_paths)]))]
             paths_pred_logproba = confidence_weight(paths_pred_proba, 'log_proba')
             paths_pred_logproba = paths_pred_logproba - np.mean(paths_pred_logproba, axis = 1)[:, np.newaxis] # this is the SAMME.R formula, without the K-1 scaling which is redundant
             positive_logproba = [True if ppl[target_class] > 0 else False for ppl in paths_pred_logproba] # index where log proba is positive
@@ -2309,7 +2315,7 @@ class CHIRPS_container(explainer_container):
             paths = [p['feature_name'] for p in paths_info]
 
         # per tree performance stats for the whole ensemble (not filtered)
-        tree_preds, estimator_weights, pred_probas = [i for i in map(list, zip(*[itemgetter('pred_class', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][t]) for t in range(n_paths)]))]
+        tree_preds, estimator_weights, pred_probas = [i for i in map(list, zip(*[itemgetter('pred_class', 'estimator_weight', 'pred_proba')(self.path_detail[batch_idx][t]) for t in range(self.n_paths)]))]
 
         # simply determine the count and proportion of trees according to votes
         model_votes = p_count_corrected(tree_preds, [i for i in range(len(meta_data['class_names']))], weights=estimator_weights)
@@ -2427,21 +2433,18 @@ class GBHIPS_container(explainer_container):
 
     def get_runner(self, batch_idx, target_class, meta_data, random_state=123, feature_values=True, which_trees = 'signdelta'):
 
-        true_to_lt = lambda x: '<' if x == True else '>'
-
         # extract the paths we want by filtering on tree performance
-        n_paths = len(self.path_detail[batch_idx])
         if which_trees == 'signdelta':
             # get the paths that contributed to the majority gradient - they have the same sign as the sum of deltas
-            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['agree_sign_delta']]))]
+            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[target_class][batch_idx][pd]) for pd in range(self.n_paths) if self.path_detail[target_class][batch_idx][pd]['agree_sign_delta']]))]
             print(len(paths_weights))
         elif which_trees == 'targetclass':
             # get the trees that moved towards the given class (requires error handling)
-            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class']  == target_class]))]
+            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[target_class][batch_idx][pd]) for pd in range(self.n_paths) if self.path_detail[target_class][batch_idx][pd]['pred_class']  == target_class]))]
             print(len(paths_weights))
         else:
             # get the trees that moved towards the forest predicted class
-            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[batch_idx][pd]) for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == self.path_detail[batch_idx][pd]['forest_pred_class']]))]
+            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[target_class][batch_idx][pd]) for pd in range(self.n_paths) if self.path_detail[target_class][batch_idx][pd]['pred_class'] == self.path_detail[target_class][batch_idx][pd]['forest_pred_class']]))]
             print(len(paths_weights))
         # path formatting - should it be on values level or features level
         if feature_values:
@@ -2452,7 +2455,7 @@ class GBHIPS_container(explainer_container):
             paths = [p['feature_name'] for p in paths_info]
 
         # per tree performance stats for the whole ensemble (not filtered)
-        tree_preds, estimator_weights = [i for i in map(list, zip(*[itemgetter('pred_class', 'estimator_weight')(self.path_detail[batch_idx][t]) for t in range(n_paths)]))]
+        tree_preds, estimator_weights = [i for i in map(list, zip(*[itemgetter('pred_class', 'estimator_weight')(self.path_detail[target_class][batch_idx][t]) for t in range(self.n_paths[target_class])]))]
 
         # simply determine the count and proportion of trees according to votes
         gradient_weights = p_count_corrected(tree_preds, [i for i in range(len(meta_data['class_names']))], weights=estimator_weights)
@@ -2537,6 +2540,7 @@ class GBHIPS_container(explainer_container):
 
         else:
             for i in range(n_instances):
+                print(target_classes[i])
                 if i % 5 == 0: print('Working on CHIRPS for instance ' + str(i) + ' of ' + str(n_instances))
                 # get a CHIRPS_runner per instance
                 # filtering by the chosen set of trees - default: majority voting
