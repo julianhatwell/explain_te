@@ -57,7 +57,7 @@ def unseen_data_prep(ds_container, n_instances=1, which_split='test'):
 # function to manage the whole run and evaluation
 def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
                     forest_walk_async=True,
-                    chirps_explanation_async=True,
+                    explanation_async=True,
                     save_path='', save_sensitivity_path=None,
                     dataset_name='',
                     random_state=123, verbose=True, n_cores=None,
@@ -126,15 +126,15 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
     # start a timer
     ce_start_time = timeit.default_timer()
 
-    CHIRPS.batch_run_CHIRPS(target_classes=preds, # we're explaining the prediction, not the true label!
-                            chirps_explanation_async=chirps_explanation_async,
+    CHIRPS.run_explanations(target_classes=preds, # we're explaining the prediction, not the true label!
+                            explanation_async=explanation_async,
                             random_state=random_state, n_cores=n_cores,
                             **kwargs)
 
     ce_end_time = timeit.default_timer()
     ce_elapsed_time = ce_end_time - ce_start_time
     o_print('CHIRPS time elapsed: ' + "{:0.4f}".format(ce_elapsed_time) + ' seconds', verbose)
-    o_print('CHIRPS with async = ' + str(chirps_explanation_async), verbose)
+    o_print('CHIRPS with async = ' + str(explanation_async), verbose)
     o_print('', verbose)
 
     # 4. Evaluating CHIRPS Explanations
@@ -146,7 +146,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
     # scoring will leave out the specific instance by this id.
 
     save_results_file = model + '_CHIRPS_rnst_' + str(random_state)
-    rt.evaluate_CHIRPS_explainers(CHIRPS, ds_container, labels.index,
+    rt.evaluate_explainers(CHIRPS, ds_container, labels.index,
                                   forest=forest,
                                   meta_data=meta_data,
                                   eval_start_time=eval_start_time,
@@ -1474,7 +1474,7 @@ def do_benchmarking(benchmark_items, verbose=True, **control):
                                 model=control['model'],
                                 n_instances=control['n_instances'],
                                 forest_walk_async=control['forest_walk_async'],
-                                chirps_explanation_async=control['chirps_explanation_async'],
+                                explanation_async=control['explanation_async'],
                                 save_path=save_path,
                                 save_sensitivity_path=save_sensitivity_path,
                                 dataset_name=b,

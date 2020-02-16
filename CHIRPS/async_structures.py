@@ -10,7 +10,7 @@ from copy import deepcopy
 from scipy.stats import chi2_contingency
 
 # parallelisable function for the forest_walker class
-def as_classification_tree_walk(tree_idx, instances, labels, n_instances,
+def async_classification_tree_walk(tree_idx, instances, labels, n_instances,
                 tree_pred, tree_pred_labels,
                 tree_pred_proba,
                 tree_agree_maj_vote,
@@ -82,7 +82,7 @@ def as_classification_tree_walk(tree_idx, instances, labels, n_instances,
     return(tree_idx, tree_paths)
 
 # parallelisable function for the forest_walker class
-def as_regression_tree_walk(tree_idx, instances,
+def async_regression_tree_walk(tree_idx, instances,
                 labels, pred_probas, pred_lodds,
                 prior_probas, prior_lodds, delta_lodds,
                 tree_agree_sign_delta,
@@ -150,7 +150,7 @@ def as_regression_tree_walk(tree_idx, instances,
     return(tree_idx, tree_paths)
 
 
-def as_CHIRPS(c_runner,
+def async_build_explanation(e_builder,
                 sample_instances, sample_labels, forest, forest_walk_mean_elapsed_time,
                 paths_lengths_threshold=2, support_paths=0.1, alpha_paths=0.0,
                 disc_path_bins=4, disc_path_eqcounts=False,
@@ -166,42 +166,42 @@ def as_CHIRPS(c_runner,
     cr_start_time = timeit.default_timer()
 
     # prime the CHIRPS_runner
-    c_runner.sample_instances = sample_instances
-    c_runner.sample_labels = sample_labels
+    e_builder.sample_instances = sample_instances
+    e_builder.sample_labels = sample_labels
 
     # extract path snippets with highest support/weight
     sp_decrease = support_paths / 10
-    while c_runner.patterns is None or len(c_runner.patterns) == 0:
+    while e_builder.patterns is None or len(e_builder.patterns) == 0:
         print('start mining for batch_idx ' + str(batch_idx) + ' with support = ' + str(support_paths))
-        c_runner.mine_path_snippets(paths_lengths_threshold, support_paths,
+        e_builder.mine_path_snippets(paths_lengths_threshold, support_paths,
                                 disc_path_bins, disc_path_eqcounts)
 
         # score and sort
-        print('found ' + str(len(c_runner.patterns)) + ' patterns from ' + str(len(c_runner.paths)) + ' for batch_idx ' +  str(batch_idx))
+        print('found ' + str(len(e_builder.patterns)) + ' patterns from ' + str(len(e_builder.paths)) + ' for batch_idx ' +  str(batch_idx))
         support_paths = support_paths - sp_decrease
 
-    print('start score sort for batch_idx ' + str(batch_idx) + ' (' + str(len(c_runner.patterns)) + ') patterns')
-    c_runner.score_sort_path_snippets(alpha_paths=alpha_paths,
+    print('start score sort for batch_idx ' + str(batch_idx) + ' (' + str(len(e_builder.patterns)) + ') patterns')
+    e_builder.score_sort_path_snippets(alpha_paths=alpha_paths,
                                         score_func=score_func,
                                         weighting=weighting)
 
     # greedily add terms to create rule
-    # if len(c_runner.patterns) > 10000:
+    # if len(e_builder.patterns) > 10000:
     #     print('batch_idx ' + str(batch_idx) + ': very long one')
-    #     print([cp for i, cp in enumerate(c_runner.patterns) if i < 1000])
-    print('start merge rule for batch_idx ' + str(batch_idx) + ' (' + str(len(c_runner.patterns)) + ') patterns')
-    c_runner.merge_rule(forest=forest,
+    #     print([cp for i, cp in enumerate(e_builder.patterns) if i < 1000])
+    print('start merge rule for batch_idx ' + str(batch_idx) + ' (' + str(len(e_builder.patterns)) + ') patterns')
+    e_builder.merge_rule(forest=forest,
                 algorithm=algorithm,
                 merging_bootstraps=merging_bootstraps,
                 pruning_bootstraps=pruning_bootstraps,
                 delta=delta,
                 precis_threshold=precis_threshold)
-    print('merge complete for batch_idx ' + str(batch_idx) + ' (' + str(len(c_runner.patterns)) + ') patterns')
+    print('merge complete for batch_idx ' + str(batch_idx) + ' (' + str(len(e_builder.patterns)) + ') patterns')
 
     cr_end_time = timeit.default_timer()
     cr_elapsed_time = cr_end_time - cr_start_time
     cr_elapsed_time = cr_elapsed_time + forest_walk_mean_elapsed_time
 
     print('start get explainer for batch_idx ' + str(batch_idx))
-    CHIRPS_exp = c_runner.get_CHIRPS_explainer(cr_elapsed_time)
-    return(batch_idx, CHIRPS_exp)
+    exp = e_builder.get_explainer(cr_elapsed_time)
+    return(batch_idx, exp)
