@@ -579,35 +579,34 @@ class regression_trees_walker(forest_container):
         # step 5: filter by sign for which_trees
         def staged_pred_probas(instance, label):
             return(np.diff(np.append(prior_lodds[label], [np.log(sp[0][label]/(1-sp[0][label])) for sp in self.forest.staged_predict_proba(instance)])))
-            # return(np.diff(np.append(prior_lodds[label], [np.log(sp[0][label]/(1-sp[0][label])) for sp in self.forest.staged_predict_proba(instance)])))
 
         if self.n_classes > 2:
             staged_lodds = [[]] * self.n_classes
             for c in range(self.n_classes):
                 staged_lodds[c] = np.apply_along_axis(staged_pred_probas, 1, instances, label = c)
             staged_lodds = np.array(staged_lodds)
-            # print('staged_lodds shape')
-            # print(staged_lodds.shape)
-            # print('staged_lodds_sum')
-            # print(staged_lodds.sum(axis=2))
-            # print(delta_lodds.shape)
+            print('staged_lodds shape')
+            print(staged_lodds.shape)
+            print('staged_lodds_sum')
+            print(staged_lodds.sum(axis=2))
+            print(delta_lodds.shape)
             tree_agree_sign_delta = np.transpose(np.sign(staged_lodds)) == np.sign(delta_lodds) # first column is lodds of being class zero
-            # print('tree agree sign')
-            # print(tree_agree_sign_delta.shape)
-            # print(tree_agree_sign_delta.sum(axis=0))
+            print('tree agree sign')
+            print(tree_agree_sign_delta.shape)
+            print(tree_agree_sign_delta.sum(axis=0))
         else:
-            # print('in eq 2')
+            print('in eq 2')
             # this just gets the staged lodds diffs and the tree sign agreement
             # tree sign agreement is high for all classes
             # later we pick out the boosting chain that relates to the predicted class
             staged_lodds = np.transpose(np.apply_along_axis(staged_pred_probas, 1, instances, label = 0))
-            # print('staged_lodds_sum')
-            # print(staged_lodds.sum(axis=0))
+            print('staged_lodds_sum')
+            print(staged_lodds.sum(axis=0))
             tree_agree_sign_delta = np.sign(staged_lodds) == np.sign(delta_lodds[:,0]) # first column is lodds of being class zero
             tree_agree_sign_delta = tree_agree_sign_delta[:,:, np.newaxis]
-            # print('tree agree sign')
-            # print(tree_agree_sign_delta.shape)
-            # print(tree_agree_sign_delta.sum(axis=0))
+            print('tree agree sign')
+            print(tree_agree_sign_delta.shape)
+            print(tree_agree_sign_delta.sum(axis=0))
 
         # for GBM, t is an array containing n_classes-1 tree estimators
         if self.n_classes == 2:
@@ -2269,7 +2268,7 @@ class explanation_builder(rule_evaluator):
 
 class explainer_container(object):
 
-    def __init__(self, path_detail, # from forest_walker
+    def __init__(self, path_detail, # from *_trees_walker classes
                         forest, sample_instances, sample_labels, meta_data,
                         forest_walk_mean_elapsed_time=0):
         self.path_detail = path_detail
@@ -2442,6 +2441,9 @@ class GBHIPS_container(explainer_container):
             target_class_slice = target_class
         # extract the paths we want by filtering on tree performance
         if which_trees == 'signdelta':
+            print(self.n_paths)
+            [print(self.path_detail[target_class_slice][batch_idx][pd]) for pd in range(self.n_paths)]
+            # [print(p, ew, pc) for p, ew, pc in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[target_class_slice][batch_idx][pd]) for pd in range(self.n_paths) if self.path_detail[target_class_slice][batch_idx][pd]['agree_sign_delta']]))]
             # get the paths that contributed to the majority gradient - they have the same sign as the sum of deltas
             paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[target_class_slice][batch_idx][pd]) for pd in range(self.n_paths) if self.path_detail[target_class_slice][batch_idx][pd]['agree_sign_delta']]))]
             print(len(paths_weights))
