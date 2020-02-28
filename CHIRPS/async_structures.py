@@ -85,7 +85,7 @@ def async_classification_tree_walk(tree_idx, instances, labels, n_instances,
 def async_regression_tree_walk(tree_idx, instances,
                 labels, pred_probas, pred_lodds,
                 prior_probas, prior_lodds, delta_lodds,
-                tree_agree_sign_delta,
+                # tree_agree_sign_delta,
                 feature, threshold, path,
                 features, est_wt):
 
@@ -138,7 +138,7 @@ def async_regression_tree_walk(tree_idx, instances,
         tree_paths[ic].update({'estimator_weight' : abs(est_wt[ic]),
         'pred_class' : int((np.sign(est_wt[ic]) + 1) / 2),
         'pred_value' : est_wt[ic],
-        'agree_sign_delta' : tree_agree_sign_delta[ic],
+        'agree_sign_delta' : np.sign(est_wt[ic]) == np.sign(delta_lodds[ic]),
         'forest_pred_class' : labels[ic],
         'forest_pred_probas' : pred_probas[ic],
         'forest_pred_lodds' : pred_lodds[ic],
@@ -177,7 +177,7 @@ def async_build_explanation(e_builder,
                                 disc_path_bins, disc_path_eqcounts)
 
         # score and sort
-        print('found ' + str(len(e_builder.patterns)) + ' patterns from ' + str(len(e_builder.paths)) + ' for batch_idx ' +  str(batch_idx))
+        print('found ' + str(len(e_builder.patterns)) + ' patterns from ' + str(len(e_builder.paths)) + ' trees for batch_idx ' +  str(batch_idx))
         support_paths = support_paths - sp_decrease
 
     print('start score sort for batch_idx ' + str(batch_idx) + ' (' + str(len(e_builder.patterns)) + ') patterns')
