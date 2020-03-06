@@ -560,25 +560,25 @@ class regression_trees_walker(forest_container):
         # step 2: predicted results
         if labels is None:
             labels = self.forest.predict(instances)
-        print('labels')
-        print(labels)
+        # print('labels')
+        # print(labels)
         pred_probas = self.forest.predict_proba(instances)
-        print('prior probas')
-        print(prior_probas)
-        print('pred probas')
-        print(pred_probas)
+        # print('prior probas')
+        # print(prior_probas)
+        # print('pred probas')
+        # print(pred_probas)
         pred_odds = pred_probas / (1 - pred_probas)
         pred_lodds = np.log(pred_odds)
-        print('prior lodds')
-        print(prior_lodds)
-        print('pred_lodds')
-        print(pred_lodds)
+        # print('prior lodds')
+        # print(prior_lodds)
+        # print('pred_lodds')
+        # print(pred_lodds)
 
         # step 3: which direction compared to initial guess? and how big of a step was it?
         delta_lodds = (pred_lodds - prior_lodds)
-        print('delta_lodds')
-        print(delta_lodds)
-        print(delta_lodds.shape)
+        # print('delta_lodds')
+        # print(delta_lodds)
+        # print(delta_lodds.shape)
 
         # step 4: calculate the delta lodds
         # staged decision function is the incremental change as the estimators are added
@@ -630,7 +630,6 @@ class regression_trees_walker(forest_container):
         # for binary class, there is one tree but we want the second column (positive class output)
         # however, for indexing our structure, it's a zero base
 
-
         tree_paths = [[]] * len(classes)
         for c in classes:
 
@@ -651,7 +650,6 @@ class regression_trees_walker(forest_container):
                     # get the real valued prediction as the estimator_weight
                     # a negative value(gradient) increases odds of being the target class
                     est_wt = tree[c].predict(instances)
-                    print(est_wt)
                     # walk the tree
                     async_out.append(pool.apply_async(async_regression_tree_walk,
                                                     (i, instances, labels,
@@ -691,12 +689,12 @@ class regression_trees_walker(forest_container):
                     prior_probas[self.col_select(c)], prior_lodds[self.col_select(c)], delta_lodds[:,self.col_select(c)],
                     # tree_agree_sign_delta[i,:,c],
                     feature, threshold, path, features, est_wt)
-
-                # flip/transpose the orientation to by instance
-                tree_paths[c] = list(map(list, zip(*tree_paths[c])))
         # end for
 
-        # [class][instance][path]
+        for c in classes:
+            # flip/transpose the orientation to by instance
+            tree_paths[c] = list(map(list, zip(*tree_paths[c])))
+            # [class][instance][path]
         self.path_detail = tree_paths
 
 
@@ -2488,7 +2486,11 @@ class GBHIPS_container(explainer_container):
             paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[target_class_slice][batch_idx][pd]) for pd in range(self.n_paths) if self.path_detail[target_class_slice][batch_idx][pd]['agree_sign_delta']]))]
         else:
             # get the trees that moved towards the given class (requires error handling)
-            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[target_class_slice][batch_idx][pd]) for pd in range(self.n_paths) if self.path_detail[target_class_slice][batch_idx][pd]['pred_class']  == target_class]))]
+            if len([self.path_detail[target_class_slice][batch_idx][pd] for pd in range(self.n_paths) if self.path_detail[target_class_slice][batch_idx][pd]['pred_class']  == target_class]) == 0:
+                print('in no trees agree')
+                print(target_class_slice, batch_idx)
+                # print([self.path_detail[target_class_slice][batch_idx][pd] for pd in range(self.n_paths)])
+            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[target_class_slice][batch_idx][pd]) for pd in range(self.n_paths) if self.path_detail[target_class_slice][batch_idx][pd]['pred_class']  == 1]))]
 
         # path formatting - should it be on values level or features level
         if feature_values:

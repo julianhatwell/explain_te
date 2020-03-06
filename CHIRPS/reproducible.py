@@ -100,7 +100,6 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
                             forest_walk_async = forest_walk_async,
                             n_cores = n_cores)
 
-
     # stop the timer
     forest_walk_end_time = timeit.default_timer()
     forest_walk_elapsed_time = forest_walk_end_time - forest_walk_start_time
@@ -115,26 +114,42 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
     sample_labels = forest.predict(ds_container.X_train_enc)
 
     # build CHIRPS and a rule for each instance represented in the batch paths container
-    CHIRPS = strcts.CHIRPS_container(f_walker.path_detail,
-                                    forest=forest,
-                                    sample_instances=ds_container.X_train_enc, # any representative sample can be used
-                                    sample_labels=sample_labels,
-                                    meta_data=meta_data,
-                                    forest_walk_mean_elapsed_time=forest_walk_mean_elapsed_time)
+    if model == 'GBM':
+        # create a GBHIPS container object for the forest path detail
+        explanations = strcts.GBHIPS_container(f_walker.path_detail,
+                                        forest=forest,
+                                        sample_instances=ds_container.X_train_enc, # any representative sample can be used
+                                        sample_labels=sample_labels,
+                                        meta_data=meta_data,
+                                        forest_walk_mean_elapsed_time=forest_walk_mean_elapsed_time)
 
-    o_print('Running CHIRPS on a batch of ' + str(len(labels)) + ' instances... (please wait)', verbose)
-    # start a timer
-    ce_start_time = timeit.default_timer()
+        o_print('Running GBHIPS on a batch of ' + str(len(labels)) + ' instances... (please wait)', verbose)
+        # start a timer
+        ce_start_time = timeit.default_timer()
+    else:
+        # create a CHIRPS container for the forest path detail
+        explanations = strcts.CHIRPS_container(f_walker.path_detail,
+                                        forest=forest,
+                                        sample_instances=ds_container.X_train_enc, # any representative sample can be used
+                                        sample_labels=sample_labels,
+                                        meta_data=meta_data,
+                                        forest_walk_mean_elapsed_time=forest_walk_mean_elapsed_time)
 
-    CHIRPS.run_explanations(target_classes=preds, # we're explaining the prediction, not the true label!
+        o_print('Running CHIRPS on a batch of ' + str(len(labels)) + ' instances... (please wait)', verbose)
+        # start a timer
+        ce_start_time = timeit.default_timer()
+
+
+    # run the explanation algorithm on all the instance path details
+    explanations.run_explanations(target_classes=preds, # we're explaining the prediction, not the true label!
                             explanation_async=explanation_async,
                             random_state=random_state, n_cores=n_cores,
                             **kwargs)
 
     ce_end_time = timeit.default_timer()
     ce_elapsed_time = ce_end_time - ce_start_time
-    o_print('CHIRPS time elapsed: ' + "{:0.4f}".format(ce_elapsed_time) + ' seconds', verbose)
-    o_print('CHIRPS with async = ' + str(explanation_async), verbose)
+    o_print('explanation time elapsed: ' + "{:0.4f}".format(ce_elapsed_time) + ' seconds', verbose)
+    o_print('explanation with async = ' + str(explanation_async), verbose)
     o_print('', verbose)
 
     # 4. Evaluating CHIRPS Explanations
@@ -146,7 +161,7 @@ def CHIRPS_benchmark(forest, ds_container, meta_data, model, n_instances=100,
     # scoring will leave out the specific instance by this id.
 
     save_results_file = model + '_CHIRPS_rnst_' + str(random_state)
-    rt.evaluate_explainers(CHIRPS, ds_container, labels.index,
+    rt.evaluate_explainers(explanations, ds_container, labels.index,
                                   forest=forest,
                                   meta_data=meta_data,
                                   eval_start_time=eval_start_time,
@@ -368,7 +383,7 @@ def defragTrees_prep(forest, meta_data, ds_container,
 
     defTrees_end_time = timeit.default_timer()
     defTrees_elapsed_time = defTrees_end_time - defTrees_start_time
-    o_print('Fit defragTrees time elapsed:' + "{:0.4f}".format(defTrees_elapsed_time) + 'seconds', verbose)
+    o_print('Fit defragTrees time elapsed: ' + "{:0.4f}".format(defTrees_elapsed_time) + ' seconds', verbose)
     o_print('', verbose)
 
     score, cover, coll = mdl.evaluate(np.array(X_test), y_test)
