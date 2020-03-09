@@ -2461,11 +2461,13 @@ class GBHIPS_container(explainer_container):
         # per tree performance stats for the whole ensemble (not filtered)
         if len(self.path_detail) == 1:
             target_class_slice = 0
+            target_class_match = target_class
             tree_preds, estimator_weights = [i for i in map(list, zip(*[itemgetter('pred_class', 'estimator_weight')(self.path_detail[target_class_slice][batch_idx][pd]) for pd in range(self.n_paths)]))]
             model_votes = p_count_corrected(tree_preds, [0, 1])
             gradient_weights = p_count_corrected(tree_preds, [0, 1], weights=estimator_weights)
         else:
             target_class_slice = target_class
+            target_class_match = 1
             tree_preds = np.array([])
             estimator_weights = np.array([])
             for c in range(len(self.path_detail)):
@@ -2486,11 +2488,11 @@ class GBHIPS_container(explainer_container):
             paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[target_class_slice][batch_idx][pd]) for pd in range(self.n_paths) if self.path_detail[target_class_slice][batch_idx][pd]['agree_sign_delta']]))]
         else:
             # get the trees that moved towards the given class (requires error handling)
-            if len([self.path_detail[target_class_slice][batch_idx][pd] for pd in range(self.n_paths) if self.path_detail[target_class_slice][batch_idx][pd]['pred_class']  == target_class]) == 0:
+            if len([self.path_detail[target_class_slice][batch_idx][pd] for pd in range(self.n_paths) if self.path_detail[target_class_slice][batch_idx][pd]['pred_class']  == target_class_match]) == 0:
                 print('in no trees agree')
-                print(target_class_slice, batch_idx)
+                print(target_class, batch_idx)
                 # print([self.path_detail[target_class_slice][batch_idx][pd] for pd in range(self.n_paths)])
-            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[target_class_slice][batch_idx][pd]) for pd in range(self.n_paths) if self.path_detail[target_class_slice][batch_idx][pd]['pred_class']  == 1]))]
+            paths_info, paths_weights, pred_class = [i for i in map(list, zip(*[itemgetter('path', 'estimator_weight', 'pred_class')(self.path_detail[target_class_slice][batch_idx][pd]) for pd in range(self.n_paths) if self.path_detail[target_class_slice][batch_idx][pd]['pred_class']  == target_class_match]))]
 
         # path formatting - should it be on values level or features level
         if feature_values:
