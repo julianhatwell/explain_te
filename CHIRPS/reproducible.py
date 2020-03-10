@@ -293,7 +293,7 @@ def Anchors_benchmark(forest, ds_container, meta_data,
             tc_lab[0],
             tc[0],
             tc_lab[0],
-            np.array([tree.predict(instances_enc[i]) == tc for tree in forest.estimators_]).mean(), # majority vote share
+            0, # meaningless for boosting # np.array([tree.predict(instances_enc[i]) == tc for tree in forest.estimators_]).mean(), # majority vote share
             0, # accumulated weight not meaningful for Anchors
             test_metrics['prior']['p_counts'][tc][0],
             train_metrics['posterior'][tc][0],
@@ -500,7 +500,7 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
         mc_lab[0],
         tc[0],
         tc_lab[0],
-        np.array([tree.predict(instances_enc[i]) == mc for tree in forest.estimators_]).mean(), # majority vote share
+        0, # meaningless for boosting # np.array([tree.predict(instances_enc[i]) == mc for tree in forest.estimators_]).mean(), # majority vote share
         0, # accumulated weight not meaningful for dfrgtrs
         metrics['prior']['p_counts'][mc][0],
         metrics['posterior'][tc][0],
@@ -1075,7 +1075,6 @@ def lore_generate_random_data(X, class_name, columns, discrete, continuous, feat
         X1 = pd.DataFrame(data=X1, columns=columns1)
     return X1
 
-
 def lore_random_neighborhood(dfZ, x, blackbox, dataset, popsize=1000, stratified=True):
     discrete = dataset['discrete']
     continuous = dataset['continuous']
@@ -1326,7 +1325,7 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
             tc_lab[0],
             tc[0],
             tc_lab[0],
-            np.array([tree.predict(instances_enc[i]) == tc for tree in forest.estimators_]).mean(), # majority vote share
+            0, # meaning for boosting # np.array([tree.predict(instances_enc[i]) == tc for tree in forest.estimators_]).mean(), # majority vote share
             0, # accumulated weight not meaningful for lore
             test_metrics['prior']['p_counts'][tc][0],
             train_metrics['posterior'][tc][0],
