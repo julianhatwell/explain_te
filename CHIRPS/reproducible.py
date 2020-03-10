@@ -347,13 +347,13 @@ def Anchors_benchmark(forest, ds_container, meta_data,
         with open(meta_data['get_save_path']() + file_stem + 'performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
             forest_performance = json.load(infile)
         f_perf = forest_performance[method]['test_accuracy']
-
+        sd_f_perf = st.binom.std(len(labels), f_perf)
 
         summary_results = [[dataset_name, method, len(labels), 1, \
                             1, 1, 1, 0, \
                             np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
                             eval_start_time, time.asctime( time.localtime(time.time()) ), \
-                            f_perf, sqrt((f_perf/(1-f_perf))/len(labels)), \
+                            f_perf, sd_f_perf, \
                             1, 0, \
                             1, 1, 0]]
 
@@ -544,14 +544,16 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
         with open(meta_data['get_save_path']() + file_stem + 'performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
             forest_performance = json.load(infile)
         f_perf = forest_performance['main']['test_accuracy']
+        sd_f_perf = st.binom.std(len(labels), f_perf)
         p_perf = np.mean(dfrgtrs_preds == labels)
+        sd_p_perf = st.binom.std(len(labels), p_perf)
         fid = np.mean(dfrgtrs_preds == forest_preds)
         summary_results = [[dataset_name, method, len(labels), len(rule_list), \
                             len(np.unique(rule_idx)), np.median(np.array(rule_idx) + 1), np.mean(np.array(rule_idx) + 1), np.std(np.array(rule_idx) + 1), \
                             np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
                             eval_start_time, time.asctime( time.localtime(time.time()) ), \
-                            f_perf, sqrt((f_perf/(1-f_perf))/len(labels)), \
-                            p_perf, sqrt((p_perf/(1-p_perf))/len(labels)), \
+                            f_perf, sd_f_perf, \
+                            p_perf, sd_p_perf, \
                             eval_model['test_kappa'], fid, sqrt((fid/(1-fid))/len(labels))]]
 
         rt.save_results(cfg.summary_results_headers, summary_results,
@@ -1379,13 +1381,14 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
         with open(meta_data['get_save_path']() + file_stem + 'performance_rnst_' + str(meta_data['random_state']) + '.json', 'r') as infile:
             forest_performance = json.load(infile)
         f_perf = forest_performance['main']['test_accuracy']
+        sd_f_perf = st.binom.std(len(labels), f_perf)
         p_perf = f_perf # for Anchors, forest pred and Anchors target are always the same
         fid = 1 # for Anchors, forest pred and Anchors target are always the same
         summary_results = [[dataset_name, method, len(labels), 1, \
                             1, 1, 1, 0, \
                             np.mean([rl_ln[4] for rl_ln in results]), np.std([rl_ln[4] for rl_ln in results]), \
                             eval_start_time, time.asctime( time.localtime(time.time()) ), \
-                            f_perf, sqrt((f_perf/(1-f_perf))/len(labels)), \
+                            f_perf, sd_f_perf, \
                             1, 0, \
                             1, 1, 0]]
 
