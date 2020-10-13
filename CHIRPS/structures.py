@@ -594,6 +594,9 @@ class regression_trees_walker(forest_container):
         else:
             classes = range(self.n_classes)
 
+        # TO DO: staged_lodds doesn't seem to be used for anything? Where is the sign checked and filtered?
+        # CHECKED: the sign of the estimator weight is handled in async funtion, so this step was unnecessary. Can delete, I think.
+        # CHECKED: in the path detail, the value agree_sign_delta can be used a the filter.
         # if self.n_classes > 2:
         staged_lodds = [[]] * len(classes)
         for c in classes:
@@ -1599,7 +1602,7 @@ class explanation_builder(rule_evaluator):
                 # assumiing we took majority or confidence weights, this is a test in the direction of the posterior
                 paths_weights = [contingency_test(ppp, prior['p_counts'], 'kldiv') for ppp in self.paths_pred_proba]
             else:
-                # otherwise the weights from classic AdaBoost or SAMME
+                # otherwise the weights from classic AdaBoost or SAMME, or the predicted value of the GBT model
                 paths_weights = self.paths_weights
 
             for j, p in enumerate(self.paths):
@@ -2392,7 +2395,9 @@ class CHIRPS_container(explainer_container):
         # reason: rf paths quickly extracted per tree for all instances
         # so when constructed, this structure is oriented by tree
         # and we would like to easily iterate by instance
-        n_instances = len(self.path_detail)
+        print('len self.path_detail')
+        print(len(self.path_detail[0]))
+        n_instances = len(self.path_detail[0])
 
         if target_classes is None:
             target_classes = [None] * n_instances

@@ -23,7 +23,6 @@ from sklearn.tree import DecisionTreeClassifier
 import lore.lore as lore
 import lore.util as loreutil
 # import lore.neighbor_generator as nbgen
-import lore.distance_functions as loredistfun
 import lore.pyyadt as loreyadt
 import pickle as cPickle
 from deap import base, creator, tools, algorithms
@@ -674,7 +673,7 @@ def gpdg_setup_toolbox(record, x_enc, feature_values, bb, init, init_params, eva
 
 
 def gpdg_fit(toolbox, population_size=1000, halloffame_ratio=0.1, cxpb=0.5, mutpb=0.2, ngen=10, verbose=False):
-
+    print('fit size: ' + str(population_size))
     halloffame_size = int(np.round(population_size * halloffame_ratio))
 
     population = toolbox.population(n=population_size)
@@ -687,6 +686,8 @@ def gpdg_fit(toolbox, population_size=1000, halloffame_ratio=0.1, cxpb=0.5, mutp
 
     population, logbook = algorithms.eaSimple(population, toolbox, cxpb=cxpb, mutpb=mutpb, ngen=ngen,
                                               stats=stats, halloffame=halloffame, verbose=verbose)
+    print('after eaSimple')
+    print(time.asctime( time.localtime(time.time()) ))
 
     return population, halloffame, logbook
 
@@ -730,6 +731,7 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
                                     idx_features=idx_features, distance_function=distance_function,
                                     population_size=size_sso, alpha1=alpha1, alpha2=alpha2, eta=eta1, mutpb=mutpb,
                                     tournsize=tournsize)
+        print('sso_fit')
         population, halloffame, logbook = gpdg_fit(toolbox_sso, population_size=size_sso, halloffame_ratio=halloffame_ratio,
                                               cxpb=cxpb, mutpb=mutpb, ngen=ngen, verbose=False)
 
@@ -743,6 +745,7 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
                                     idx_features=idx_features, distance_function=distance_function,
                                     population_size=size_sdo, alpha1=alpha1, alpha2=alpha2, eta=eta1, mutpb=mutpb,
                                     tournsize=tournsize)
+        print('sdo_fit')
         population, halloffame, logbook = gpdg_fit(toolbox_sdo, population_size=size_sdo, halloffame_ratio=halloffame_ratio,
                                               cxpb=cxpb, mutpb=mutpb, ngen=ngen, verbose=False)
 
@@ -756,6 +759,7 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
                                     idx_features=idx_features, distance_function=distance_function,
                                     population_size=size_dso, alpha1=alpha1, alpha2=alpha2, eta=eta2, mutpb=mutpb,
                                     tournsize=tournsize)
+        print('dso_fit')
         population, halloffame, logbook = gpdg_fit(toolbox_dso, population_size=size_dso, halloffame_ratio=halloffame_ratio,
                                               cxpb=cxpb, mutpb=mutpb, ngen=ngen, verbose=False)
 
@@ -769,6 +773,7 @@ def gpdg_generate_data(x, x_enc, feature_values, bb, discrete, continuous, class
                                     idx_features=idx_features, distance_function=distance_function,
                                     population_size=size_ddo, alpha1=alpha1, alpha2=alpha2, eta=eta2, mutpb=mutpb,
                                     tournsize=tournsize)
+        print('ddo_fit')
         population, halloffame, logbook = gpdg_fit(toolbox_ddo, population_size=size_ddo, halloffame_ratio=halloffame_ratio,
                                               cxpb=cxpb, mutpb=mutpb, ngen=ngen, verbose=False)
 
@@ -1009,6 +1014,34 @@ def lore_normalized_euclidean_distance(x, y):
     else:
         return (0.5 * np.var(x - y) / (np.var(x) + np.var(y)))
 
+def lore_simple_match_distance(x, y):
+    count = 0
+    for xi, yi in zip(x, y):
+        if xi == yi:
+            count += 1
+    sim_ratio = 1.0 * count / len(x)
+
+    return 1.0 - sim_ratio
+
+def lore_mixed_distance(x, y, discrete, continuous, class_name, ddist, cdist):
+    xd = [x[att] for att in discrete if att != class_name]
+    wd = 0.0
+    dd = 0.0
+    if len(xd) > 0:
+        yd = [y[att] for att in discrete if att != class_name]
+        wd = 1.0 * len(discrete) / (len(discrete) + len(continuous))
+        dd = ddist(xd, yd)
+
+    xc = np.array([x[att] for att in continuous])
+    wc = 0.0
+    cd = 0.0
+    if len(xc) > 0:
+        yc = np.array([y[att] for att in continuous])
+        wc = 1.0 * len(continuous) / (len(discrete) + len(continuous))
+        cd = cdist(xc, yc)
+
+    return wd * dd + wc * cd
+
 def lore_genetic_neighborhood(dfZ, x, blackbox, dataset, popsize=1000):
     discrete = dataset['discrete']
     continuous = dataset['continuous']
@@ -1021,8 +1054,8 @@ def lore_genetic_neighborhood(dfZ, x, blackbox, dataset, popsize=1000):
     discrete_no_class.remove(class_name)
 
     def distance_function(x0, x1, discrete, continuous, class_name):
-        return loredistfun.mixed_distance(x0, x1, discrete, continuous, class_name,
-                              ddist=loredistfun.simple_match_distance,
+        return lore_mixed_distance(x0, x1, discrete, continuous, class_name,
+                              ddist=lore_simple_match_distance,
                               cdist=lore_normalized_euclidean_distance)
 
     Z = gpdg_generate_data(x, x_enc, feature_values, blackbox, discrete_no_class, continuous, class_name, idx_features,
@@ -1089,8 +1122,8 @@ def lore_random_neighborhood(dfZ, x, blackbox, dataset, popsize=1000, stratified
     if stratified:
 
         def distance_function(x0, x1, discrete, continuous, class_name):
-            return loredistfun.mixed_distance(x0, x1, discrete, continuous, class_name,
-                                  ddist=loredistfun.simple_match_distance,
+            return lore_mixed_distance(x0, x1, discrete, continuous, class_name,
+                                  ddist=lore_simple_match_distance,
                                   cdist=lore_normalized_euclidean_distance)
 
         dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0]
@@ -1126,6 +1159,7 @@ def lore_get_covered(rule, X, dataset):
 def lore_explain(instance, X_train, dataset, blackbox,
                 discrete_use_probabilities=False,
                 continuous_function_estimation=False,
+                max_popsize=1000,
                 log=False, random_state=123):
 
     random.seed(random_state)
@@ -1143,18 +1177,19 @@ def lore_explain(instance, X_train, dataset, blackbox,
     dfx = lore_build_df2explain(blackbox, x.reshape(1, -1), dataset).to_dict('records')[0] # recoded single record
     bb_outcome = blackbox.predict(np.asarray(x_enc.transform([x]).todense()))[0]
 
+    popsize = min(X2E.shape[0], max_popsize)
     # Dataset Preprocessing
-    dataset['feature_values'] = gpdg_calculate_feature_values(X2E, columns, class_name, discrete, continuous, X2E.shape[0],
+    dataset['feature_values'] = gpdg_calculate_feature_values(X2E, columns, class_name, discrete, continuous, popsize,
                                                          discrete_use_probabilities, continuous_function_estimation)
 
+    # Generate Neighborhood - seeded by explananandum instance and training distribution
     print('starting generate genetic neighbourhood')
     print(time.asctime( time.localtime(time.time()) ))
-    # Generate Neighborhood - seeded by explananandum instance and training distribution
-    dfZ, Z = lore_genetic_neighborhood(X_train, x, blackbox, dataset, popsize=X2E.shape[0])
+    dfZ, Z = lore_genetic_neighborhood(X_train, x, blackbox, dataset, popsize=popsize)
     if Z is None: # failed to generate a genetic neighborhood, values insufficiently different?
         print('unable to create genetic neighbourhood')
         print('starting generate random neighbourhood')
-        dfZ, Z = lore_random_neighborhood(X_train, x, blackbox, dataset, popsize=X2E.shape[0])
+        dfZ, Z = lore_random_neighborhood(X_train, x, blackbox, dataset, popsize=popsize)
 
     print('endings generate neighbourhood')
     print(time.asctime( time.localtime(time.time()) ))
@@ -1252,8 +1287,9 @@ def lore_prepare_dataset(name, mydata, meta_data):
     return dataset
 
 def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
-                            n_instances=100,
+                            n_instances=1000,
                             save_path='', dataset_name='',
+                            max_popsize=1000,
                             random_state=123,
                             verbose=True):
 
@@ -1295,7 +1331,11 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
         lore_start_time = timeit.default_timer()
 
         # start the explanation process
-        rule, counterfactuals, info = lore_explain(instances.loc[instance_id], ds_container.X_train, lore_dataset, forest,
+        rule, counterfactuals, info = lore_explain(instances.loc[instance_id],
+                                    ds_container.X_train,
+                                    lore_dataset,
+                                    forest,
+                                    max_popsize=max_popsize,
                                     log=False,
                                     random_state=random_state)
 
@@ -1370,7 +1410,7 @@ def lore_benchmark(forest, ds_container, meta_data, model, lore_dataset,
                     writer = csv.writer(f)
                     writer.writerow([i] + results[i])
 
-        # end for
+    # end for
 
     if save_path is not None:
         # save to file between each loop, in case of crashes/restarts
@@ -1537,5 +1577,6 @@ def do_benchmarking(benchmark_items, verbose=True, **control):
                                     lore_dataset=benchmark_items[b]['lore']['dataset'],
                                     n_instances=control['n_instances'],
                                     save_path=save_path, dataset_name=b,
+                                    max_popsize=control['max_popsize'],
                                     random_state=control['random_state'],
                                     verbose=verbose)
