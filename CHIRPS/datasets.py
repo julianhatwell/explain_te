@@ -15,6 +15,7 @@ def accident(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'accident',
     random_state=random_state,
+    positive_class=None,
     spiel = '''
     Data Set Information:
     These files provide detailed road safety data about the circumstances of personal injury road accidents in GB from 1979, the types (including Make and Model) of vehicles involved and the consequential casualties. The statistics relate only to personal injury accidents on public roads that are reported to the police, and subsequently recorded, using the STATS19 accident reporting form.
@@ -43,6 +44,7 @@ def accident_samp(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'accident_samp',
     random_state=random_state,
+    positive_class=None,
     spiel = '''
     Data Set Information:
     These files provide detailed road safety data about the circumstances of personal injury road accidents in GB from 1979, the types (including Make and Model) of vehicles involved and the consequential casualties. The statistics relate only to personal injury accidents on public roads that are reported to the police, and subsequently recorded, using the STATS19 accident reporting form.
@@ -71,6 +73,7 @@ def accident_small_samp(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'accident_small_samp',
     random_state=random_state,
+    positive_class=None,
     spiel = '''
     Data Set Information:
     These files provide detailed road safety data about the circumstances of personal injury road accidents in GB from 1979, the types (including Make and Model) of vehicles involved and the consequential casualties. The statistics relate only to personal injury accidents on public roads that are reported to the police, and subsequently recorded, using the STATS19 accident reporting form.
@@ -99,6 +102,7 @@ def adult(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'adult',
     random_state=random_state,
+    positive_class='>50K',
     spiel = '''
     Data Description:
     This data was extracted from the adult bureau database found at
@@ -130,6 +134,7 @@ def adult_samp(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'adult_samp',
     random_state=random_state,
+    positive_class='>50K',
     spiel = '''
     Data Description:
     This data was extracted from the adult bureau database found at
@@ -160,6 +165,7 @@ def adult_small_samp(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'adult_small_samp',
     random_state=random_state,
+    positive_class='>50K',
     spiel = '''
     Data Description:
     This data was extracted from the adult bureau database found at
@@ -214,6 +220,7 @@ def bankmark(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'bankmark',
     random_state=random_state,
+    positive_class='yes',
     spiel = '''
     Data Set Information:
     The data is related with direct marketing campaigns of a Portuguese banking institution. The marketing campaigns were based on phone calls. Often, more than one contact to the same client was required, in order to access if the product (bank term deposit) would be ('yes') or not ('no') subscribed.
@@ -294,6 +301,7 @@ def bankmark_samp(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'bankmark_samp',
     random_state=random_state,
+    positive_class='yes',
     spiel = '''
     Data Set Information:
     The data is related with direct marketing campaigns of a Portuguese banking institution. The marketing campaigns were based on phone calls. Often, more than one contact to the same client was required, in order to access if the product (bank term deposit) would be ('yes') or not ('no') subscribed.
@@ -357,6 +365,7 @@ def car(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'car',
     random_state=random_state,
+    positive_class='acc',
     spiel = '''
     M. Bohanec and V. Rajkovic: Knowledge acquisition and explanation for
     multi-attribute decision making. In 8th Intl Workshop on Expert
@@ -381,6 +390,7 @@ def cardio(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'cardio',
     random_state=random_state,
+    positive_class=None,
     spiel = '''
     Data Set Information:
     2126 fetal cardiotocograms (CTGs) were automatically processed and the respective diagnostic features measured. The CTGs were also classified by three expert obstetricians and a consensus classification label assigned to each of them. Classification was both with respect to a morphologic pattern (A, B, C. ...) and to a fetal state (N, S, P). Therefore the dataset can be used either for 10-class or 3-class experiments.
@@ -422,6 +432,7 @@ def credit(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'credit',
     random_state=random_state,
+    positive_class='plus',
     spiel = '''
     Data Set Information:
 
@@ -459,6 +470,7 @@ def german(random_state=123, project_dir=None):
     save_dir = 'german',
     project_dir = project_dir,
     random_state=random_state,
+    positive_class='bad',
     spiel = '''
     Source:
     Professor Dr. Hans Hofmann
@@ -494,6 +506,7 @@ def lending(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'lending',
     random_state=random_state,
+    positive_class='Fully Paid',
     spiel = '''
     Data Set Information:
     Originates from: https://www.lendingclub.com/info/download-data.action
@@ -514,6 +527,7 @@ def lending_samp(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'lending_samp',
     random_state=random_state,
+    positive_class='Fully Paid',
     spiel = '''
     Data Set Information:
     Originates from: https://www.lendingclub.com/info/download-data.action
@@ -534,6 +548,7 @@ def lending_small_samp(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'lending_small_samp',
     random_state=random_state,
+    positive_class='Fully Paid',
     spiel = '''
     Data Set Information:
     Originates from: https://www.lendingclub.com/info/download-data.action
@@ -554,6 +569,7 @@ def lending_tiny_samp(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'lending_tiny_samp',
     random_state=random_state,
+    positive_class='Fully Paid',
     spiel = '''
     Data Set Information:
     Originates from: https://www.lendingclub.com/info/download-data.action
@@ -574,6 +590,7 @@ def nursery(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'nursery',
     random_state=random_state,
+    positive_class=None,
     spiel = '''
     Data Description:
     Nursery Database was derived from a hierarchical decision model
@@ -598,6 +615,7 @@ def nursery_samp(random_state=123, project_dir=None):
     class_col = 'decision',
     project_dir = project_dir,
     save_dir = 'nursery_samp',
+    positive_class=None,
     random_state=random_state,
     spiel = '''
     Data Description:
@@ -624,6 +642,7 @@ def rcdv(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'rcdv',
     random_state=random_state,
+    positive_class='Y',
     spiel = '''
     Data Set Information:
     This is a description of the data on the file, DATA1978.
@@ -677,6 +696,7 @@ def rcdv_samp(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'rcdv_samp',
     random_state=random_state,
+    positive_class='Y',
     spiel = '''
     Data Set Information:
     This is a description of the data on the file, DATA1978.
@@ -730,6 +750,7 @@ def readmit(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'readmit',
     random_state=random_state,
+    positive_class='T',
     spiel = '''
     From Kaggle - https://www.kaggle.com/dansbecker/hospital-readmissions
     No further information
@@ -745,6 +766,7 @@ def readmit_samp(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'readmit_samp',
     random_state=random_state,
+    positive_class='T',
     spiel = '''
     From Kaggle - https://www.kaggle.com/dansbecker/hospital-readmissions
     No further information
@@ -791,6 +813,7 @@ def mhtech14(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'mhtech14',
     random_state=random_state,
+    positive_class='Yes',
     spiel = '''
     From Kaggle - https://www.kaggle.com/osmi/mental-health-in-tech-survey
 
@@ -867,6 +890,7 @@ def mh1tech16(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'mh1tech16',
     random_state=random_state,
+    positive_class='Yes',
     spiel = '''
     From Kaggle
     mh1 = 'Have you ever sought treatment for a mental health issue from a mental health professional?'
@@ -916,6 +940,7 @@ def mh2tech16(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'mh2tech16',
     random_state=random_state,
+    positive_class='Yes',
     spiel = '''
     From Kaggle
     mh1 = 'Have you ever sought treatment for a mental health issue from a mental health professional?'
@@ -966,6 +991,7 @@ def mh3tech16(random_state=123, project_dir=None):
     project_dir = project_dir,
     save_dir = 'mh3tech16',
     random_state=random_state,
+    positive_class=None,
     spiel = '''
     From Kaggle
     mh1 = 'Have you ever sought treatment for a mental health issue from a mental health professional?'
@@ -1418,6 +1444,7 @@ def noshow(random_state=123, project_dir=None):
     save_dir = 'noshow',
     random_state=random_state,
     needs_balance = True,
+    positive_class='Yes',
     spiel = '''
     No further information
     ''')
@@ -1433,6 +1460,7 @@ def noshow_samp(random_state=123, project_dir=None):
     save_dir = 'noshow_samp',
     random_state=random_state,
     needs_balance = True,
+    positive_class='Yes',
     spiel = '''
     No further information
     ''')
@@ -1448,6 +1476,7 @@ def noshow_small_samp(random_state=123, project_dir=None):
     save_dir = 'noshow_small_samp',
     random_state=random_state,
     needs_balance = True,
+    positive_class='Yes',
     spiel = '''
     No further information
     ''')
@@ -1464,6 +1493,7 @@ def cervicalh(random_state=123, project_dir=None):
         save_dir = 'cervicalh',
         random_state=random_state,
         needs_balance = True,
+        positive_class='T',
         spiel = '''
         This dataset uses 'Hinselmann' as the class column, removing the other three options
         Data Set Information:
@@ -1527,6 +1557,7 @@ def cervicals(random_state=123, project_dir=None):
         save_dir = 'cervicals',
         random_state=random_state,
         needs_balance = True,
+        positive_class='T',
         spiel = '''
         This dataset uses 'Schiller' as the class column, removing the other three options
         Data Set Information:
@@ -1590,6 +1621,7 @@ def cervicalc(random_state=123, project_dir=None):
         save_dir = 'cervicalc',
         random_state=random_state,
         needs_balance = True,
+        positive_class='T',
         spiel = '''
         This dataset uses 'Citology' as the class column, removing the other three options
         Data Set Information:
@@ -1653,6 +1685,7 @@ def cervicalb(random_state=123, project_dir=None):
         save_dir = 'cervicalb',
         random_state=random_state,
         needs_balance = True,
+        positive_class='T',
         spiel = '''
         This dataset uses 'Citology' as the class column, removing the other three options
         Data Set Information:
@@ -1715,6 +1748,7 @@ def cervicalr(random_state=123, project_dir=None):
         save_dir = 'cervicalr',
         random_state=random_state,
         needs_balance = True,
+        positive_class='Cancer',
         spiel = '''
         The cervical cancer dataset contains indicators and risk factors for predicting whether a woman will get cervical cancer. The features include demographic data (such as age), lifestyle, and medical history. The data can be downloaded from the UCI Machine Learning repository and is described by Fernandes, Cardoso, and Fernandes (2017)15.
 
@@ -1746,10 +1780,10 @@ def breast(random_state=123, project_dir=None):
         data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'breast.csv.gz',
                         compression='gzip'),
         class_col = 'mb',
-
         project_dir = project_dir,
         save_dir = 'breast',
         random_state=random_state,
+        positive_class='M',
         spiel = '''
         Creators:
         1. Dr. William H. Wolberg, General Surgery Dept.
@@ -1790,10 +1824,10 @@ def thyroid(random_state=123, project_dir=None):
         data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'thyroid.csv.gz',
                         compression='gzip'),
         class_col = 'diagnosis',
-
         project_dir = project_dir,
         save_dir = 'thyroid',
         random_state=random_state,
+        positive_class='Abnormal',
         spiel = '''
         Note: diagnosis has been rendered to a two-class column with possible values normal or abnormal.
 
@@ -1892,10 +1926,10 @@ def thyroid_samp(random_state=123, project_dir=None):
         data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'thyroid_samp.csv.gz',
                         compression='gzip'),
         class_col = 'diagnosis',
-
         project_dir = project_dir,
         save_dir = 'thyroid',
         random_state=random_state,
+        positive_class='Abnormal',
         spiel = '''
         Note: diagnosis has been rendered to a two-class column with possible values normal or abnormal.
 
@@ -1994,10 +2028,10 @@ def heart(random_state=123, project_dir=None):
         data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'heart.csv.gz',
                         compression='gzip'),
         class_col = 'HDisease',
-
         project_dir = project_dir,
         save_dir = 'heart',
         random_state=random_state,
+        positive_class='Yes',
         spiel = '''
         Creators:
         1. Hungarian Institute of Cardiology. Budapest: Andras Janosi, M.D.
@@ -2040,10 +2074,10 @@ def diaretino(random_state=123, project_dir=None):
         data = pd.read_csv('CHIRPS' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'diaretino.csv.gz',
                         compression='gzip'),
         class_col = 'dr',
-
         project_dir = project_dir,
         save_dir = 'diaretino',
         random_state=random_state,
+        positive_class='yes',
         spiel = '''
         Source:
         1. Dr. Balint Antal, Department of Computer Graphics and Image Processing

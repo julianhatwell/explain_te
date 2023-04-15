@@ -468,15 +468,18 @@ def defragTrees_benchmark(forest, ds_container, meta_data, model, dfrgtrs,
         rule = which_rule(rule_list, instances_enc[i], features=meta_data['features_enc'])
         if rule[0] >= len(rule_list):
             pretty_rule = []
+            # all instances are covered by this rule
+            covered_instances = [True for lotl in range(len(loo_true_labels))]
         else:
             pretty_rule = evaluator.prettify_rule(rule_list[rule[0]], meta_data['var_dict'])
+            # which instances are covered by this rule
+            covered_instances = rule_idx[i] == rule
 
         dt_end_time = timeit.default_timer()
         dt_elapsed_time = dt_end_time - dt_start_time
         dt_elapsed_time = dt_elapsed_time + defTrees_mean_elapsed_time # add the mean modeling time per instance
 
-        # which instances are covered by this rule
-        covered_instances = rule_idx[i] == rule
+
 
         metrics = evaluator.evaluate(prior_labels=loo_preds, post_idx=covered_instances)
 

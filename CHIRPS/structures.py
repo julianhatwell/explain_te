@@ -202,10 +202,11 @@ class data_split_container(object):
 
 class data_preprocessor(non_deterministic):
 
-    def fit(self, data, class_col, var_names, var_types):
+    def fit(self, data, class_col, positive_class, var_names, var_types):
         self.data = data
         self.data_pre = DataFrame.copy(self.data)
         self.class_col = class_col
+        self.positive_class = positive_class
 
         if var_names is None:
             self.var_names = list(self.data.columns)
@@ -226,9 +227,16 @@ class data_preprocessor(non_deterministic):
         for i, (v, t) in enumerate(zip(self.var_names, self.var_types)):
             if t == 'nominal':
                 # create a label encoder for all categoricals
-                self.le_dict[v] = LabelEncoder().fit(self.data[v].unique())
+                self.le_dict[v] = LabelEncoder().fit(self.data[v])
                 # create a dictionary of categorical names
                 names = list(self.le_dict[v].classes_)
+                if v == self.class_col and self.positive_class is not None:
+                    class_names_label_order = [cn for cn in names if cn != self.positive_class]
+                    class_names_label_order.append(self.positive_class)
+                    self.class_names_label_order = class_names_label_order
+                    self.le_dict[v].classes_ = np.array(self.class_names_label_order, dtype=np.object)
+                    names = self.class_names_label_order
+
                 # transform each categorical column
                 self.data_pre[v] = self.le_dict[v].transform(self.data[v])
                 # create the reverse lookup
@@ -281,8 +289,16 @@ class data_preprocessor(non_deterministic):
         random_state = self.default_if_none_random_state(random_state)
         n_instances = self.data.shape[0]
         np.random.seed(random_state)
+
+        if test_size >= n_instances:
+            print("test_size too big. reducing to 0.5")
+            test_size = 0.5
+        if test_size < 1.0:
+            sz = round(test_size * n_instances)
+        else:
+            sz = test_size
         test_idx = np.random.choice(n_instances - 1, # zero base
-                                    size = round(test_size * n_instances),
+                                    size = sz,
                                     replace=False)
         # this method avoids scanning the array for each test_idx to find all the others
         train_pos = Series([True] * n_instances)
@@ -340,20 +356,20 @@ class data_preprocessor(non_deterministic):
 
         return(tt)
 
-
 # wrapper for data for convenience
 class data_container(data_preprocessor):
 
-    def __init__(self
-    , data
-    , class_col
-    , var_names = None
-    , var_types = None
-    , project_dir = None
-    , save_dir = ''
-    , random_state = None
-    , needs_balance = False
-    , spiel = ''):
+    def __init__(self,
+    data,
+    class_col,
+    positive_class = None,
+    var_names = None,
+    var_types = None,
+    project_dir = None,
+    save_dir = '',
+    random_state = None,
+    needs_balance = False,
+    spiel = ''):
         super().__init__(random_state)
         self.needs_balance = needs_balance
         self.spiel = spiel
@@ -363,7 +379,7 @@ class data_container(data_preprocessor):
         else:
             self.project_dir = project_dir
 
-        self.fit(data, class_col, var_names, var_types)
+        self.fit(data, class_col, positive_class, var_names, var_types)
 
     # helper function for saving files
     def get_save_path(self, filename = ''):
@@ -393,8 +409,8 @@ class data_container(data_preprocessor):
     def get_meta(self):
         return({'class_col' : self.class_col,
                 'class_names' : self.class_names,
-                'class_names_label_order' : self.get_label(self.class_col, \
-                            [i for i in range(len(self.class_names))]),
+                'positive_class' : self.positive_class,
+                'class_names_label_order' : self.class_names_label_order,
                 'var_names' : self.var_names,
                 'var_types' : self.var_types,
                 'features' : self.features,
@@ -1371,7 +1387,7 @@ class explainer(rule_evaluator):
         print('Fraction of total points of rule: ' + str(self.accumulated_points))
         print('Fraction of total weight of rule: ' + str(self.accumulated_weights))
         print()
-        print('Estimated Results - Rule Training Sample. Algorithm: ' + self.algorithm)
+        print('Estimated Results - Rule Training Sample + Unpruned Rule. Algorithm: ' + self.algorithm)
         print('rule coverage (training data): ' + str(self.est_coverage))
         print('rule xcoverage (training data): ' + str(self.est_xcoverage))
         print('rule precision (training data): ' + str(self.est_prec))

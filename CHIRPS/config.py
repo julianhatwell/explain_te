@@ -21,6 +21,17 @@ results_headers = ['dataset_name', 'instance_id', 'algorithm',
             'accuracy(tt)', 'lift(tt)', 'coverage(tt)', 'xcoverage(tt)', 'kl_div(tt)',
             'elapsed_time']
 
+demo_results_headers = ['dataset_name', 'instance_id', 'algorithm',
+            'pretty rule', 'rule length',
+            'true class', 'true class label',
+            'predicted class', 'predicted class label',
+            'target class', 'target class label',
+            'forest vote share', 'accumulated weight', 'pred prior',
+            'precision(tt)', 'stability(tt)', 'recall(tt)',
+            'f1(tt)', 'cc(tt)', 'ci(tt)', 'ncc(tt)', 'nci(tt)', 'npv(tt)',
+            'accuracy(tt)', 'lift(tt)', 'coverage(tt)', 'xcoverage(tt)', 'kl_div(tt)',
+            'elapsed_time']
+
 summary_results_headers = ['dataset_name', 'algorithm', 'n_instances', 'n_rules', \
                             'n_rules_used', 'median_rule_cascade', 'mean_rule_cascade', 'sd_rule_cascade', \
                             'mean_rulelen', 'sd_rulelen', \

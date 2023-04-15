@@ -247,6 +247,9 @@ def evaluate_model(y_true, y_pred, class_names=None, model='RandomForest',
     if plot_cm:
         plot_confusion_matrix(cm, class_names=class_names,
                               title='Confusion matrix, without normalization')
+    else:
+        print(cm)
+
     # normalized confusion matrix
     if plot_cm_norm:
         plot_confusion_matrix(cm
@@ -362,8 +365,8 @@ def save_results(headers, results, save_results_path, save_results_file):
     output_df = DataFrame(results, columns=headers)
     output_df.to_csv(save_results_path + save_results_file + '.csv')
 
-def evaluate_explainers(b_CHIRPS_exp, # CHIRPS_container
-                                ds_container, # data_split_container (for the test data and the LOO function
+def demonstrate_explainers(b_CHIRPS_exp, # CHIRPS_container
+                                ds_container, # data_split_container (for the test data and the LOO function)
                                 instance_idx, # should match the instances in the batch
                                 forest,
                                 meta_data,
@@ -378,21 +381,18 @@ def evaluate_explainers(b_CHIRPS_exp, # CHIRPS_container
                                 save_CHIRPS=False):
 
     preds = forest.predict(ds_container.X_test_enc)
+    labels = Series(forest.predict(ds_container.X_train_enc), index = ds_container.y_train.index)
     results = [[]] * len(b_CHIRPS_exp.explainers)
 
     for i, c in enumerate(b_CHIRPS_exp.explainers):
 
-        # get test sample by leave-one-out on current instance
         instance_id = instance_idx[i]
-        _, _, instances_enc, _, true_labels = ds_container.get_loo_instances(instance_id)
-        # get the model predicted labels
-        labels = Series(forest.predict(instances_enc), index = true_labels.index)
 
         # get the detail of the current index
         _, _, current_instance_enc, _, current_instance_label = ds_container.get_by_id([instance_id], which_split='test')
 
-        # then evaluating rule metrics on the leave-one-out test set
-        eval_rule = c.evaluate_rule(rule='pruned', sample_instances=instances_enc, sample_labels=labels)
+        # then evaluating rule metrics on the training set
+        eval_rule = c.evaluate_rule(rule='pruned', sample_instances=ds_container.X_train_enc, sample_labels=labels)
         tc = c.target_class
         tc_lab = c.target_class_label
 
@@ -419,13 +419,13 @@ def evaluate_explainers(b_CHIRPS_exp, # CHIRPS_container
 
         # the rule complements to be assessed on the train set: it's out put for the user.
         if eval_rule_complements:
-            rule_complement_results = c.eval_rule_complements(sample_instances=ds_container.X_train_enc, sample_labels=ds_container.y_train)
+            rule_complement_results = c.eval_rule_complements(sample_instances=ds_container.X_train_enc, sample_labels=labels)
 
         if eval_alt_labelings:
             # get the current instance being explained
             # get_by_id takes a list of instance ids. Here we have just a single integer
             alt_labelings_results = c.get_alt_labelings(instance=current_instance_enc,
-                                                        sample_instances=instances_enc,
+                                                        sample_instances=ds_container.X_train_enc,
                                                         forest=forest)
         true_class = ds_container.y_test.loc[instance_id]
         results[i] = [dataset_name,
@@ -434,28 +434,14 @@ def evaluate_explainers(b_CHIRPS_exp, # CHIRPS_container
             c.pretty_rule,
             c.rule_len,
             true_class,
-            meta_data['class_names'][true_class],
+            meta_data['class_names_label_order'][true_class],
             preds[i],
-            meta_data['class_names'][preds[i]],
+            meta_data['class_names_label_order'][preds[i]],
             c.target_class,
             c.target_class_label[0],
             c.forest_vote_share,
             c.accumulated_weights,
             c.prior[tc],
-            c.est_prec,
-            c.est_stab,
-            c.est_recall,
-            c.est_f1,
-            c.est_cc,
-            c.est_ci,
-            c.est_ncc,
-            c.est_nci,
-            c.est_npv,
-            c.est_acc,
-            c.est_lift,
-            c.est_coverage,
-            c.est_xcoverage,
-            c.est_kl_div,
             tt_prec,
             tt_stab,
             tt_recall,
@@ -475,10 +461,23 @@ def evaluate_explainers(b_CHIRPS_exp, # CHIRPS_container
         if print_to_screen:
             print('INSTANCE RESULTS')
             print('instance id: ' + str(instance_id) + ' with true class label: ' + str(current_instance_label.values[0]) + \
-                    ' (' + c.get_label(c.class_col, current_instance_label.values) + ')')
+                    ' (' + meta_data['class_names_label_order'][current_instance_label.values[0]] + ')')
             print()
-            c.to_screen()
-            print('Results - Previously Unseen Sample')
+            print('Model Results for Instance')
+            print('target (predicted) class: ' + str(preds[i]) + ' (' + meta_data['class_names_label_order'][preds[i]] + ')')
+            print('target class prior (training data): ' +  str(c.prior[tc]))
+            print('forest vote share (unseen instance): ' + str(c.forest_vote_share))
+            print('forest vote margin (unseen instance): ' + str(c.forest_vote_margin))
+            print('confidence weighted forest vote share (unseen instance): ' + str(c.conf_weight_forest_vote_share))
+            print('confidence weighted forest vote margin (unseen instance): ' + str(c.conf_weight_forest_vote_margin))
+            print()
+            print('rule: ' + c.pretty_rule)
+            print('rule cardinality: ' + str(c.rule_len))
+            print('Fraction of total points of rule: ' + str(c.accumulated_points))
+            print('Fraction of total weight of rule: ' + str(c.accumulated_weights))
+            print()
+
+            print('Results - Reference Sample + Pruned Rule')
             print('target class prior (unseen data): ' + str(tt_prior[tc]))
             print('rule coverage (unseen data): ' + str(tt_coverage))
             print('rule xcoverage (unseen data): ' + str(tt_xcoverage))
@@ -556,7 +555,7 @@ def evaluate_explainers(b_CHIRPS_exp, # CHIRPS_container
 
     if save_results_path is not None:
         # save to file between each loop, in case of crashes/restarts
-        save_results(cfg.results_headers, results, save_results_path, save_results_file)
+        save_results(cfg.demo_results_headers, results, save_results_path, save_results_file)
 
         # collect summary_results
         file_stem = get_file_stem(model)
